@@ -1,0 +1,30 @@
+joints:
+  head_tilt_joint:
+    controller: /sobit_home/head_position_controller/joint_trajectory
+    mode_button: 2           # △
+    axis: 1                  # 左スティック上下
+    pos_value: 1.0           # ↑
+    neg_value: -1.0          # ↓
+    speed: 0.02
+    min_pos: -0.5
+    max_pos: 0.5
+    smoothing: 0.3
+  head_pan_joint:
+    controller: /sobit_home/head_position_controller/joint_trajectory
+    mode_button: 2           # ×
+    axis: 0                  # 左スティック左右
+    pos_value: 1.0           # →
+    neg_value: -1.0          # ←
+    speed: 0.02
+    min_pos: -0.5
+    max_pos: 0.8
+    smoothing: 0.3
+
+cmd_vel:
+  topic: "/sobit_home/cmd_vel"
+  mode_button: 5            # R1
+  linear_x_axis: 1          # 左スティック上下
+  linear_y_axis: 0          # 左スティック左右
+  angular_axis: 3           # 右スティック左右
+  linear_scale: 0.1
+  angular_scale: 0.1
