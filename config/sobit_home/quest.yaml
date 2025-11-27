@@ -153,10 +153,10 @@ joints:
 cmd_vel:
   topic: "/sobit_home/cmd_vel"
   mode_button: 5            # R1
-  fast_mode_button: 7       # R2
+  fast_mode_button: 6       # R2
   linear_x_axis: 1          # 左スティック上下
   linear_y_axis: 0          # 左スティック左右
-  angular_axis: 3           # 右スティック左右
+  angular_axis: 4           # 右スティック左右
   linear_scale: 0.1
   angular_scale: 0.1
   fast_linear_scale: 0.2
