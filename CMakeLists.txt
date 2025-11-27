@@ -25,17 +25,17 @@ include_directories(
   include
 )
 
-add_executable(joy_teleop src/joy_teleop.cpp)
+add_executable(sobits_teleop src/sobits_teleop.cpp)
 ament_target_dependencies(
-  joy_teleop
+  sobits_teleop
   rclcpp
   sensor_msgs
   trajectory_msgs
   geometry_msgs
 )
-target_link_libraries(joy_teleop yaml-cpp)
+target_link_libraries(sobits_teleop yaml-cpp)
 
-install(TARGETS joy_teleop
+install(TARGETS sobits_teleop
   DESTINATION lib/${PROJECT_NAME})
   
 install(DIRECTORY include/
