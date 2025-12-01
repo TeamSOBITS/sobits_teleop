@@ -10,7 +10,7 @@ cd ..
 # Download required packages
 ros_packages=(
     "keyboard_joy"
-    "ROS-TCP-Endpoint"
+    "ros_tcp_endpoint"
 )
 
 #Clone all packages
@@ -30,6 +30,7 @@ for ((i = 0; i < ${#ros_packages[@]}; i++)) {
 # Download ROS packages
 sudo apt-get update
 sudo apt-get install -y \
+    jstest-gtk \
     ros-$ROS_DISTRO-joy-linux
 
 # Go back to previous directory
