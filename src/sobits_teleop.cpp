@@ -2,6 +2,9 @@
 
 SOBITSTeleop::SOBITSTeleop() : Node("sobits_teleop")
 {
+  std::string joint_states_topic = this->declare_parameter<std::string>("joint_states_topic", "");
+  std::string yaml_path = this->declare_parameter<std::string>("mapping_yaml", "");
+
   cmd_vel_pub_ = create_publisher<geometry_msgs::msg::Twist>("cmd_vel", 10);
 
   joy_sub_ = create_subscription<sensor_msgs::msg::Joy>(
@@ -9,17 +12,14 @@ SOBITSTeleop::SOBITSTeleop() : Node("sobits_teleop")
     std::bind(&SOBITSTeleop::joy_callback, this, std::placeholders::_1));
 
   joint_state_sub_ = create_subscription<sensor_msgs::msg::JointState>(
-    "joint_states", 10,
+    joint_states_topic, 10,
     std::bind(&SOBITSTeleop::joint_state_callback, this, std::placeholders::_1));
-
-  std::string yaml_path = this->declare_parameter<std::string>("mapping_yaml", "");
 
   if (!yaml_path.empty()) {
     load_mapping(yaml_path);
-    RCLCPP_INFO(get_logger(), "Loaded %ld joints", mapping_.size());
-  } else {
-    RCLCPP_ERROR(get_logger(), "mapping_yaml parameter is empty");
+    RCLCPP_INFO(get_logger(), "Loaded mapping_yaml from: %s", yaml_path.c_str());
   }
+  else RCLCPP_ERROR(get_logger(), "mapping_yaml parameter is empty");
 
   timer_ = create_wall_timer(
     std::chrono::milliseconds(50),
@@ -36,7 +36,7 @@ void SOBITSTeleop::load_mapping(const std::string &yaml_path)
     auto node = it.second;
 
     m.joint = joint_name;
-    m.controller = node["controller"].as<std::string>();
+    m.joint_trajectory_topic = node["joint_trajectory_topic"].as<std::string>();
     m.mode_button = node["mode_button"].as<int>();
     m.fast_mode_button = node["fast_mode_button"].as<int>();
     m.axis = node["axis"].as<int>();
@@ -48,14 +48,14 @@ void SOBITSTeleop::load_mapping(const std::string &yaml_path)
 
     mapping_[joint_name] = m;
 
-    joint_pub_[m.controller] =
+    joint_pub_[m.joint_trajectory_topic] =
       this->create_publisher<trajectory_msgs::msg::JointTrajectory>(
-        m.controller, 10);
+        m.joint_trajectory_topic, 10);
   }
 
   if (config["cmd_vel"]) {
     auto c = config["cmd_vel"];
-    cmd_vel_map_.topic         = c["topic"].as<std::string>();
+    cmd_vel_map_.cmd_vel_topic = c["cmd_vel_topic"].as<std::string>();
     cmd_vel_map_.mode_button   = c["mode_button"].as<int>();
     cmd_vel_map_.fast_mode_button = c["fast_mode_button"].as<int>();
     cmd_vel_map_.linear_x_axis = c["linear_x_axis"].as<int>();
@@ -67,11 +67,9 @@ void SOBITSTeleop::load_mapping(const std::string &yaml_path)
     cmd_vel_map_.fast_angular_scale = c["fast_angular_scale"].as<double>();
     cmd_vel_pub_ =
       this->create_publisher<geometry_msgs::msg::Twist>(
-        cmd_vel_map_.topic, 10);
-  } else {
-    RCLCPP_WARN(get_logger(),
-      "cmd_vel mapping not found in YAML. cmd_vel will not be published.");
+        cmd_vel_map_.cmd_vel_topic, 10);
   }
+  else RCLCPP_WARN(get_logger(), "cmd_vel mapping not found in YAML. cmd_vel will not be published.");
 }
 
 void SOBITSTeleop::joint_state_callback(const sensor_msgs::msg::JointState::SharedPtr msg)
@@ -79,6 +77,7 @@ void SOBITSTeleop::joint_state_callback(const sensor_msgs::msg::JointState::Shar
   for (size_t i = 0; i < msg->name.size(); i++) {
   joint_pos_[msg->name[i]] = msg->position[i];
   }
+  joint_state_initialized_ = true;
 }
 
 void SOBITSTeleop::joy_callback(const sensor_msgs::msg::Joy::SharedPtr msg)
@@ -91,6 +90,7 @@ void SOBITSTeleop::joy_callback(const sensor_msgs::msg::Joy::SharedPtr msg)
 
 void SOBITSTeleop::joy_loop()
 {
+  if (!joint_state_initialized_) return;
   if (!joy_received_) return;
 
   std::map<std::string, trajectory_msgs::msg::JointTrajectory> trajs;
@@ -100,62 +100,44 @@ void SOBITSTeleop::joy_loop()
     if (latest_buttons_[m.mode_button] == 0) continue;
 
     float axis_val = latest_axes_[m.axis];
-    double raw_delta = 0.0;
     if (std::abs(axis_val) < 1e-3) continue;
 
-    raw_delta = axis_val * m.axis_sign * m.speed;
-    if (latest_buttons_[m.fast_mode_button] == 1) raw_delta = axis_val * m.axis_sign * m.fast_speed;
-
-    joint_pos_[m.joint] += raw_delta;
+    double delta_pos = axis_val * m.axis_sign * (latest_buttons_[m.fast_mode_button] == 1 ? m.fast_speed : m.speed);
+    joint_pos_[m.joint] += delta_pos;
     joint_pos_[m.joint] = std::clamp(joint_pos_[m.joint], m.min_pos, m.max_pos);
 
-    auto &traj = trajs[m.controller];
+    auto &traj = trajs[m.joint_trajectory_topic];
     traj.joint_names.push_back(m.joint);
     if (traj.points.empty()) {
       trajectory_msgs::msg::JointTrajectoryPoint p;
       p.positions = {joint_pos_[m.joint]};
-      p.time_from_start = rclcpp::Duration::from_seconds(0.1);
+      p.time_from_start = rclcpp::Duration::from_seconds(dt);
       traj.points.push_back(p);
-    } else {
-      traj.points[0].positions.push_back(joint_pos_[m.joint]);
     }
+    else traj.points[0].positions.push_back(joint_pos_[m.joint]);
   }
 
   for (auto &tj : trajs) {
-    const auto &controller = tj.first;
+    const auto &joint_trajectory_topic = tj.first;
     auto &traj = tj.second;
-    auto it = joint_pub_.find(controller);
+    auto it = joint_pub_.find(joint_trajectory_topic);
     if (it != joint_pub_.end() && traj.joint_names.size() > 0) it->second->publish(traj);
   }
 
-  bool mode_on = false;
-  if (latest_buttons_[cmd_vel_map_.mode_button] == 1) {
-    mode_on = true;
-  }
-
   geometry_msgs::msg::Twist twist;
-  if (mode_on) {
-    twist.linear.x =
-      latest_axes_[cmd_vel_map_.linear_x_axis] * cmd_vel_map_.linear_scale;
-    twist.linear.y =
-      latest_axes_[cmd_vel_map_.linear_y_axis] * cmd_vel_map_.linear_scale;
-    twist.angular.z =
-      latest_axes_[cmd_vel_map_.angular_axis] * cmd_vel_map_.angular_scale;
-    if (latest_buttons_[cmd_vel_map_.fast_mode_button] == 1) {
-      twist.linear.x =
-        latest_axes_[cmd_vel_map_.linear_x_axis] * cmd_vel_map_.fast_linear_scale;
-      twist.linear.y =
-        latest_axes_[cmd_vel_map_.linear_y_axis] * cmd_vel_map_.fast_linear_scale;
-      twist.angular.z =
-        latest_axes_[cmd_vel_map_.angular_axis] * cmd_vel_map_.fast_angular_scale;
-    }
+  geometry_msgs::msg::Twist stop;
+  if (latest_buttons_[cmd_vel_map_.mode_button] == 1) {
+    const bool fast = (latest_buttons_[cmd_vel_map_.fast_mode_button] == 1);
+    const double linear_scale = fast ? cmd_vel_map_.fast_linear_scale : cmd_vel_map_.linear_scale;
+    const double angular_scale = fast ? cmd_vel_map_.fast_angular_scale : cmd_vel_map_.angular_scale;
+
+    twist.linear.x = latest_axes_[cmd_vel_map_.linear_x_axis] * linear_scale;
+    twist.linear.y = latest_axes_[cmd_vel_map_.linear_y_axis] * linear_scale;
+    twist.angular.z = latest_axes_[cmd_vel_map_.angular_axis] * angular_scale;
+
     cmd_vel_pub_->publish(twist);
   }
-  else
-  {
-    geometry_msgs::msg::Twist stop;
-    cmd_vel_pub_->publish(stop);
-  }
+  else cmd_vel_pub_->publish(stop);
 }
 
 int main(int argc, char **argv) {

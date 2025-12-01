@@ -19,24 +19,31 @@ def generate_launch_description():
         # default_value="sobit_light",
         # default_value="hsr_sim",
         # default_value="hsrb_robot"
-        description='Robot name used to select config subfolder'
+        description='Robot name used to select configuration file'
     )
     declare_device_cmd = DeclareLaunchArgument(
         'device',
-        default_value='ps4', # ps5
-        # default_value='keyboard',
+        default_value='ps4', 
+        # default_value='ps5',
         # default_value='quest',
+        # default_value='keyboard',
         description='Input device type: ps4, quest, keyboard'
+    )
+    declare_joystick_device_cmd = DeclareLaunchArgument(
+        'joystick_device',
+        default_value='/dev/input/js0',
+        description='Joystick device path for joy_linux node'
     )
     declare_ros_ip_cmd = DeclareLaunchArgument(
         'ros_ip',
         default_value='0.0.0.0',
-        description='ROS IP address'
+        description='ROS IP address for ros_tcp_endpoint (Meta Quest controllers)'
     )
 
     # LaunchConfiguration handles runtime values
     robot_name = LaunchConfiguration('robot_name')
     device = LaunchConfiguration('device')
+    joystick_device = LaunchConfiguration('joystick_device')
     ros_ip = LaunchConfiguration('ros_ip')
 
     config_file = PathJoinSubstitution([
@@ -57,38 +64,39 @@ def generate_launch_description():
         executable='sobits_teleop',
         name='sobits_teleop',
         output='screen',
-        parameters=[{'mapping_yaml': [config_file, '.yaml']}],
+        parameters=[{'mapping_yaml': [config_file, '.yaml']},
+                    {'joint_states_topic': ['/', robot_name, '/joint_states']}],
     )
 
-    # joy_linux node for PS controllers (ps4 / ps5)
-    joy_node = Node(
+    # joy_linux node for joy controllers (ps4, ps5)
+    joystick_node = Node(
         package='joy_linux',
         executable='joy_linux_node',
-        name='joy_linux_node',
+        name='joystick_node',
         output='screen',
         parameters=[
-            {'device_id': 0},
+            {'dev': joystick_device},
             {'deadzone': 0.05},
             {'autorepeat_rate': 20.0}
         ],
-        condition=IfCondition(EqualsSubstitution(LaunchConfiguration('device'), 'ps4'))
+        condition=IfCondition(EqualsSubstitution(LaunchConfiguration('device'), 'ps4') or EqualsSubstitution(LaunchConfiguration('device'), 'ps5'))
     )
 
-    # quest custom node
+    # quest node for meta quest controllers
     quest_node = Node(
         package='ros_tcp_endpoint',
         executable='default_server_endpoint',
-        name='quest_joy_node',
+        name='quest_node',
         output='screen',
         parameters=[{'ROS_IP': ros_ip}],
         condition=IfCondition(EqualsSubstitution(LaunchConfiguration('device'), 'quest'))
     )
 
-    # keyboard: launch an external keyboard teleop node (default: teleop_twist_keyboard)
+    # keyboard node for keyboard teleop
     keyboard_node = Node(
         package='keyboard_joy',
         executable='joy_node',
-        name='keyboard_joy_node',
+        name='keyboard_node',
         output='screen',
         parameters=[{'mapping_yaml': keyboard_config_file}],
         condition=IfCondition(EqualsSubstitution(LaunchConfiguration('device'), 'keyboard'))
@@ -97,9 +105,10 @@ def generate_launch_description():
     return LaunchDescription([
         declare_robot_name_cmd,
         declare_device_cmd,
+        declare_joystick_device_cmd,
         declare_ros_ip_cmd,
         sobits_teleop_node,
-        joy_node,
+        joystick_node,
         quest_node,
         keyboard_node,
     ])

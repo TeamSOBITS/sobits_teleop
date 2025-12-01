@@ -12,7 +12,7 @@
 
 struct JoyMap {
   std::string joint;
-  std::string controller;
+  std::string joint_trajectory_topic;
   int mode_button;
   int fast_mode_button;
   int axis;
@@ -24,7 +24,7 @@ struct JoyMap {
 };
 
 struct CmdVelMap {
-  std::string topic;
+  std::string cmd_vel_topic;
   int mode_button;
   int fast_mode_button;
   int linear_x_axis;
@@ -59,7 +59,9 @@ private:
 
   std::vector<float> latest_axes_;
   std::vector<int> latest_buttons_;
+  bool joint_state_initialized_ = false;
   bool joy_received_ = false;
+  const double dt = 0.1;
 
   rclcpp::TimerBase::SharedPtr timer_;
   JoyMap m;
