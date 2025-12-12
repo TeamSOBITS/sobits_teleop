@@ -52,11 +52,6 @@ def generate_launch_description():
         robot_name,
         device 
     ])
-    keyboard_config_file = PathJoinSubstitution([
-        get_package_share_directory(pkg_name),
-        'config',
-        'keyboard_mappings.yaml'
-    ])
 
     # Main teleop node (uses mapping_yaml parameter)
     sobits_teleop_node = Node(
@@ -98,7 +93,6 @@ def generate_launch_description():
         executable='joy_node',
         name='keyboard_node',
         output='screen',
-        parameters=[{'mapping_yaml': keyboard_config_file}],
         condition=IfCondition(EqualsSubstitution(LaunchConfiguration('device'), 'keyboard'))
     )
 
