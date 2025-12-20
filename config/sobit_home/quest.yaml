@@ -1,0 +1,12 @@
+cmd_vel:
+  cmd_vel_topic: "/sobit_home/cmd_vel"
+  mode_axis: 6              # right trigger 
+  fast_mode_axis: 7         # right grip
+  linear_x_axis: 1          # 左スティック上下
+  linear_y_axis: 0          # 左スティック左右
+  angular_axis: 4           # 右スティック左右
+  axis_sign: -1
+  linear_scale: 0.1
+  angular_scale: 0.1
+  fast_linear_scale: 0.2
+  fast_angular_scale: 0.2

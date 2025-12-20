@@ -73,7 +73,7 @@ joints:
     joint_trajectory_topic: /sobit_home/arm_left_position_controller/joint_trajectory
     mode_button: 4           # △
     fast_mode_button: 6      # L2
-    axis: 5                  # L2/R2
+    axis: 1                  # 左スティック上下
     axis_sign: 1
     speed: 0.1
     fast_speed: 0.5
@@ -150,6 +150,16 @@ joints:
   #   min_pos: -1.5708
   #   max_pos: 1.5708
 
+poses:
+  initial_pose:
+    pose_button: [8, 2]            # shareボタン, △ボタン
+  ninja_pose:
+    pose_button: [8, 1]            # shareボタン, ◯ボタン
+  detecting_high_pose:
+    pose_button: [8, 0]            # shareボタン, ✕ボタン
+  pre_manipulation_pose:
+    pose_button: [8, 3]            # shareボタン, □ボタン
+
 cmd_vel:
   cmd_vel_topic: "/sobit_home/cmd_vel"
   mode_button: 5            # R1
@@ -157,6 +167,7 @@ cmd_vel:
   linear_x_axis: 1          # 左スティック上下
   linear_y_axis: 0          # 左スティック左右
   angular_axis: 3           # 右スティック左右
+  axis_sign: 1
   linear_scale: 0.1
   angular_scale: 0.1
   fast_linear_scale: 0.2
