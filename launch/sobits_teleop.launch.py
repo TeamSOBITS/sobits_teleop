@@ -60,7 +60,7 @@ def generate_launch_description():
         name='sobits_teleop',
         output='screen',
         parameters=[{'mapping_yaml': [config_file, '.yaml']},
-                    {'joint_states_topic': ['/', robot_name, '/joint_states']}],
+                    {'robot_name': robot_name}],
     )
 
     # joy_linux node for joy controllers (ps4, ps5)

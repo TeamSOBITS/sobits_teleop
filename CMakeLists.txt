@@ -13,9 +13,11 @@ endif()
 # find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
+find_package(rclcpp_action REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(trajectory_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
+find_package(sobits_interfaces REQUIRED)
 find_package(yaml-cpp REQUIRED)
 # uncomment the following section in order to fill in
 # further dependencies manually.
@@ -29,9 +31,11 @@ add_executable(sobits_teleop src/sobits_teleop.cpp)
 ament_target_dependencies(
   sobits_teleop
   rclcpp
+  rclcpp_action
   sensor_msgs
   trajectory_msgs
   geometry_msgs
+  sobits_interfaces
 )
 target_link_libraries(sobits_teleop yaml-cpp)
 

@@ -13,8 +13,10 @@
   <test_depend>ament_lint_common</test_depend>
 
   <depend>rclcpp</depend>
+  <depend>rclcpp_action</depend>
   <depend>sensor_msgs</depend>
   <depend>trajectory_msgs</depend>
+  <depend>sobits_interfaces</depend>
   <depend>yaml-cpp</depend>
 
   <export>
