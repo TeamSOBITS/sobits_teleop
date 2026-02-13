@@ -19,136 +19,136 @@ joints:
     fast_speed: 0.5
     min_pos: -0.8726
     max_pos: 0.8726
-  body_lift_joint:
-    joint_trajectory_topic: /sobit_home/body_position_controller/joint_trajectory
+  # body_lift_joint:
+  #   joint_trajectory_topic: /sobit_home/body_position_controller/joint_trajectory
+  #   mode_button: 3           # □
+  #   fast_mode_button: 6      # L2
+  #   axis: 1                  # 左スティック上下
+  #   axis_sign: 1
+  #   speed: 0.1
+  #   fast_speed: 0.5
+  #   min_pos: -0.4
+  #   max_pos: 0.4
+  # arm_left_shoulder_tilt_joint:
+  #   joint_trajectory_topic: /sobit_home/arm_left_position_controller/joint_trajectory
+  #   mode_button: 1           # ◯
+  #   fast_mode_button: 6      # L2
+  #   axis: 1                  # 左スティック上下
+  #   axis_sign: 1
+  #   speed: 0.1
+  #   fast_speed: 0.5
+  #   min_pos: -0.8726
+  #   max_pos: 0.8726
+  # arm_left_upper_roll_joint:
+  #   joint_trajectory_topic: /sobit_home/arm_left_position_controller/joint_trajectory
+  #   mode_button: 1           # ◯
+  #   fast_mode_button: 6      # L2
+  #   axis: 0                  # 左スティック左右
+  #   axis_sign: 1
+  #   speed: 0.1
+  #   fast_speed: 0.5
+  #   min_pos: -1.5708
+  #   max_pos: 1.5708
+  # arm_left_upper_flex_joint:
+  #   joint_trajectory_topic: /sobit_home/arm_left_position_controller/joint_trajectory
+  #   mode_button: 0           # ✕
+  #   fast_mode_button: 6      # L2
+  #   axis: 1                  # 左スティック上下
+  #   axis_sign: 1
+  #   speed: 0.1
+  #   fast_speed: 0.5
+  #   min_pos: -1.5708
+  #   max_pos: 1.5708
+  # arm_left_elbow_joint:
+  #   joint_trajectory_topic: /sobit_home/arm_left_position_controller/joint_trajectory
+  #   mode_button: 0           # ✕
+  #   fast_mode_button: 6      # L2
+  #   axis: 0                  # 左スティック左右
+  #   axis_sign: 1
+  #   speed: 0.1
+  #   fast_speed: 0.5
+  #   min_pos: -2.2689
+  #   max_pos: 2.2689
+  # arm_left_wrist_tilt_joint:
+  #   joint_trajectory_topic: /sobit_home/arm_left_position_controller/joint_trajectory
+  #   mode_button: 4           # △
+  #   fast_mode_button: 6      # L2
+  #   axis: 1                  # 左スティック上下
+  #   axis_sign: 1
+  #   speed: 0.1
+  #   fast_speed: 0.5
+  #   min_pos: -1.5708
+  #   max_pos: 1.5708
+  # arm_left_wrist_roll_joint:
+  #   joint_trajectory_topic: /sobit_home/arm_left_position_controller/joint_trajectory
+  #   mode_button: 4           # △
+  #   fast_mode_button: 6      # L2
+  #   axis: 0                  # 左スティック左右
+  #   axis_sign: 1
+  #   speed: 0.1
+  #   fast_speed: 0.5
+  #   min_pos: -1.5708
+  #   max_pos: 1.5708
+  arm_right_shoulder_tilt_joint:
+    joint_trajectory_topic: /sobit_home/arm_right_position_controller/joint_trajectory
     mode_button: 3           # □
     fast_mode_button: 6      # L2
     axis: 1                  # 左スティック上下
     axis_sign: 1
     speed: 0.1
-    fast_speed: 0.5
-    min_pos: -0.4
-    max_pos: 0.4
-  arm_left_shoulder_tilt_joint:
-    joint_trajectory_topic: /sobit_home/arm_left_position_controller/joint_trajectory
-    mode_button: 1           # ◯
-    fast_mode_button: 6      # L2
-    axis: 1                  # 左スティック上下
-    axis_sign: 1
-    speed: 0.1
-    fast_speed: 0.5
-    min_pos: -0.8726
-    max_pos: 0.8726
-  arm_left_upper_roll_joint:
-    joint_trajectory_topic: /sobit_home/arm_left_position_controller/joint_trajectory
-    mode_button: 1           # ◯
+    fast_speed: 0.3
+    min_pos: -2.618
+    max_pos: 2.618
+  arm_right_upper_roll_joint:
+    joint_trajectory_topic: /sobit_home/arm_right_position_controller/joint_trajectory
+    mode_button: 3           # □
     fast_mode_button: 6      # L2
     axis: 0                  # 左スティック左右
     axis_sign: 1
     speed: 0.1
-    fast_speed: 0.5
+    fast_speed: 0.3
     min_pos: -1.5708
     max_pos: 1.5708
-  arm_left_upper_flex_joint:
-    joint_trajectory_topic: /sobit_home/arm_left_position_controller/joint_trajectory
+  arm_right_upper_flex_joint:
+    joint_trajectory_topic: /sobit_home/arm_right_position_controller/joint_trajectory
     mode_button: 0           # ✕
     fast_mode_button: 6      # L2
-    axis: 1                  # 左スティック上下
+    axis: 0                  # 右スティック左右
     axis_sign: 1
-    speed: 0.1
-    fast_speed: 0.5
-    min_pos: -1.5708
-    max_pos: 1.5708
-  arm_left_elbow_joint:
-    joint_trajectory_topic: /sobit_home/arm_left_position_controller/joint_trajectory
+    speed: 0.15
+    fast_speed: 0.25
+    min_pos: -2.618
+    max_pos: 2.618
+  arm_right_elbow_joint:
+    joint_trajectory_topic: /sobit_home/arm_right_position_controller/joint_trajectory
     mode_button: 0           # ✕
     fast_mode_button: 6      # L2
+    axis: 1                  # 右スティック上下
+    axis_sign: 1
+    speed: 0.15
+    fast_speed: 0.3
+    min_pos: 0.0
+    max_pos: 2.4434
+  arm_right_wrist_tilt_joint:
+    joint_trajectory_topic: /sobit_home/arm_right_position_controller/joint_trajectory
+    mode_button: 1           # ◯
+    fast_mode_button: 6      # L2
+    axis: 1                  # L2/R2
+    axis_sign: 1
+    speed: 0.1
+    fast_speed: 0.3
+    min_pos: -1.5708
+    max_pos: 1.5708
+  arm_right_wrist_roll_joint:
+    joint_trajectory_topic: /sobit_home/arm_right_position_controller/joint_trajectory
+    mode_button: 1           # ◯
+    fast_mode_button: 6      # L2
     axis: 0                  # 左スティック左右
     axis_sign: 1
     speed: 0.1
-    fast_speed: 0.5
-    min_pos: -2.2689
-    max_pos: 2.2689
-  arm_left_wrist_tilt_joint:
-    joint_trajectory_topic: /sobit_home/arm_left_position_controller/joint_trajectory
-    mode_button: 4           # △
-    fast_mode_button: 6      # L2
-    axis: 1                  # 左スティック上下
-    axis_sign: 1
-    speed: 0.1
-    fast_speed: 0.5
-    min_pos: -1.5708
-    max_pos: 1.5708
-  arm_left_wrist_roll_joint:
-    joint_trajectory_topic: /sobit_home/arm_left_position_controller/joint_trajectory
-    mode_button: 4           # △
-    fast_mode_button: 6      # L2
-    axis: 0                  # 左スティック左右
-    axis_sign: 1
-    speed: 0.1
-    fast_speed: 0.5
-    min_pos: -1.5708
-    max_pos: 1.5708
-  # arm_right_shoulder_tilt_joint:
-  #   joint_trajectory_topic: /sobit_home/arm_right_position_controller/joint_trajectory
-  #   mode_button: 4           # △
-  #   fast_mode_button: 6      # L2
-  #   axis: 1                  # 左スティック上下
-  #   axis_sign: 1
-  #   speed: 0.01
-  #   fast_speed: 0.05
-  #   min_pos: -0.8726
-  #   max_pos: 0.8726
-  # arm_right_upper_roll_joint:
-  #   joint_trajectory_topic: /sobit_home/arm_right_position_controller/joint_trajectory
-  #   mode_button: 4           # △
-  #   fast_mode_button: 6      # L2
-  #   axis: 0                  # 左スティック左右
-  #   axis_sign: 1
-  #   speed: 0.01
-  #   fast_speed: 0.05
-  #   min_pos: -1.5708
-  #   max_pos: 1.5708
-  # arm_right_upper_flex_joint:
-  #   joint_trajectory_topic: /sobit_home/arm_right_position_controller/joint_trajectory
-  #   mode_button: 4           # △
-  #   fast_mode_button: 6      # L2
-  #   axis: 3                  # 右スティック左右
-  #   axis_sign: 1
-  #   speed: 0.01
-  #   fast_speed: 0.05
-  #   min_pos: -1.5708
-  #   max_pos: 1.5708
-  # arm_right_elbow_joint:
-  #   joint_trajectory_topic: /sobit_home/arm_right_position_controller/joint_trajectory
-  #   mode_button: 4           # △
-  #   fast_mode_button: 6      # L2
-  #   axis: 4                  # 右スティック上下
-  #   axis_sign: 1
-  #   speed: 0.01
-  #   fast_speed: 0.05
-  #   min_pos: -2.2689
-  #   max_pos: 0.0
-  # arm_right_wrist_tilt_joint:
-  #   joint_trajectory_topic: /sobit_home/arm_right_position_controller/joint_trajectory
-  #   mode_button: 4           # △
-  #   fast_mode_button: 6      # L2
-  #   axis: 5                  # L2/R2
-  #   axis_sign: 1
-  #   speed: 0.01
-  #   fast_speed: 0.05
-  #   min_pos: -1.5708
-  #   max_pos: 1.5708
-  # arm_right_wrist_roll_joint:
-  #   joint_trajectory_topic: /sobit_home/arm_right_position_controller/joint_trajectory
-  #   mode_button: 4           # △
-  #   fast_mode_button: 6      # L2
-  #   axis: 0                  # 左スティック左右
-  #   axis_sign: 1
-  #   speed: 0.01
-  #   fast_speed: 0.05
-  #   min_pos: -1.5708
-  #   max_pos: 1.5708
+    fast_speed: 0.3
+    min_pos: 0.0
+    max_pos: 6.2832
 
 poses:
   initial_pose:
@@ -168,7 +168,7 @@ cmd_vel:
   linear_y_axis: 0          # 左スティック左右
   angular_axis: 3           # 右スティック左右
   axis_sign: 1
-  linear_scale: 0.1
-  angular_scale: 0.1
-  fast_linear_scale: 0.2
-  fast_angular_scale: 0.2
+  linear_scale: 0.2
+  angular_scale: 0.3
+  fast_linear_scale: 0.5
+  fast_angular_scale: 0.6
