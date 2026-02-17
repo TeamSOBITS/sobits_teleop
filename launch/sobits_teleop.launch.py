@@ -36,7 +36,7 @@ def generate_launch_description():
     )
     declare_ros_ip_cmd = DeclareLaunchArgument(
         'ros_ip',
-        default_value='0.0.0.0',
+        default_value='192.168.11.14',
         description='ROS IP address for ros_tcp_endpoint (Meta Quest controllers)'
     )
 
@@ -46,20 +46,28 @@ def generate_launch_description():
     joystick_device = LaunchConfiguration('joystick_device')
     ros_ip = LaunchConfiguration('ros_ip')
 
-    config_file = PathJoinSubstitution([
+    robot_config = PathJoinSubstitution([
+        get_package_share_directory(pkg_name), 
+        'config',
+        robot_name,
+        'robot' 
+    ])
+
+    controller_config = PathJoinSubstitution([
         get_package_share_directory(pkg_name), 
         'config',
         robot_name,
         device 
     ])
 
-    # Main teleop node (uses mapping_yaml parameter)
+    # Main teleop node (loads parameters from YAML)
     sobits_teleop_node = Node(
         package=pkg_name,
         executable='sobits_teleop',
         name='sobits_teleop',
         output='screen',
-        parameters=[{'mapping_yaml': [config_file, '.yaml']},
+        parameters=[[robot_config, '.yaml'],
+                    [controller_config, '.yaml'],
                     {'robot_name': robot_name}],
     )
 

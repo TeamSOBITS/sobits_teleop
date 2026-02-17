@@ -18,7 +18,6 @@ find_package(sensor_msgs REQUIRED)
 find_package(trajectory_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(sobits_interfaces REQUIRED)
-find_package(yaml-cpp REQUIRED)
 # uncomment the following section in order to fill in
 # further dependencies manually.
 # find_package(<dependency> REQUIRED)
@@ -37,7 +36,6 @@ ament_target_dependencies(
   geometry_msgs
   sobits_interfaces
 )
-target_link_libraries(sobits_teleop yaml-cpp)
 
 install(TARGETS sobits_teleop
   DESTINATION lib/${PROJECT_NAME})

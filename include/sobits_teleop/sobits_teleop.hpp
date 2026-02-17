@@ -9,14 +9,14 @@
 #include <string>
 #include <map>
 #include <vector>
-#include <yaml-cpp/yaml.h>
 
 
-struct JoyMap {
-  std::string joint;
+struct JointMap {
+  std::string joint_group;
+  std::string joint_name;
   std::string joint_trajectory_topic;
-  int mode_button;
-  int fast_mode_button;
+  int button;
+  int fast_button;
   int axis;
   int axis_sign;
   float speed;
@@ -27,15 +27,16 @@ struct JoyMap {
 
 struct PoseMap {
   std::string pose_name;
-  std::vector<int> pose_button;
+  int trigger;
+  int button;
 };
 
 struct CmdVelMap {
-  std::string cmd_vel_topic;
-  int mode_button;
-  int mode_axis;
-  int fast_mode_button;
-  int fast_mode_axis;
+  std::string topic;
+  int button;
+  int fast_button;
+  int axis;
+  int fast_axis;
   int linear_x_axis;
   int linear_y_axis;
   int angular_axis;
@@ -51,33 +52,42 @@ public:
   SOBITSTeleop();
 
 private:
-  void load_mapping(const std::string &yaml_path);
+  void load_parameters();
   void joint_state_callback(const sensor_msgs::msg::JointState::SharedPtr msg);
   void joy_callback(const sensor_msgs::msg::Joy::SharedPtr msg);
-  void joy_loop();
+  void teleop();
 
-  rclcpp::Subscription<sensor_msgs::msg::Joy>::SharedPtr joy_sub_;
-  rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr joint_state_sub_;
+  rclcpp::Subscription<sensor_msgs::msg::Joy>::SharedPtr joy_sub;
+  rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr joint_state_sub;
 
-  rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_pub_;
+  rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_pub;
   std::map<std::string,
     rclcpp::Publisher<trajectory_msgs::msg::JointTrajectory>::SharedPtr>
-    joint_pub_;
+    joint_pub;
 
-  rclcpp_action::Client<sobits_interfaces::action::MoveToPose>::SharedPtr move_to_pose_client_;
+  rclcpp_action::Client<sobits_interfaces::action::MoveToPose>::SharedPtr move_to_pose_client;
 
-  std::map<std::string, JoyMap> joint_mappings_;
-  std::map<std::string, double> joint_pos_;
-  std::vector<PoseMap> pose_mappings_;
+  rclcpp::TimerBase::SharedPtr timer;
 
-  std::vector<float> latest_axes_;
-  std::vector<int> latest_buttons_;
-  std::vector<int> previous_buttons_;
-  bool joint_state_initialized_ = false;
-  bool joy_received_ = false;
+  bool joint_state_initialized = false;
+  bool joy_received = false;
+
+  std::string robot_name;
+  std::string joint_states_topic;
+  std::vector<std::string> joint_groups;
+  std::vector<std::string> joint_names;
+  std::map<std::string, JointMap> joint_mappings;
+  std::map<std::string, double> joint_pos;
   const double dt = 0.1;
 
-  rclcpp::TimerBase::SharedPtr timer_;
-  JoyMap joy_map_;
-  CmdVelMap cmd_vel_map_;
+  std::vector<std::string> pose_list;
+  std::vector<PoseMap> pose_mappings;
+
+  std::vector<float> latest_axes;
+  std::vector<int> latest_buttons;
+  std::vector<int> previous_buttons;
+
+  JointMap jm;
+  PoseMap pm;
+  CmdVelMap cvm;
 };
