@@ -2,10 +2,10 @@
   ros__parameters:
   
     robot_topic_name:
-      joint_states_topic : /sobit_home/joint_states
+      joint_states_topic : joint_states
       joint_trajectory_topic:
-        head : /sobit_home/head_position_controller/joint_trajectory
-        body : /sobit_home/body_position_controller/joint_trajectory
-        arm_left : /sobit_home/arm_left_position_controller/joint_trajectory
-        # arm_right : /sobit_home/arm_right_position_controller/joint_trajectory
-      cmd_vel_topic : /sobit_home/cmd_vel
+        head : head_position_controller/joint_trajectory
+        body : body_position_controller/joint_trajectory
+        arm_left : arm_left_position_controller/joint_trajectory
+        # arm_right : arm_right_position_controller/joint_trajectory
+      cmd_vel_topic : cmd_vel

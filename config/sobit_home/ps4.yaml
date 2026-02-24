@@ -6,7 +6,7 @@
       - head
       - body
       - arm_left
-      - arm_right
+      # - arm_right
       head:
         names:
         - head_tilt_joint
