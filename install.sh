@@ -11,6 +11,7 @@ cd ..
 ros_packages=(
     "keyboard_joy"
     "ros_tcp_endpoint"
+    "sobits_interfaces"
 )
 
 #Clone all packages
