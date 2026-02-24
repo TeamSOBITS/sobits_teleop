@@ -7,10 +7,8 @@ SOBITSTeleop::SOBITSTeleop()
         .allow_undeclared_parameters(true)
         .automatically_declare_parameters_from_overrides(true))
 {
-  this->get_parameter("robot_name", robot_name);
-
   move_to_pose_client = rclcpp_action::create_client<sobits_interfaces::action::MoveToPose>(
-    this, "/" + robot_name + "/move_to_pose");
+      this, "move_to_pose");
 
   joy_sub = create_subscription<sensor_msgs::msg::Joy>(
     "joy", 10,

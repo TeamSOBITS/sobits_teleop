@@ -66,9 +66,9 @@ def generate_launch_description():
         executable='sobits_teleop',
         name='sobits_teleop',
         output='screen',
+        namespace=robot_name,
         parameters=[[robot_config, '.yaml'],
-                    [controller_config, '.yaml'],
-                    {'robot_name': robot_name}],
+                    [controller_config, '.yaml']],
     )
 
     # joy_linux node for joy controllers (ps4, ps5)
@@ -77,6 +77,7 @@ def generate_launch_description():
         executable='joy_linux_node',
         name='joystick_node',
         output='screen',
+        namespace=robot_name,
         parameters=[
             {'dev': joystick_device},
             {'deadzone': 0.05},
@@ -91,6 +92,7 @@ def generate_launch_description():
         executable='default_server_endpoint',
         name='quest_node',
         output='screen',
+        namespace=robot_name,
         parameters=[{'ROS_IP': ros_ip}],
         condition=IfCondition(EqualsSubstitution(LaunchConfiguration('device'), 'quest'))
     )
@@ -101,6 +103,7 @@ def generate_launch_description():
         executable='joy_node',
         name='keyboard_node',
         output='screen',
+        namespace=robot_name,
         condition=IfCondition(EqualsSubstitution(LaunchConfiguration('device'), 'keyboard'))
     )
 
