@@ -1,5 +1,5 @@
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, ExecuteProcess
 from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, EqualsSubstitution
 from launch_ros.actions import Node
@@ -71,6 +71,12 @@ def generate_launch_description():
                     [controller_config, '.yaml']],
     )
 
+    ds4drv_cmd = ExecuteProcess(
+        cmd=['ds4drv'],
+        output='screen',
+        condition=IfCondition(EqualsSubstitution(LaunchConfiguration('device'), 'ps4'))
+    )
+
     # joy_linux node for joy controllers (ps4, ps5)
     joystick_node = Node(
         package='joy_linux',
@@ -83,6 +89,7 @@ def generate_launch_description():
             {'deadzone': 0.05},
             {'autorepeat_rate': 20.0}
         ],
+        arguments=['--ros-args', '--log-level', 'fatal'],
         condition=IfCondition(EqualsSubstitution(LaunchConfiguration('device'), 'ps4') or EqualsSubstitution(LaunchConfiguration('device'), 'ps5'))
     )
 
@@ -113,6 +120,7 @@ def generate_launch_description():
         declare_joystick_device_cmd,
         declare_ros_ip_cmd,
         sobits_teleop_node,
+        ds4drv_cmd,
         joystick_node,
         quest_node,
         keyboard_node,
