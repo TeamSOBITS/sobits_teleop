@@ -1,0 +1,10 @@
+/**:
+  ros__parameters:
+  
+    robot_topic_name:
+      joint_states_topic : joint_states
+      joint_trajectory_topic:
+        all: joint_trajectory_controller/joint_trajectory
+        # head : head_position_controller/joint_trajectory
+        # arm : arm_position_controller/joint_trajectory
+      cmd_vel_topic : cmd_vel
