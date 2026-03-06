@@ -1,0 +1,13 @@
+/**:
+  ros__parameters:
+
+    control_velocity:
+      axis : 6              # right trigger
+      fast_axis : 7         # right grip
+      linear_x_axis : 1     # 左スティック上下
+      angular_axis : 0      # 右スティック左右
+      axis_sign : 1
+      linear_scale : 0.1
+      angular_scale : 0.3
+      fast_linear_scale : 0.2
+      fast_angular_scale : 0.6
