@@ -34,6 +34,14 @@ sudo apt-get install -y \
     jstest-gtk \
     ros-$ROS_DISTRO-joy-linux
 
+# Download ds4drv for dualshock 4
+sudo apt update
+sudo pip install ds4drv --break-system-packages
+sudo apt install bluez -y
+sudo sed -i 's/SafeConfigParser/ConfigParser/g' /usr/local/lib/python3.12/dist-packages/ds4drv/config.py
+sudo pip install evdev==1.8.0 --break-system-packages
+
+
 # Go back to previous directory
 cd ${DIR}
 
