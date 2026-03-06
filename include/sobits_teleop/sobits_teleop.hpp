@@ -9,7 +9,13 @@
 #include <string>
 #include <map>
 #include <vector>
+#include <urdf/model.h>
 
+
+struct Limit { 
+  double lower;
+  double upper;
+};
 
 struct JointMap {
   std::string joint_group;
@@ -52,6 +58,8 @@ public:
   SOBITSTeleop();
 
 private:
+  bool parse_urdf_limits(const std::string & urdf_xml);
+  void load_joint_limits();
   void load_parameters();
   void joint_state_callback(const sensor_msgs::msg::JointState::SharedPtr msg);
   void joy_callback(const sensor_msgs::msg::Joy::SharedPtr msg);
@@ -72,6 +80,15 @@ private:
   bool joint_state_initialized = false;
   bool joy_received = false;
 
+  std::string robot_description_source_node;
+  std::shared_ptr<rclcpp::AsyncParametersClient> async_param_client;
+  std::shared_future<std::vector<rclcpp::Parameter>> robot_desc_future;
+  rclcpp::TimerBase::SharedPtr urdf_timer;
+  bool urdf_loaded = false;
+  bool robot_desc_requested = false;
+
+  std::unordered_map<std::string, Limit> joint_limits;
+
   std::string robot_name;
   std::string joint_states_topic;
   std::vector<std::string> joint_groups;
@@ -87,6 +104,7 @@ private:
   std::vector<int> latest_buttons;
   std::vector<int> previous_buttons;
 
+  Limit lim;
   JointMap jm;
   PoseMap pm;
   CmdVelMap cvm;

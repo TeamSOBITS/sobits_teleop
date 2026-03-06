@@ -14,11 +14,89 @@ SOBITSTeleop::SOBITSTeleop()
     "joy", 10,
     std::bind(&SOBITSTeleop::joy_callback, this, std::placeholders::_1));
 
+  async_param_client = std::make_shared<rclcpp::AsyncParametersClient>(this, "robot_state_publisher");
+
+  urdf_timer = this->create_wall_timer(
+    std::chrono::milliseconds(200),
+    std::bind(&SOBITSTeleop::load_joint_limits, this));
+
   load_parameters();
 
   timer = create_wall_timer(
     std::chrono::milliseconds(50),
     std::bind(&SOBITSTeleop::teleop, this));
+}
+
+void SOBITSTeleop::load_joint_limits()
+{
+  if (urdf_loaded) return;
+
+  if (!async_param_client->service_is_ready()) {
+    RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 3000,
+      "Parameter service not ready for %s", robot_description_source_node.c_str());
+    return;
+  }
+
+  if (!robot_desc_requested) {
+    robot_desc_future = async_param_client->get_parameters({"robot_description"});
+    robot_desc_requested = true;
+    return;
+  }
+
+  if (robot_desc_future.wait_for(std::chrono::milliseconds(1)) != std::future_status::ready) {
+    return;
+  }
+
+  std::vector<rclcpp::Parameter> params;
+  try {
+    params = robot_desc_future.get();
+  } catch (...) {
+    robot_desc_requested = false;
+    return;
+  }
+  robot_desc_requested = false;
+
+  if (params.empty() || params[0].get_type() != rclcpp::ParameterType::PARAMETER_STRING) return;
+
+  const std::string urdf_xml = params[0].as_string();
+  if (urdf_xml.empty()) return;
+
+  if (!parse_urdf_limits(urdf_xml)) {
+    RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 3000, "Failed to parse URDF limits");
+    return;
+  }
+
+  urdf_loaded = true;
+  urdf_timer.reset();
+  RCLCPP_INFO(get_logger(), "Joint limits loaded (%zu joints)", joint_limits.size());
+}
+
+bool SOBITSTeleop::parse_urdf_limits(const std::string & urdf_xml)
+{
+  urdf::Model model;
+
+  if (!model.initString(urdf_xml)) {
+    RCLCPP_ERROR(this->get_logger(), "Failed to parse URDF");
+    return false;
+  }
+
+  joint_limits.clear();
+
+  for (const auto & joint_pair : model.joints_) {
+
+    const auto & joint = joint_pair.second;
+
+    if (!joint) continue;
+
+    if (joint->limits) {
+      lim.lower = joint->limits->lower;
+      lim.upper = joint->limits->upper;
+
+      joint_limits[joint->name] = lim;
+    }
+  }
+
+  return true;
 }
 
 void SOBITSTeleop::load_parameters()
@@ -50,8 +128,6 @@ void SOBITSTeleop::load_parameters()
         this->get_parameter("control_joints." + joint_group + "." + joint_name + ".axis_sign",   jm.axis_sign);
         this->get_parameter("control_joints." + joint_group + "." + joint_name + ".speed",       jm.speed);
         this->get_parameter("control_joints." + joint_group + "." + joint_name + ".fast_speed",  jm.fast_speed);
-        this->get_parameter("control_joints." + joint_group + "." + joint_name + ".min_pos",     jm.min_pos);
-        this->get_parameter("control_joints." + joint_group + "." + joint_name + ".max_pos",     jm.max_pos);
         this->get_parameter("robot_topic_name.joint_trajectory_topic." + joint_group,            jm.joint_trajectory_topic);
 
         joint_mappings[joint_name] = jm;
@@ -126,7 +202,8 @@ void SOBITSTeleop::teleop()
 
     double delta_pos = axis_val * m.axis_sign * (latest_buttons[m.fast_button] == 1 ? m.fast_speed : m.speed);
     joint_pos[m.joint_name] += delta_pos;
-    joint_pos[m.joint_name] = std::clamp(joint_pos[m.joint_name], m.min_pos, m.max_pos);
+    auto [actual_min, actual_max] = std::minmax({joint_limits[m.joint_name].lower, joint_limits[m.joint_name].upper});
+    joint_pos[m.joint_name] = std::clamp(joint_pos[m.joint_name], actual_min, actual_max);
 
     auto &traj = trajs[m.joint_trajectory_topic];
     traj.joint_names.push_back(m.joint_name);

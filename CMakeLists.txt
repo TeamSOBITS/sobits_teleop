@@ -18,6 +18,8 @@ find_package(sensor_msgs REQUIRED)
 find_package(trajectory_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(sobits_interfaces REQUIRED)
+find_package(urdf REQUIRED)
+
 # uncomment the following section in order to fill in
 # further dependencies manually.
 # find_package(<dependency> REQUIRED)
@@ -35,6 +37,7 @@ ament_target_dependencies(
   trajectory_msgs
   geometry_msgs
   sobits_interfaces
+  urdf
 )
 
 install(TARGETS sobits_teleop
