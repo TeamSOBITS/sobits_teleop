@@ -17,8 +17,6 @@ def generate_launch_description():
         # default_value="sobit_edu",
         # default_value="sobit_mini",
         # default_value="sobit_light",
-        # default_value="hsr_sim",
-        # default_value="hsrb_robot"
         description='Robot name used to select configuration file'
     )
     declare_device_cmd = DeclareLaunchArgument(
@@ -36,8 +34,13 @@ def generate_launch_description():
     )
     declare_ros_ip_cmd = DeclareLaunchArgument(
         'ros_ip',
-        default_value='192.168.11.14',
+        default_value='0.0.0.0',
         description='ROS IP address for ros_tcp_endpoint (Meta Quest controllers)'
+    )
+    declare_use_ds4drv_cmd = DeclareLaunchArgument(
+        'use_ds4drv',
+        default_value='True',
+        description='Whether to launch ds4drv for PS4 controller support'
     )
 
     # LaunchConfiguration handles runtime values
@@ -45,7 +48,7 @@ def generate_launch_description():
     device = LaunchConfiguration('device')
     joystick_device = LaunchConfiguration('joystick_device')
     ros_ip = LaunchConfiguration('ros_ip')
-
+    use_ds4drv = LaunchConfiguration('use_ds4drv')
     robot_config = PathJoinSubstitution([
         get_package_share_directory(pkg_name), 
         'config',
@@ -74,7 +77,7 @@ def generate_launch_description():
     ds4drv_cmd = ExecuteProcess(
         cmd=['ds4drv'],
         output='screen',
-        condition=IfCondition(EqualsSubstitution(LaunchConfiguration('device'), 'ps4'))
+        condition=IfCondition(EqualsSubstitution(LaunchConfiguration('device'), 'ps4') and EqualsSubstitution(LaunchConfiguration('use_ds4drv'), 'True'))
     )
 
     # joy_linux node for joy controllers (ps4, ps5)
@@ -119,6 +122,7 @@ def generate_launch_description():
         declare_device_cmd,
         declare_joystick_device_cmd,
         declare_ros_ip_cmd,
+        declare_use_ds4drv_cmd,
         sobits_teleop_node,
         ds4drv_cmd,
         joystick_node,
