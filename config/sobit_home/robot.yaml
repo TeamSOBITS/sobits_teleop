@@ -7,5 +7,5 @@
         head : head_position_controller/joint_trajectory
         body : body_position_controller/joint_trajectory
         arm_left : arm_left_position_controller/joint_trajectory
-        # arm_right : arm_right_position_controller/joint_trajectory
+        arm_right : arm_right_position_controller/joint_trajectory
       cmd_vel_topic : cmd_vel
