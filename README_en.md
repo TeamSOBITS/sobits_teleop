@@ -60,9 +60,9 @@ First, please set up the following environment before proceeding to the next ins
 
 | System  | Version |
 | --- | --- |
-| Ubuntu | 22.04 (Noble Numbat) |
-| ROS    | Humble Hawksbill|
-| Python | 3.10~ |
+| Ubuntu | 24.04 (Noble Numbat) |
+| ROS    | Jazzy Jalisco|
+| Python | 3.12~ |
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -115,50 +115,79 @@ Basic Workflow for Using sobits_teleop
 
 ## Create Config File
 
-Select the robot and the input device to be used for teleoperation (e.g., PS4 controller, Meta Quest).
+Select the devices to be used for the robot and teleoperation (e.g., PS4, Meta Quest, etc.).
 
-Create a configuration file at: `sobits_teleop/config/{robot}/{device}.yaml`
-
-Then, specify the joints you want to control and the `cmd_vel` settings.
+Configure the robot settings in sobits_teleop/config/{robot_name}/{robot_name}.yaml and the controller settings in sobits_teleop/config/{robot_name}/{device_name}.yaml.
 
 <details>
-<summary>Example:</summary>
+<summary>robot.yaml(例) </summary>
 
 ```yaml
-joints:
-  head_tilt_joint:
-    joint_trajectory_topic: /sobit_home/head_position_controller/joint_trajectory
-    mode_button: 2           # △
-    fast_mode_button: 6      # L2
-    axis: 1                  # Left stick (up/down)
-    axis_sign: 1
-    speed: 0.1
-    fast_speed: 0.5
-    min_pos: -0.7853
-    max_pos: 0.52
 
-  head_pan_joint:
-    joint_trajectory_topic: /sobit_home/head_position_controller/joint_trajectory
-    mode_button: 2           # △
-    fast_mode_button: 6      # L2
-    axis: 0                  # Left stick (left/right)
-    axis_sign: 1
-    speed: 0.1
-    fast_speed: 0.5
-    min_pos: -0.8726
-    max_pos: 0.8726
+/**:
+  ros__parameters:
+  
+    robot_topic_name:
+      joint_states_topic: joint_states  # Specify the topic name for joint_states
+      joint_trajectory_topic: # Specify the joint_trajectory topic names for each part
+        head : head_position_controller/joint_trajectory
+        body : body_position_controller/joint_trajectory
+        arm_left : arm_left_position_controller/joint_trajectory
+        arm_right : arm_right_position_controller/joint_trajectory
+      cmd_vel_topic : cmd_vel # Specify the topic name for command_velocity
+```
 
-cmd_vel:
-  cmd_vel_topic: "/sobit_home/cmd_vel"
-  mode_button: 5             # R1
-  fast_mode_button: 7        # R2
-  linear_x_axis: 1           # Left stick (up/down)
-  linear_y_axis: 0           # Left stick (left/right)
-  angular_axis: 3            # Right stick (left/right)
-  linear_scale: 0.1
-  angular_scale: 0.1
-  fast_linear_scale: 0.2
-  fast_angular_scale: 0.2
+</details>
+
+<details>
+<summary>{使用するデバイス}.yaml(例) </summary>
+
+```yaml
+
+/**:
+  ros__parameters:
+
+control_joints: # Define the joint_trajectory_controllers to be operated
+      groups:
+      - head
+      - body
+      - arm_left
+      - arm_right
+      head:
+        names: # Define the joints within the joint_trajectory_controller
+        - head_tilt_joint
+        - head_pan_joint
+        head_tilt_joint:
+          button : 2           # Trigger button definition
+          fast_button : 6      # Increases movement speed while this button is held
+          axis : 1              # Controlled by joystick tilt
+          axis_sign : 1         # Invert joystick direction (positive/negative)
+          speed : 0.1           # Speed when the trigger button is pressed
+          fast_speed : 0.5      # Speed when the fast_button is pressed
+      ...
+
+    control_poses: # Move the robot to predefined poses
+      trigger : 8        # Activation trigger definition
+      pose_list:         # List of predefined poses
+        - initial_pose
+        - ninja_pose
+        - detecting_high_pose
+        - pre_manipulation_pose
+      initial_pose:
+        button : 2             # Sets to initial_pose when pressed while the trigger is active
+      ...
+
+    control_velocity: # Control mobile base (wheels)
+      button : 5               # Activation trigger definition
+      fast_button : 7          # Increases movement speed while this button is held
+      linear_x_axis : 1        # Forward/backward movement via joystick tilt
+      linear_y_axis : 0        # Lateral (left/right) movement via joystick tilt
+      angular_axis : 3         # Rotation (yaw) via joystick tilt
+      axis_sign : 1            # Invert rotation direction
+      linear_scale : 0.1       # Linear velocity scale
+      angular_scale : 0.3      # Angular velocity scale
+      fast_linear_scale : 0.2  # Linear velocity scale when fast_button is pressed
+      fast_angular_scale : 0.6 # Angular velocity scale when fast_button is pressed
 ```
 
 </details>
@@ -168,9 +197,11 @@ cmd_vel:
 
 ### Run Teleop Node
 
-Connect the input device to your PC via Bluetooth or another method, and verify that the joystick controller is recognized using the jstest-gtk command.
+Connect the device to your PC via Bluetooth or other means. When using a DualShock controller, run the `jstest-gtk` command to confirm the connection status.
 After that, configure the launch file and run it.
 
+> [!Note]
+> When using ds4drv inside a Docker container, you must mount `/dev/input/` and `/run/udev`
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 <!-- MILESTONE -->
