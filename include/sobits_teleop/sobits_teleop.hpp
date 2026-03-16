@@ -9,8 +9,14 @@
 #include <string>
 #include <map>
 #include <vector>
+#include <cmath>
 #include <urdf/model.h>
 
+#include <geometry_msgs/msg/transform_stamped.hpp>
+#include <tf2_ros/buffer.h>
+#include <tf2_ros/transform_listener.h>
+#include <tf2_ros/transform_broadcaster.h>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 
 struct Limit { 
   double lower;
@@ -51,6 +57,41 @@ struct CmdVelMap {
   double angular_scale;
   double fast_linear_scale;
   double fast_angular_scale;
+};
+
+struct QuestHeadMap {
+
+  std::string head_joint_trajectory_topic;
+  std::string body_joint_trajectory_topic;
+  std::string vertical;
+  std::string horizontal;
+  std::string body_lift;
+  int head_mode;
+  int vertical_sign;
+  int horizontal_sign;
+  float scale;
+};
+
+struct QuestControllerMap {
+  std::string controller_group;
+  std::string controller_name;
+  std::string arm;
+  std::string base_frame_name;
+  std::string end_effector_frame_name;
+  std::string target_frame_name;
+  std::string hand;
+  std::string head_joint_trajectory_topic;
+  std::string arm_joint_trajectory_topic;
+  std::string hand_joint_trajectory_topic;
+  std::string type_joint;
+  std::vector<std::string> names;
+  int arm_mode;
+  float scale;
+  int gripper_mode;
+  int axis;
+  int axis_sign;
+  float speed;
+  int type_axis;
 };
 
 class SOBITSTeleop : public rclcpp::Node {
@@ -94,6 +135,7 @@ private:
   std::vector<std::string> joint_groups;
   std::vector<std::string> joint_names;
   std::map<std::string, JointMap> joint_mappings;
+  std::map<std::string, QuestControllerMap> quest_controller_mappings;
   std::map<std::string, double> joint_pos;
   const double dt = 0.1;
 
@@ -104,8 +146,54 @@ private:
   std::vector<int> latest_buttons;
   std::vector<int> previous_buttons;
 
+  std::vector<std::string> controller_types;
+
+  bool head_control_enabled = false;
+  bool arm_control_enabled = false;
+  bool gripper_control_enabled = false;
+
+  bool head_tracking = false;
+  bool arm_tracking = false;
+
+  tf2::Transform last_tf;
+  tf2::Transform current_tf;
+  tf2::Transform T_delta;
+  double last_pan, last_tilt, last_body_lift;
+  double roll, pitch, yaw;
+  double dz;
+  double pan_target, tilt_target, body_lift_target;
+  double target_rad = 0.0;
+
+  tf2::Transform last_tf_r;
+  tf2::Transform current_tf_r;
+  tf2::Transform last_tf_l;
+  tf2::Transform current_tf_l;
+  tf2::Transform current_tf_ee_r;
+  tf2::Transform last_tf_ee_r;
+  tf2::Transform current_tf_ee_l;
+  tf2::Transform last_tf_ee_l;
+  tf2::Transform T_delta_l;
+  tf2::Transform T_target_l;
+  tf2::Transform T_delta_r;
+  tf2::Transform T_target_r;
+  tf2::Transform T_delta_r_align;
+  tf2::Transform T_delta_l_align;
+
+  tf2::Quaternion q_align;
+  tf2::Transform T_align;
+
+  geometry_msgs::msg::TransformStamped tf_msg;
+  geometry_msgs::msg::TransformStamped target_msg_r;
+  geometry_msgs::msg::TransformStamped target_msg_l;
+
+  std::shared_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster;
+  std::shared_ptr<tf2_ros::Buffer> tf_buffer;
+  std::shared_ptr<tf2_ros::TransformListener> tf_listener;
+
   Limit lim;
   JointMap jm;
   PoseMap pm;
   CmdVelMap cvm;
+  QuestControllerMap qcm;
+  QuestHeadMap qhm;
 };

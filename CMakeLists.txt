@@ -17,6 +17,8 @@ find_package(rclcpp_action REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(trajectory_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
+find_package(tf2_ros REQUIRED)
+find_package(tf2_geometry_msgs REQUIRED)
 find_package(sobits_interfaces REQUIRED)
 find_package(urdf REQUIRED)
 
@@ -36,11 +38,14 @@ ament_target_dependencies(
   sensor_msgs
   trajectory_msgs
   geometry_msgs
+  tf2_ros
+  tf2_geometry_msgs
   sobits_interfaces
   urdf
 )
 
-install(TARGETS sobits_teleop
+install(TARGETS 
+  sobits_teleop
   DESTINATION lib/${PROJECT_NAME})
   
 install(DIRECTORY include/
