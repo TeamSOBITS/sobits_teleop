@@ -580,11 +580,6 @@ void SOBITSTeleop::teleop()
           target_rad = std::clamp(target_rad, 
             std::min(joint_limits[joint_name].lower, joint_limits[joint_name].upper), 
             std::max(joint_limits[joint_name].lower, joint_limits[joint_name].upper));
-
-          if (joint_name == "hand_right_finger_c_mcp_joint" || joint_name == "hand_right_finger_c_ip_joint") {
-            RCLCPP_INFO(this->get_logger(), "%s target_rad : %.2f", joint_name.c_str(), target_rad);
-            RCLCPP_INFO(this->get_logger(), "%s joint_pos : %.2f", joint_name.c_str(), joint_pos[joint_name]);
-          }
           traj.joint_names.push_back(joint_name);
           p.positions.push_back(target_rad);
         }
