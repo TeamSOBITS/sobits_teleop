@@ -120,6 +120,8 @@ private:
 
   bool joint_state_initialized = false;
   bool joy_received = false;
+  bool requires_joint_states = false;
+  bool has_quest_controls = false;
 
   std::string robot_description_source_node;
   std::shared_ptr<rclcpp::AsyncParametersClient> async_param_client;

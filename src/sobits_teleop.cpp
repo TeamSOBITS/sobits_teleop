@@ -32,6 +32,7 @@ SOBITSTeleop::SOBITSTeleop()
 
 void SOBITSTeleop::load_joint_limits()
 {
+  if (!requires_joint_states) return;
   if (urdf_loaded) return;
 
   if (!async_param_client->service_is_ready()) {
@@ -105,9 +106,11 @@ bool SOBITSTeleop::parse_urdf_limits(const std::string & urdf_xml)
 void SOBITSTeleop::load_parameters()
 {
   this->get_parameter("robot_topic_name.joint_states_topic", joint_states_topic);
-  joint_state_sub = create_subscription<sensor_msgs::msg::JointState>(
-    joint_states_topic, 10,
-    std::bind(&SOBITSTeleop::joint_state_callback, this, std::placeholders::_1));
+  if (!joint_states_topic.empty()) {
+    joint_state_sub = create_subscription<sensor_msgs::msg::JointState>(
+      joint_states_topic, 10,
+      std::bind(&SOBITSTeleop::joint_state_callback, this, std::placeholders::_1));
+  }
 
   this->get_parameter("robot_topic_name.cmd_vel_topic", cvm.topic);
   cmd_vel_pub = this->create_publisher<geometry_msgs::msg::Twist>(
@@ -137,6 +140,7 @@ void SOBITSTeleop::load_parameters()
       }
     }
     RCLCPP_INFO(get_logger(), "Loaded %zu joint parameters from rosparam", joint_mappings.size());
+    requires_joint_states = requires_joint_states || !joint_mappings.empty();
   }
 
   // Load pose parameters
@@ -150,6 +154,7 @@ void SOBITSTeleop::load_parameters()
       pose_mappings.push_back(pm);
     }
     RCLCPP_INFO(get_logger(), "Loaded %zu pose parameters from rosparam", pose_mappings.size());
+    requires_joint_states = requires_joint_states || !pose_mappings.empty();
   }
 
   // Load cmd_vel parameters
@@ -222,6 +227,8 @@ void SOBITSTeleop::load_parameters()
       }
     }
     RCLCPP_INFO(get_logger(), "Loaded %zu quest controller parameters from rosparam", quest_controller_mappings.size());
+    has_quest_controls = !controller_types.empty();
+    requires_joint_states = requires_joint_states || has_quest_controls;
   }
 }
 
@@ -244,8 +251,8 @@ void SOBITSTeleop::joy_callback(const sensor_msgs::msg::Joy::SharedPtr msg)
 
 void SOBITSTeleop::teleop()
 {
-  if (!joint_state_initialized) return;
   if (!joy_received) return;
+  if (requires_joint_states && !joint_state_initialized) return;
 
   std::map<std::string, trajectory_msgs::msg::JointTrajectory> trajs;
 
@@ -352,6 +359,8 @@ void SOBITSTeleop::teleop()
     cmd_vel_pub->publish(twist);
   }
   else cmd_vel_pub->publish(stop);
+
+  if (!has_quest_controls) return;
 
     
   // Head
