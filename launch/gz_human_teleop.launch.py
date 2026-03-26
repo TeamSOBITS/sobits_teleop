@@ -86,7 +86,7 @@ def generate_launch_description():
 
     # Human cmd_vel controller
     human_cmd_vel_controller_node = Node(
-        package='gz_human_interaction',
+        package='gz_human_sim',
         executable='human_cmd_vel_controller.py',
         name='human_cmd_vel_controller',
         namespace=namespace,
