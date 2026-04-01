@@ -114,7 +114,7 @@ void SOBITSTeleop::load_parameters()
     cvm.topic, 10);
 
   // Load joint parameters
-  if (this->has_parameter("control_joints")) {
+  if (this->has_parameter("control_joints.groups")) {
     this->get_parameter("control_joints.groups", joint_groups);
 
     for (const auto& joint_group : joint_groups) {
@@ -140,7 +140,7 @@ void SOBITSTeleop::load_parameters()
   }
 
   // Load pose parameters
-  if (this->has_parameter("control_poses")) {
+  if (this->has_parameter("control_poses.trigger")) {
     this->get_parameter("control_poses.pose_list", pose_list);
     for (const auto& pose_name : pose_list) {
       pm.pose_name = pose_name;
@@ -153,7 +153,8 @@ void SOBITSTeleop::load_parameters()
   }
 
   // Load cmd_vel parameters
-  if (this->has_parameter("control_velocity.axis")) {
+  if (this->has_parameter("control_velocity.control")) {
+    this->get_parameter("control_velocity.control",            cvm.control);
     this->get_parameter("control_velocity.button",             cvm.button);
     this->get_parameter("control_velocity.fast_button",        cvm.fast_button);
     this->get_parameter("control_velocity.axis",               cvm.axis);
@@ -324,20 +325,24 @@ void SOBITSTeleop::teleop()
   bool cmd_vel_enabled = false;
   bool fast_mode = false;
   
-  if (cvm.button >= 0 && 
-      cvm.button < static_cast<int>(latest_buttons.size())) {
-    cmd_vel_enabled = (latest_buttons[cvm.button] == 1);
-    if (cvm.fast_button >= 0 && 
-        cvm.fast_button < static_cast<int>(latest_buttons.size())) {
+  if (cvm.control == "button") {
+    if (cvm.button >= 0 && 
+        cvm.button < static_cast<int>(latest_buttons.size())) {
+      cmd_vel_enabled = (latest_buttons[cvm.button] == 1);
+      if (cvm.fast_button >= 0 && 
+          cvm.fast_button < static_cast<int>(latest_buttons.size())) {
       fast_mode = (latest_buttons[cvm.fast_button] == 1);
+      }
     }
   }
-  if (cvm.axis >= 0 && 
-           cvm.axis < static_cast<int>(latest_axes.size())) {
-    cmd_vel_enabled = (latest_axes[cvm.axis] > 0.5);
-    if (cvm.fast_axis >= 0 && 
-        cvm.fast_axis < static_cast<int>(latest_axes.size())) {
-      fast_mode = (latest_axes[cvm.fast_axis] > 0.5);
+  else if (cvm.control == "axis") {
+    if (cvm.axis >= 0 && 
+            cvm.axis < static_cast<int>(latest_axes.size())) {
+      cmd_vel_enabled = (latest_axes[cvm.axis] > 0.5);
+      if (cvm.fast_axis >= 0 && 
+          cvm.fast_axis < static_cast<int>(latest_axes.size())) {
+        fast_mode = (latest_axes[cvm.fast_axis] > 0.5);
+      }
     }
   }
   
@@ -353,266 +358,268 @@ void SOBITSTeleop::teleop()
   }
   else cmd_vel_pub->publish(stop);
 
-    
-  // Head
-  try {
+  // Quest controllers
+  if (this->has_parameter("quest_control.controller")) {
+    // Head
+    try {
+        tf_msg = tf_buffer->lookupTransform(
+          std::string(this->get_namespace()).substr(1) + "/base_footprint",
+          "hmd_odom",
+          tf2::TimePointZero
+        );
+        tf2::fromMsg(tf_msg.transform, current_tf);
+      }
+      catch (tf2::TransformException &ex) {
+        RCLCPP_WARN(this->get_logger(), "TF lookup failed: %s", ex.what());
+        return;
+      }
+
+    // --- (hold) ---
+    if (qhm.head_mode >= 0 &&
+        qhm.head_mode < static_cast<int>(latest_axes.size())){
+          head_control_enabled = (latest_axes[qhm.head_mode] > 0.5);
+        }
+
+    if (head_control_enabled && !head_tracking) {
+      last_pan = joint_pos[qhm.horizontal];
+      last_tilt = joint_pos[qhm.vertical];
+      last_tf = current_tf;
+      if (!qhm.body_lift.empty()) last_body_lift = joint_pos[qhm.body_lift];
+      head_tracking = true;
+
+      // RCLCPP_INFO(this->get_logger(), "cur_joint_pos %.2f, %.2f", joint_pos[qhm.horizontal], joint_pos[qhm.vertical]);
+      RCLCPP_INFO(this->get_logger(), "Head tracking started");
+    }
+
+    if (head_tracking) {
+      T_delta = last_tf.inverse() * current_tf;
+      tf2::Matrix3x3(T_delta.getRotation()).getRPY(roll, pitch, yaw);
+
+      pan_target = last_pan + qhm.scale * yaw * qhm.horizontal_sign;
+      tilt_target = last_tilt + qhm.scale * pitch * -qhm.vertical_sign;
+
+      pan_target = std::clamp(pan_target, joint_limits[qhm.horizontal].lower, joint_limits[qhm.horizontal].upper);
+      tilt_target = std::clamp(tilt_target, joint_limits[qhm.vertical].lower, joint_limits[qhm.vertical].upper);
+      // RCLCPP_INFO(this->get_logger(), "pub_joint_pos %.2f, %.2f", pan_target, tilt_target);
+      
+      if (!qhm.body_lift.empty()) {
+        dz = T_delta.getOrigin().z();
+        body_lift_target = last_body_lift + qhm.scale * dz;
+        body_lift_target = std::clamp(body_lift_target, joint_limits[qhm.body_lift].lower, joint_limits[qhm.body_lift].upper);
+      }
+      
+      trajectory_msgs::msg::JointTrajectory traj;
+      traj.joint_names = {qhm.horizontal, qhm.vertical};
+
+      trajectory_msgs::msg::JointTrajectoryPoint p;
+      p.positions = {pan_target, tilt_target};
+      p.time_from_start = rclcpp::Duration::from_seconds(dt);
+      traj.points.push_back(p);
+
+      auto it = joint_pub.find(qhm.head_joint_trajectory_topic);
+      if (it != joint_pub.end() && it->second) {
+        it->second->publish(traj);
+      } else {
+        RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
+                            "Publisher for %s not found", qhm.head_joint_trajectory_topic.c_str());
+      }
+
+      if (!qhm.body_lift.empty()) {
+        trajectory_msgs::msg::JointTrajectory traj;
+        traj.joint_names = {qhm.body_lift};
+
+        trajectory_msgs::msg::JointTrajectoryPoint p;
+        p.positions = {body_lift_target};
+        p.time_from_start = rclcpp::Duration::from_seconds(dt);
+        traj.points.push_back(p);
+
+        auto it = joint_pub.find(qhm.body_joint_trajectory_topic);
+        if (it != joint_pub.end() && it->second) {
+          it->second->publish(traj);
+        } else {
+          RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
+                              "Publisher for %s not found", qhm.body_joint_trajectory_topic.c_str());
+        }
+      }
+    }
+    // --- (release) ---
+    if (!head_control_enabled && head_tracking) {
+      head_tracking = false;
+      RCLCPP_INFO(this->get_logger(), "Head tracking stopped");
+    }
+
+
+    // Arm
+    try {
       tf_msg = tf_buffer->lookupTransform(
         std::string(this->get_namespace()).substr(1) + "/base_footprint",
-        "hmd_odom",
+        "right_controller_odom",
         tf2::TimePointZero
       );
-      tf2::fromMsg(tf_msg.transform, current_tf);
+      tf2::fromMsg(tf_msg.transform, current_tf_r);
+    }
+    catch (tf2::TransformException &ex) {
+      RCLCPP_WARN(this->get_logger(), "TF lookup failed: %s", ex.what());
+      return;
+    }
+    
+    try {
+      tf_msg = tf_buffer->lookupTransform(
+        std::string(this->get_namespace()).substr(1) + "/base_footprint",
+        "left_controller_odom",
+        tf2::TimePointZero
+      );
+      tf2::fromMsg(tf_msg.transform, current_tf_l);
     }
     catch (tf2::TransformException &ex) {
       RCLCPP_WARN(this->get_logger(), "TF lookup failed: %s", ex.what());
       return;
     }
 
-  // --- (hold) ---
-  if (qhm.head_mode >= 0 &&
-      qhm.head_mode < static_cast<int>(latest_axes.size())){
-        head_control_enabled = (latest_axes[qhm.head_mode] > 0.5);
+    q_align.setRPY(0.0, -M_PI_4, 0.0);   // pitch -45deg
+    T_align.setOrigin(tf2::Vector3(0,0,0));
+    T_align.setRotation(q_align);
+
+    for (auto &[name, m] : quest_controller_mappings) {
+      if (m.arm_mode >= 0 &&
+        m.arm_mode < static_cast<int>(latest_axes.size())){
+          arm_control_enabled = (latest_axes[m.arm_mode] > 0.5);
+      }
+      if (!m.hand.empty()) {
+        if (m.gripper_mode >= 0 &&
+          m.gripper_mode < static_cast<int>(latest_axes.size())){
+            gripper_control_enabled = (latest_axes[m.gripper_mode] > 0.5);
+        }
       }
 
-  if (head_control_enabled && !head_tracking) {
-    last_pan = joint_pos[qhm.horizontal];
-    last_tilt = joint_pos[qhm.vertical];
-    last_tf = current_tf;
-    if (!qhm.body_lift.empty()) last_body_lift = joint_pos[qhm.body_lift];
-    head_tracking = true;
-
-    // RCLCPP_INFO(this->get_logger(), "cur_joint_pos %.2f, %.2f", joint_pos[qhm.horizontal], joint_pos[qhm.vertical]);
-    RCLCPP_INFO(this->get_logger(), "Head tracking started");
-  }
-
-  if (head_tracking) {
-    T_delta = last_tf.inverse() * current_tf;
-    tf2::Matrix3x3(T_delta.getRotation()).getRPY(roll, pitch, yaw);
-
-    pan_target = last_pan + qhm.scale * yaw * qhm.horizontal_sign;
-    tilt_target = last_tilt + qhm.scale * pitch * -qhm.vertical_sign;
-
-    pan_target = std::clamp(pan_target, joint_limits[qhm.horizontal].lower, joint_limits[qhm.horizontal].upper);
-    tilt_target = std::clamp(tilt_target, joint_limits[qhm.vertical].lower, joint_limits[qhm.vertical].upper);
-    // RCLCPP_INFO(this->get_logger(), "pub_joint_pos %.2f, %.2f", pan_target, tilt_target);
-    
-    if (!qhm.body_lift.empty()) {
-      dz = T_delta.getOrigin().z();
-      body_lift_target = last_body_lift + qhm.scale * dz;
-      body_lift_target = std::clamp(body_lift_target, joint_limits[qhm.body_lift].lower, joint_limits[qhm.body_lift].upper);
-    }
-    
-    trajectory_msgs::msg::JointTrajectory traj;
-    traj.joint_names = {qhm.horizontal, qhm.vertical};
-
-    trajectory_msgs::msg::JointTrajectoryPoint p;
-    p.positions = {pan_target, tilt_target};
-    p.time_from_start = rclcpp::Duration::from_seconds(dt);
-    traj.points.push_back(p);
-
-    auto it = joint_pub.find(qhm.head_joint_trajectory_topic);
-    if (it != joint_pub.end() && it->second) {
-      it->second->publish(traj);
-    } else {
-      RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
-                          "Publisher for %s not found", qhm.head_joint_trajectory_topic.c_str());
-    }
-
-    if (!qhm.body_lift.empty()) {
-      trajectory_msgs::msg::JointTrajectory traj;
-      traj.joint_names = {qhm.body_lift};
-
-      trajectory_msgs::msg::JointTrajectoryPoint p;
-      p.positions = {body_lift_target};
-      p.time_from_start = rclcpp::Duration::from_seconds(dt);
-      traj.points.push_back(p);
-
-      auto it = joint_pub.find(qhm.body_joint_trajectory_topic);
-      if (it != joint_pub.end() && it->second) {
-        it->second->publish(traj);
-      } else {
-        RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
-                            "Publisher for %s not found", qhm.body_joint_trajectory_topic.c_str());
-      }
-    }
-  }
-  // --- (release) ---
-  if (!head_control_enabled && head_tracking) {
-    head_tracking = false;
-    RCLCPP_INFO(this->get_logger(), "Head tracking stopped");
-  }
-
-
-  // Arm
-  try {
-    tf_msg = tf_buffer->lookupTransform(
-      std::string(this->get_namespace()).substr(1) + "/base_footprint",
-      "right_controller_odom",
-      tf2::TimePointZero
-    );
-    tf2::fromMsg(tf_msg.transform, current_tf_r);
-  }
-  catch (tf2::TransformException &ex) {
-    RCLCPP_WARN(this->get_logger(), "TF lookup failed: %s", ex.what());
-    return;
-  }
-  
-  try {
-    tf_msg = tf_buffer->lookupTransform(
-      std::string(this->get_namespace()).substr(1) + "/base_footprint",
-      "left_controller_odom",
-      tf2::TimePointZero
-    );
-    tf2::fromMsg(tf_msg.transform, current_tf_l);
-  }
-  catch (tf2::TransformException &ex) {
-    RCLCPP_WARN(this->get_logger(), "TF lookup failed: %s", ex.what());
-    return;
-  }
-
-  q_align.setRPY(0.0, -M_PI_4, 0.0);   // pitch -45deg
-  T_align.setOrigin(tf2::Vector3(0,0,0));
-  T_align.setRotation(q_align);
-
-  for (auto &[name, m] : quest_controller_mappings) {
-    if (m.arm_mode >= 0 &&
-      m.arm_mode < static_cast<int>(latest_axes.size())){
-        arm_control_enabled = (latest_axes[m.arm_mode] > 0.5);
-    }
-    if (!m.hand.empty()) {
-      if (m.gripper_mode >= 0 &&
-        m.gripper_mode < static_cast<int>(latest_axes.size())){
-          gripper_control_enabled = (latest_axes[m.gripper_mode] > 0.5);
-      }
-    }
-
-    if (arm_control_enabled && !arm_tracking) {
-      last_tf_r = current_tf_r;
-      last_tf_ee_r = current_tf_ee_r;
-      last_tf_l = current_tf_l;
-      last_tf_ee_l = current_tf_ee_l;
-      arm_tracking = true;
-      RCLCPP_INFO(this->get_logger(), "arm tracking started");
-    }
-
-    if (!arm_control_enabled && arm_tracking) {
-      arm_tracking = false;
-      RCLCPP_INFO(this->get_logger(), "arm tracking stopped");
-    }
-
-    if (name == "right") {
-      try {
-        tf_msg = tf_buffer->lookupTransform(
-          std::string(this->get_namespace()).substr(1) + "/base_footprint",
-          std::string(this->get_namespace()).substr(1) + "/" + m.end_effector_frame_name,
-          tf2::TimePointZero
-        );
-        tf2::fromMsg(tf_msg.transform, current_tf_ee_r);
-      }
-      catch (tf2::TransformException &ex) {
-        RCLCPP_WARN(this->get_logger(), "TF lookup failed: %s", ex.what());
-        return;
+      if (arm_control_enabled && !arm_tracking) {
+        last_tf_r = current_tf_r;
+        last_tf_ee_r = current_tf_ee_r;
+        last_tf_l = current_tf_l;
+        last_tf_ee_l = current_tf_ee_l;
+        arm_tracking = true;
+        RCLCPP_INFO(this->get_logger(), "arm tracking started");
       }
 
-      // --- (right_hold) ---
-      if (arm_tracking) {
-        T_delta_r = last_tf_r.inverse() * current_tf_r;
-        T_delta_r_align = T_align * T_delta_r * T_align.inverse();
-        T_target_r = last_tf_ee_r * T_delta_r_align;
-
-        target_msg_r.header.stamp = this->now();
-        target_msg_r.header.frame_id = std::string(this->get_namespace()).substr(1) + "/base_footprint";
-        target_msg_r.child_frame_id = std::string(this->get_namespace()).substr(1) + "/" + m.target_frame_name;
-        target_msg_r.transform = tf2::toMsg(T_target_r);
-
-        tf_broadcaster->sendTransform(target_msg_r);
-      }
-    }
-
-    if (name == "left") {
-      try {
-        tf_msg = tf_buffer->lookupTransform(
-          std::string(this->get_namespace()).substr(1) + "/base_footprint",
-          std::string(this->get_namespace()).substr(1) + "/" + m.end_effector_frame_name,
-          tf2::TimePointZero
-        );
-        tf2::fromMsg(tf_msg.transform, current_tf_ee_l);
-      }
-      catch (tf2::TransformException &ex) {
-        RCLCPP_WARN(this->get_logger(), "TF lookup failed: %s", ex.what());
-        return;
+      if (!arm_control_enabled && arm_tracking) {
+        arm_tracking = false;
+        RCLCPP_INFO(this->get_logger(), "arm tracking stopped");
       }
 
-      // --- (left_hold) ---
-      if (arm_tracking) {
-        T_delta_l = last_tf_l.inverse() * current_tf_l;
-        T_delta_l_align = T_align * T_delta_l * T_align.inverse();
-        T_target_l = last_tf_ee_l * T_delta_l_align;
+      if (name == "right") {
+        try {
+          tf_msg = tf_buffer->lookupTransform(
+            std::string(this->get_namespace()).substr(1) + "/base_footprint",
+            std::string(this->get_namespace()).substr(1) + "/" + m.end_effector_frame_name,
+            tf2::TimePointZero
+          );
+          tf2::fromMsg(tf_msg.transform, current_tf_ee_r);
+        }
+        catch (tf2::TransformException &ex) {
+          RCLCPP_WARN(this->get_logger(), "TF lookup failed: %s", ex.what());
+          return;
+        }
 
-        target_msg_l.header.stamp = this->now();
-        target_msg_l.header.frame_id = std::string(this->get_namespace()).substr(1) + "/base_footprint";
-        target_msg_l.child_frame_id = std::string(this->get_namespace()).substr(1) + "/" + m.target_frame_name;
-        target_msg_l.transform = tf2::toMsg(T_target_l);
+        // --- (right_hold) ---
+        if (arm_tracking) {
+          T_delta_r = last_tf_r.inverse() * current_tf_r;
+          T_delta_r_align = T_align * T_delta_r * T_align.inverse();
+          T_target_r = last_tf_ee_r * T_delta_r_align;
 
-        tf_broadcaster->sendTransform(target_msg_l);
+          target_msg_r.header.stamp = this->now();
+          target_msg_r.header.frame_id = std::string(this->get_namespace()).substr(1) + "/base_footprint";
+          target_msg_r.child_frame_id = std::string(this->get_namespace()).substr(1) + "/" + m.target_frame_name;
+          target_msg_r.transform = tf2::toMsg(T_target_r);
+
+          tf_broadcaster->sendTransform(target_msg_r);
+        }
       }
-    }
 
-    // Gripper
-    if (!m.hand.empty() && gripper_control_enabled) {
-      trajectory_msgs::msg::JointTrajectory traj;
-      trajectory_msgs::msg::JointTrajectoryPoint p;
+      if (name == "left") {
+        try {
+          tf_msg = tf_buffer->lookupTransform(
+            std::string(this->get_namespace()).substr(1) + "/base_footprint",
+            std::string(this->get_namespace()).substr(1) + "/" + m.end_effector_frame_name,
+            tf2::TimePointZero
+          );
+          tf2::fromMsg(tf_msg.transform, current_tf_ee_l);
+        }
+        catch (tf2::TransformException &ex) {
+          RCLCPP_WARN(this->get_logger(), "TF lookup failed: %s", ex.what());
+          return;
+        }
 
-      for (const auto &joint_name : m.names) {
-        if (std::abs(latest_axes[m.axis]) > 0.2) {
-          if (name == "left") {
-            target_rad = joint_pos[joint_name] + m.speed * latest_axes[m.axis] * m.axis_sign;
-            if (joint_name == "hand_left_finger_l_pip_joint" || joint_name == "hand_left_finger_l_dip_joint") {
-              target_rad = joint_pos[joint_name] + m.speed * latest_axes[m.axis] * -m.axis_sign;
-            }
-          }
-          if (name == "right") {
-            target_rad = joint_pos[joint_name] + m.speed * latest_axes[m.axis] * -m.axis_sign;
-            if (joint_name == "hand_right_finger_r_pip_joint" || joint_name == "hand_right_finger_r_dip_joint") {
+        // --- (left_hold) ---
+        if (arm_tracking) {
+          T_delta_l = last_tf_l.inverse() * current_tf_l;
+          T_delta_l_align = T_align * T_delta_l * T_align.inverse();
+          T_target_l = last_tf_ee_l * T_delta_l_align;
+
+          target_msg_l.header.stamp = this->now();
+          target_msg_l.header.frame_id = std::string(this->get_namespace()).substr(1) + "/base_footprint";
+          target_msg_l.child_frame_id = std::string(this->get_namespace()).substr(1) + "/" + m.target_frame_name;
+          target_msg_l.transform = tf2::toMsg(T_target_l);
+
+          tf_broadcaster->sendTransform(target_msg_l);
+        }
+      }
+
+      // Gripper
+      if (!m.hand.empty() && gripper_control_enabled) {
+        trajectory_msgs::msg::JointTrajectory traj;
+        trajectory_msgs::msg::JointTrajectoryPoint p;
+
+        for (const auto &joint_name : m.names) {
+          if (std::abs(latest_axes[m.axis]) > 0.2) {
+            if (name == "left") {
               target_rad = joint_pos[joint_name] + m.speed * latest_axes[m.axis] * m.axis_sign;
+              if (joint_name == "hand_left_finger_l_pip_joint" || joint_name == "hand_left_finger_l_dip_joint") {
+                target_rad = joint_pos[joint_name] + m.speed * latest_axes[m.axis] * -m.axis_sign;
+              }
             }
+            if (name == "right") {
+              target_rad = joint_pos[joint_name] + m.speed * latest_axes[m.axis] * -m.axis_sign;
+              if (joint_name == "hand_right_finger_r_pip_joint" || joint_name == "hand_right_finger_r_dip_joint") {
+                target_rad = joint_pos[joint_name] + m.speed * latest_axes[m.axis] * m.axis_sign;
+              }
+            }
+            target_rad = std::clamp(target_rad, 
+              std::min(joint_limits[joint_name].lower, joint_limits[joint_name].upper), 
+              std::max(joint_limits[joint_name].lower, joint_limits[joint_name].upper));
+            traj.joint_names.push_back(joint_name);
+            p.positions.push_back(target_rad);
           }
+        }
+
+        if (m.type_axis >= 0 && m.type_axis < static_cast<int>(latest_axes.size()) && 
+        std::abs(latest_axes[m.type_axis]) > 0.8) {
+          target_rad = 0.0;
+
+          target_rad = joint_pos[m.type_joint] + m.speed * std::copysign(1.0, latest_axes[m.type_axis]) * -m.axis_sign;
+
           target_rad = std::clamp(target_rad, 
-            std::min(joint_limits[joint_name].lower, joint_limits[joint_name].upper), 
-            std::max(joint_limits[joint_name].lower, joint_limits[joint_name].upper));
-          traj.joint_names.push_back(joint_name);
+            std::min(joint_limits[m.type_joint].lower, joint_limits[m.type_joint].upper), 
+            std::max(joint_limits[m.type_joint].lower, joint_limits[m.type_joint].upper));
+
+          traj.joint_names.push_back(m.type_joint);
           p.positions.push_back(target_rad);
         }
-      }
+        
+        if (!traj.joint_names.empty()){
+          // p.time_from_start = rclcpp::Duration::from_seconds(0.1);
+          traj.points.push_back(p);
 
-      if (m.type_axis >= 0 && m.type_axis < static_cast<int>(latest_axes.size()) && 
-      std::abs(latest_axes[m.type_axis]) > 0.8) {
-        target_rad = 0.0;
-
-        target_rad = joint_pos[m.type_joint] + m.speed * std::copysign(1.0, latest_axes[m.type_axis]) * -m.axis_sign;
-
-        target_rad = std::clamp(target_rad, 
-          std::min(joint_limits[m.type_joint].lower, joint_limits[m.type_joint].upper), 
-          std::max(joint_limits[m.type_joint].lower, joint_limits[m.type_joint].upper));
-
-        traj.joint_names.push_back(m.type_joint);
-        p.positions.push_back(target_rad);
-      }
-      
-      if (!traj.joint_names.empty()){
-        // p.time_from_start = rclcpp::Duration::from_seconds(0.1);
-        traj.points.push_back(p);
-
-        auto it = joint_pub.find(m.hand_joint_trajectory_topic);
-        if (it != joint_pub.end() && it->second) {
-          it->second->publish(traj);
-        } else {
-          RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
-                              "Publisher for %s not found", m.hand_joint_trajectory_topic.c_str());
+          auto it = joint_pub.find(m.hand_joint_trajectory_topic);
+          if (it != joint_pub.end() && it->second) {
+            it->second->publish(traj);
+          } else {
+            RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
+                                "Publisher for %s not found", m.hand_joint_trajectory_topic.c_str());
+          }
         }
-      }
-    }// Gripper
-  }// Arm
+      }// Gripper
+    }// Arm
+  }// Quest controllers
 }
 
 int main(int argc, char **argv) {

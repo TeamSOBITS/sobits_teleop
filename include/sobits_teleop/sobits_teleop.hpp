@@ -45,6 +45,7 @@ struct PoseMap {
 
 struct CmdVelMap {
   std::string topic;
+  std::string control;
   int button;
   int fast_button;
   int axis;
