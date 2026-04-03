@@ -157,8 +157,9 @@ void SOBITSTeleop::load_parameters()
     requires_joint_states = requires_joint_states || !pose_mappings.empty();
   }
 
-  // Load cmd_vel parameters
-  if (this->has_parameter("control_velocity.axis")) {
+  // Load cmd_vel parameters. Either button-based or axis-based enable is allowed.
+  if (this->has_parameter("control_velocity.button") ||
+      this->has_parameter("control_velocity.axis")) {
     this->get_parameter("control_velocity.button",             cvm.button);
     this->get_parameter("control_velocity.fast_button",        cvm.fast_button);
     this->get_parameter("control_velocity.axis",               cvm.axis);
@@ -352,9 +353,18 @@ void SOBITSTeleop::teleop()
     const double linear_scale = fast_mode ? cvm.fast_linear_scale : cvm.linear_scale;
     const double angular_scale = fast_mode ? cvm.fast_angular_scale : cvm.angular_scale;
 
-    twist.linear.x = latest_axes[cvm.linear_x_axis] * linear_scale;
-    twist.linear.y = latest_axes[cvm.linear_y_axis] * linear_scale * cvm.axis_sign;
-    twist.angular.z = latest_axes[cvm.angular_axis] * angular_scale * cvm.axis_sign;
+    if (cvm.linear_x_axis >= 0 &&
+        cvm.linear_x_axis < static_cast<int>(latest_axes.size())) {
+      twist.linear.x = latest_axes[cvm.linear_x_axis] * linear_scale;
+    }
+    if (cvm.linear_y_axis >= 0 &&
+        cvm.linear_y_axis < static_cast<int>(latest_axes.size())) {
+      twist.linear.y = latest_axes[cvm.linear_y_axis] * linear_scale * cvm.axis_sign;
+    }
+    if (cvm.angular_axis >= 0 &&
+        cvm.angular_axis < static_cast<int>(latest_axes.size())) {
+      twist.angular.z = latest_axes[cvm.angular_axis] * angular_scale * cvm.axis_sign;
+    }
 
     cmd_vel_pub->publish(twist);
   }
