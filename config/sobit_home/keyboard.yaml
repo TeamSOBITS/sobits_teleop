@@ -153,6 +153,7 @@
         button : 3            # 3 key
 
     control_velocity:
+      control : "button"  # "button" or "axis"
       button : 6            # 6 key
       fast_button : 7       # 7 key
       linear_x_axis : 4     # arrow up, down keys

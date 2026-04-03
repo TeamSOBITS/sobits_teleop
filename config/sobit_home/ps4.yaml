@@ -1,6 +1,19 @@
 /**:
   ros__parameters:
 
+    control_velocity:
+      control : "button"  # "button" or "axis"
+      button : 5            # R1
+      fast_button : 7       # R2
+      linear_x_axis : 1     # 左スティック上下
+      linear_y_axis : 0     # 左スティック左右
+      angular_axis : 3      # 右スティック左右
+      axis_sign : 1
+      linear_scale : 0.1
+      angular_scale : 0.3
+      fast_linear_scale : 0.2
+      fast_angular_scale : 0.6
+
     control_joints:
       groups:
       - head
@@ -151,15 +164,3 @@
         button : 0            # ✕ボタン
       pre_manipulation_pose:
         button : 3            # □ボタン
-
-    control_velocity:
-      button : 5            # R1
-      fast_button : 7       # R2
-      linear_x_axis : 1     # 左スティック上下
-      linear_y_axis : 0     # 左スティック左右
-      angular_axis : 3      # 右スティック左右
-      axis_sign : 1
-      linear_scale : 0.1
-      angular_scale : 0.3
-      fast_linear_scale : 0.2
-      fast_angular_scale : 0.6

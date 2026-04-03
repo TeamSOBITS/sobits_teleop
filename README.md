@@ -191,11 +191,45 @@ sobits_teleopを使う上での基本的な流れ
 <p align="right">(<a href="#readme-top">上に戻る</a>)</p>
 
 ### テレオペノード実行
-使用するデバイスとPCをBluetooth経由などで接続，dualshockを使う場合、`jstest-gtk`コマンドでデバイスと接続していることを確認する．
-launchファイルを設定し，実行する．
+使用するデバイスとPCをBluetooth経由などで接続し、**sobits_teleop.launch.py**の**device**を使用するデバイスに合わせて書き換えて、実行する．
 
+例
+```
+declare_device_cmd = DeclareLaunchArgument(
+        'device',
+        default_value='ps4', 
+        # default_value='ps5',
+        # default_value='quest',
+        # default_value='keyboard',
+        description='Input device type: ps4, quest, keyboard'
+    )
+```
+<details>
+<summary>DUALSHOCKの場合</summary>
+
+1. DUALSHOCKをBluetoothでPCと接続し、`jstest-gtk`コマンドでデバイスと接続していることを確認する．
 > [!Note]
 > ds4drvをDocker container内で使用する場合、`/dev/input/`と`/run/udev`をマウントする．
+2. その後、**sobits_teleop.launch.py**を起動し、yamlファイルで設定した操作方法を参考にロボットを操作する．
+
+</details>
+
+<details>
+<summary>Meta Questの場合</summary>
+
+
+1. 使用するMeta QuestとPCが同一WIFIに接続しているか確認する．
+
+2. PC側で`hostname -I`コマンドなどを使用して**ROS_IP**を確認する．
+
+3. Meta Questを起動し、事前にセットアップした**Unity Project**を起動する.
+（Meta Questのセットアップに関しては[こちら](https://github.com/TeamSOBITS/meta_quest_teleoperation)を参考）
+
+4. Unity Projectを起動したら、画面上にある**ROS_IP**を確認し、左側コントローラの**メニューボタン**を押してROS_IPを入力し、変更する.
+
+5. その後、**sobits_teleop.launch.py**を起動し、yamlファイルで設定した操作方法を参考にロボットを操作する．
+
+</details>
 
 <p align="right">(<a href="#readme-top">上に戻る</a>)</p>
 
