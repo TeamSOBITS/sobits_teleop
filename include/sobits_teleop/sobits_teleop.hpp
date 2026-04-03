@@ -45,18 +45,18 @@ struct PoseMap {
 
 struct CmdVelMap {
   std::string topic;
-  int button;
-  int fast_button;
-  int axis;
-  int fast_axis;
-  int linear_x_axis;
-  int linear_y_axis;
-  int angular_axis;
-  int axis_sign;
-  double linear_scale;
-  double angular_scale;
-  double fast_linear_scale;
-  double fast_angular_scale;
+  int button = -1;
+  int fast_button = -1;
+  int axis = -1;
+  int fast_axis = -1;
+  int linear_x_axis = -1;
+  int linear_y_axis = -1;
+  int angular_axis = -1;
+  int axis_sign = 1;
+  double linear_scale = 0.0;
+  double angular_scale = 0.0;
+  double fast_linear_scale = 0.0;
+  double fast_angular_scale = 0.0;
 };
 
 struct QuestHeadMap {
