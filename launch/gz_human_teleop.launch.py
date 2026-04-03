@@ -1,7 +1,7 @@
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.conditions import IfCondition
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, EqualsSubstitution
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, PythonExpression
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
 
@@ -18,7 +18,7 @@ def generate_launch_description():
     declare_device_cmd = DeclareLaunchArgument(
         'device',
         default_value='keyboard',
-        description='Input device type: keyboard, ps4, ps5, quest'
+        description='Input device type: keyboard, ps4'
     )
     declare_world_name_cmd = DeclareLaunchArgument(
         'world_name',
@@ -117,16 +117,6 @@ def generate_launch_description():
         condition=IfCondition(EqualsSubstitution(LaunchConfiguration('device'), 'ps4') or EqualsSubstitution(LaunchConfiguration('device'), 'ps5'))
     )
 
-    # quest node for meta quest controllers
-    quest_node = Node(
-        package='ros_tcp_endpoint',
-        executable='default_server_endpoint',
-        name='quest_node',
-        namespace=namespace,
-        output='screen',
-        condition=IfCondition(EqualsSubstitution(LaunchConfiguration('device'), 'quest'))
-    )
-
     # keyboard node for keyboard teleop
     keyboard_node = Node(
         package='keyboard_joy',
@@ -149,6 +139,5 @@ def generate_launch_description():
         sobits_teleop_node,
         human_cmd_vel_controller_node,
         joystick_node,
-        quest_node,
         keyboard_node,
     ])
