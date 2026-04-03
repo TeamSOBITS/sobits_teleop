@@ -106,11 +106,6 @@ bool SOBITSTeleop::parse_urdf_limits(const std::string & urdf_xml)
 void SOBITSTeleop::load_parameters()
 {
   this->get_parameter("robot_topic_name.joint_states_topic", joint_states_topic);
-  if (!joint_states_topic.empty()) {
-    joint_state_sub = create_subscription<sensor_msgs::msg::JointState>(
-      joint_states_topic, 10,
-      std::bind(&SOBITSTeleop::joint_state_callback, this, std::placeholders::_1));
-  }
 
   this->get_parameter("robot_topic_name.cmd_vel_topic", cvm.topic);
   cmd_vel_pub = this->create_publisher<geometry_msgs::msg::Twist>(
@@ -140,7 +135,6 @@ void SOBITSTeleop::load_parameters()
       }
     }
     RCLCPP_INFO(get_logger(), "Loaded %zu joint parameters from rosparam", joint_mappings.size());
-    requires_joint_states = requires_joint_states || !joint_mappings.empty();
   }
 
   // Load pose parameters
@@ -154,12 +148,11 @@ void SOBITSTeleop::load_parameters()
       pose_mappings.push_back(pm);
     }
     RCLCPP_INFO(get_logger(), "Loaded %zu pose parameters from rosparam", pose_mappings.size());
-    requires_joint_states = requires_joint_states || !pose_mappings.empty();
   }
 
-  // Load cmd_vel parameters
-  if (this->has_parameter("control_velocity.control")) {
-    this->get_parameter("control_velocity.control",            cvm.control);
+  // Load cmd_vel parameters. Either button-based or axis-based enable is allowed.
+  if (this->has_parameter("control_velocity.button") ||
+      this->has_parameter("control_velocity.axis")) {
     this->get_parameter("control_velocity.button",             cvm.button);
     this->get_parameter("control_velocity.fast_button",        cvm.fast_button);
     this->get_parameter("control_velocity.axis",               cvm.axis);
@@ -229,7 +222,25 @@ void SOBITSTeleop::load_parameters()
     }
     RCLCPP_INFO(get_logger(), "Loaded %zu quest controller parameters from rosparam", quest_controller_mappings.size());
     has_quest_controls = !controller_types.empty();
-    requires_joint_states = requires_joint_states || has_quest_controls;
+  }
+
+  requires_joint_states = !joint_mappings.empty() || has_quest_controls;
+
+  if (requires_joint_states && joint_states_topic.empty()) {
+    RCLCPP_ERROR(
+      get_logger(),
+      "joint_states_topic is required for joint or quest teleop, disabling those controls.");
+    joint_mappings.clear();
+    quest_controller_mappings.clear();
+    controller_types.clear();
+    has_quest_controls = false;
+    requires_joint_states = false;
+  }
+
+  if (!joint_states_topic.empty()) {
+    joint_state_sub = create_subscription<sensor_msgs::msg::JointState>(
+      joint_states_topic, 10,
+      std::bind(&SOBITSTeleop::joint_state_callback, this, std::placeholders::_1));
   }
 }
 
@@ -332,24 +343,20 @@ void SOBITSTeleop::teleop()
   bool cmd_vel_enabled = false;
   bool fast_mode = false;
   
-  if (cvm.control == "button") {
-    if (cvm.button >= 0 && 
-        cvm.button < static_cast<int>(latest_buttons.size())) {
-      cmd_vel_enabled = (latest_buttons[cvm.button] == 1);
-      if (cvm.fast_button >= 0 && 
-          cvm.fast_button < static_cast<int>(latest_buttons.size())) {
+  if (cvm.button >= 0 && 
+      cvm.button < static_cast<int>(latest_buttons.size())) {
+    cmd_vel_enabled = (latest_buttons[cvm.button] == 1);
+    if (cvm.fast_button >= 0 && 
+        cvm.fast_button < static_cast<int>(latest_buttons.size())) {
       fast_mode = (latest_buttons[cvm.fast_button] == 1);
-      }
     }
   }
-  else if (cvm.control == "axis") {
-    if (cvm.axis >= 0 && 
-            cvm.axis < static_cast<int>(latest_axes.size())) {
-      cmd_vel_enabled = (latest_axes[cvm.axis] > 0.5);
-      if (cvm.fast_axis >= 0 && 
-          cvm.fast_axis < static_cast<int>(latest_axes.size())) {
-        fast_mode = (latest_axes[cvm.fast_axis] > 0.5);
-      }
+  if (cvm.axis >= 0 && 
+      cvm.axis < static_cast<int>(latest_axes.size())) {
+    cmd_vel_enabled = (latest_axes[cvm.axis] > 0.5);
+    if (cvm.fast_axis >= 0 && 
+        cvm.fast_axis < static_cast<int>(latest_axes.size())) {
+      fast_mode = (latest_axes[cvm.fast_axis] > 0.5);
     }
   }
   
