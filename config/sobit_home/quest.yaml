@@ -2,6 +2,7 @@
   ros__parameters:
 
     control_velocity:
+      control : "axis"  # "button" or "axis"
       axis : 3              # right trigger
       # fast_axis : 7         # right grip
       linear_x_axis : 1     # 左スティック上下
