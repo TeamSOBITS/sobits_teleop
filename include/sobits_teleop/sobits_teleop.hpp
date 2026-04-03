@@ -45,19 +45,18 @@ struct PoseMap {
 
 struct CmdVelMap {
   std::string topic;
-  std::string control;
-  int button;
-  int fast_button;
-  int axis;
-  int fast_axis;
-  int linear_x_axis;
-  int linear_y_axis;
-  int angular_axis;
-  int axis_sign;
-  double linear_scale;
-  double angular_scale;
-  double fast_linear_scale;
-  double fast_angular_scale;
+  int button = -1;
+  int fast_button = -1;
+  int axis = -1;
+  int fast_axis = -1;
+  int linear_x_axis = -1;
+  int linear_y_axis = -1;
+  int angular_axis = -1;
+  int axis_sign = 1;
+  double linear_scale = 0.0;
+  double angular_scale = 0.0;
+  double fast_linear_scale = 0.0;
+  double fast_angular_scale = 0.0;
 };
 
 struct QuestHeadMap {
@@ -121,6 +120,8 @@ private:
 
   bool joint_state_initialized = false;
   bool joy_received = false;
+  bool requires_joint_states = false;
+  bool has_quest_controls = false;
 
   std::string robot_description_source_node;
   std::shared_ptr<rclcpp::AsyncParametersClient> async_param_client;

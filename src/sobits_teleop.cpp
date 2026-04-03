@@ -32,6 +32,7 @@ SOBITSTeleop::SOBITSTeleop()
 
 void SOBITSTeleop::load_joint_limits()
 {
+  if (!requires_joint_states) return;
   if (urdf_loaded) return;
 
   if (!async_param_client->service_is_ready()) {
@@ -105,9 +106,6 @@ bool SOBITSTeleop::parse_urdf_limits(const std::string & urdf_xml)
 void SOBITSTeleop::load_parameters()
 {
   this->get_parameter("robot_topic_name.joint_states_topic", joint_states_topic);
-  joint_state_sub = create_subscription<sensor_msgs::msg::JointState>(
-    joint_states_topic, 10,
-    std::bind(&SOBITSTeleop::joint_state_callback, this, std::placeholders::_1));
 
   this->get_parameter("robot_topic_name.cmd_vel_topic", cvm.topic);
   cmd_vel_pub = this->create_publisher<geometry_msgs::msg::Twist>(
@@ -152,9 +150,9 @@ void SOBITSTeleop::load_parameters()
     RCLCPP_INFO(get_logger(), "Loaded %zu pose parameters from rosparam", pose_mappings.size());
   }
 
-  // Load cmd_vel parameters
-  if (this->has_parameter("control_velocity.control")) {
-    this->get_parameter("control_velocity.control",            cvm.control);
+  // Load cmd_vel parameters. Either button-based or axis-based enable is allowed.
+  if (this->has_parameter("control_velocity.button") ||
+      this->has_parameter("control_velocity.axis")) {
     this->get_parameter("control_velocity.button",             cvm.button);
     this->get_parameter("control_velocity.fast_button",        cvm.fast_button);
     this->get_parameter("control_velocity.axis",               cvm.axis);
@@ -223,6 +221,26 @@ void SOBITSTeleop::load_parameters()
       }
     }
     RCLCPP_INFO(get_logger(), "Loaded %zu quest controller parameters from rosparam", quest_controller_mappings.size());
+    has_quest_controls = !controller_types.empty();
+  }
+
+  requires_joint_states = !joint_mappings.empty() || has_quest_controls;
+
+  if (requires_joint_states && joint_states_topic.empty()) {
+    RCLCPP_ERROR(
+      get_logger(),
+      "joint_states_topic is required for joint or quest teleop, disabling those controls.");
+    joint_mappings.clear();
+    quest_controller_mappings.clear();
+    controller_types.clear();
+    has_quest_controls = false;
+    requires_joint_states = false;
+  }
+
+  if (!joint_states_topic.empty()) {
+    joint_state_sub = create_subscription<sensor_msgs::msg::JointState>(
+      joint_states_topic, 10,
+      std::bind(&SOBITSTeleop::joint_state_callback, this, std::placeholders::_1));
   }
 }
 
@@ -245,8 +263,8 @@ void SOBITSTeleop::joy_callback(const sensor_msgs::msg::Joy::SharedPtr msg)
 
 void SOBITSTeleop::teleop()
 {
-  if (!joint_state_initialized) return;
   if (!joy_received) return;
+  if (requires_joint_states && !joint_state_initialized) return;
 
   std::map<std::string, trajectory_msgs::msg::JointTrajectory> trajs;
 
@@ -325,24 +343,20 @@ void SOBITSTeleop::teleop()
   bool cmd_vel_enabled = false;
   bool fast_mode = false;
   
-  if (cvm.control == "button") {
-    if (cvm.button >= 0 && 
-        cvm.button < static_cast<int>(latest_buttons.size())) {
-      cmd_vel_enabled = (latest_buttons[cvm.button] == 1);
-      if (cvm.fast_button >= 0 && 
-          cvm.fast_button < static_cast<int>(latest_buttons.size())) {
+  if (cvm.button >= 0 && 
+      cvm.button < static_cast<int>(latest_buttons.size())) {
+    cmd_vel_enabled = (latest_buttons[cvm.button] == 1);
+    if (cvm.fast_button >= 0 && 
+        cvm.fast_button < static_cast<int>(latest_buttons.size())) {
       fast_mode = (latest_buttons[cvm.fast_button] == 1);
-      }
     }
   }
-  else if (cvm.control == "axis") {
-    if (cvm.axis >= 0 && 
-            cvm.axis < static_cast<int>(latest_axes.size())) {
-      cmd_vel_enabled = (latest_axes[cvm.axis] > 0.5);
-      if (cvm.fast_axis >= 0 && 
-          cvm.fast_axis < static_cast<int>(latest_axes.size())) {
-        fast_mode = (latest_axes[cvm.fast_axis] > 0.5);
-      }
+  if (cvm.axis >= 0 && 
+      cvm.axis < static_cast<int>(latest_axes.size())) {
+    cmd_vel_enabled = (latest_axes[cvm.axis] > 0.5);
+    if (cvm.fast_axis >= 0 && 
+        cvm.fast_axis < static_cast<int>(latest_axes.size())) {
+      fast_mode = (latest_axes[cvm.fast_axis] > 0.5);
     }
   }
   
@@ -350,9 +364,18 @@ void SOBITSTeleop::teleop()
     const double linear_scale = fast_mode ? cvm.fast_linear_scale : cvm.linear_scale;
     const double angular_scale = fast_mode ? cvm.fast_angular_scale : cvm.angular_scale;
 
-    twist.linear.x = latest_axes[cvm.linear_x_axis] * linear_scale;
-    twist.linear.y = latest_axes[cvm.linear_y_axis] * linear_scale * cvm.axis_sign;
-    twist.angular.z = latest_axes[cvm.angular_axis] * angular_scale * cvm.axis_sign;
+    if (cvm.linear_x_axis >= 0 &&
+        cvm.linear_x_axis < static_cast<int>(latest_axes.size())) {
+      twist.linear.x = latest_axes[cvm.linear_x_axis] * linear_scale;
+    }
+    if (cvm.linear_y_axis >= 0 &&
+        cvm.linear_y_axis < static_cast<int>(latest_axes.size())) {
+      twist.linear.y = latest_axes[cvm.linear_y_axis] * linear_scale * cvm.axis_sign;
+    }
+    if (cvm.angular_axis >= 0 &&
+        cvm.angular_axis < static_cast<int>(latest_axes.size())) {
+      twist.angular.z = latest_axes[cvm.angular_axis] * angular_scale * cvm.axis_sign;
+    }
 
     cmd_vel_pub->publish(twist);
   }
