@@ -14,6 +14,7 @@ endif()
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_action REQUIRED)
+find_package(std_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(trajectory_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
@@ -35,6 +36,7 @@ ament_target_dependencies(
   sobits_teleop
   rclcpp
   rclcpp_action
+  std_msgs
   sensor_msgs
   trajectory_msgs
   geometry_msgs
