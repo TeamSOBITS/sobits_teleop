@@ -4,6 +4,7 @@
 #include <sensor_msgs/msg/joint_state.hpp>
 #include <trajectory_msgs/msg/joint_trajectory.hpp>
 #include <geometry_msgs/msg/twist.hpp>
+#include <std_msgs/msg/bool.hpp>
 #include "sobits_interfaces/action/move_to_pose.hpp"
 
 #include <string>
@@ -92,6 +93,10 @@ struct QuestControllerMap {
   int axis_sign;
   float speed;
   int type_axis;
+  // Proximity thresholds: arm only latches when controller is within these
+  // distances of the robot end-effector. Set to <=0 to disable the check.
+  double arm_proximity_threshold = 0.15;       // metres (position)
+  double arm_proximity_angle_threshold = 0.52; // radians (~30 deg, orientation)
 };
 
 class SOBITSTeleop : public rclcpp::Node {
@@ -113,6 +118,10 @@ private:
   std::map<std::string,
     rclcpp::Publisher<trajectory_msgs::msg::JointTrajectory>::SharedPtr>
     joint_pub;
+  // Publishers to enable/disable MoveIt arm tracking per planning group
+  // Key = planning_group name (e.g. "arm_left"), topic = <key>/moveit_track_enabled
+  std::map<std::string, rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr>
+    arm_track_pubs_;
 
   rclcpp_action::Client<sobits_interfaces::action::MoveToPose>::SharedPtr move_to_pose_client;
 
@@ -156,6 +165,8 @@ private:
 
   bool head_tracking = false;
   bool arm_tracking = false;
+  bool right_arm_latched = false;  // true once last_tf_r / last_tf_ee_r are set for this tracking session
+  bool left_arm_latched  = false;  // true once last_tf_l / last_tf_ee_l are set for this tracking session
 
   tf2::Transform last_tf;
   tf2::Transform current_tf;

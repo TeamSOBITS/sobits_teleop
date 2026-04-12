@@ -6,7 +6,9 @@ SOBITSTeleop::SOBITSTeleop()
       rclcpp::NodeOptions()
         .allow_undeclared_parameters(true)
         .automatically_declare_parameters_from_overrides(true)),
-  tf_buffer(std::make_shared<tf2_ros::Buffer>(this->get_clock())),
+  tf_buffer(std::make_shared<tf2_ros::Buffer>(
+      this->get_clock(),
+      tf2::Duration(std::chrono::seconds(30)))),
   tf_listener(std::make_shared<tf2_ros::TransformListener>(*tf_buffer))
 {
   move_to_pose_client = rclcpp_action::create_client<sobits_interfaces::action::MoveToPose>(
@@ -198,6 +200,15 @@ void SOBITSTeleop::load_parameters()
           this->get_parameter("quest_control." + controller_type + ".scale",                   qcm.scale);
           this->get_parameter("quest_control." + controller_type + ".arm_mode",                qcm.arm_mode);
           this->get_parameter("robot_topic_name.joint_trajectory_topic." + qcm.arm,            qcm.arm_joint_trajectory_topic);
+          // Optional proximity thresholds — defaults are set in the struct
+          if (this->has_parameter("quest_control." + controller_type + ".arm_proximity_threshold")) {
+            this->get_parameter("quest_control." + controller_type + ".arm_proximity_threshold",
+              qcm.arm_proximity_threshold);
+          }
+          if (this->has_parameter("quest_control." + controller_type + ".arm_proximity_angle_threshold")) {
+            this->get_parameter("quest_control." + controller_type + ".arm_proximity_angle_threshold",
+              qcm.arm_proximity_angle_threshold);
+          }
 
           joint_pub[qcm.arm_joint_trajectory_topic] = this->create_publisher<trajectory_msgs::msg::JointTrajectory>(
           qcm.arm_joint_trajectory_topic, 10);
@@ -222,6 +233,16 @@ void SOBITSTeleop::load_parameters()
     }
     RCLCPP_INFO(get_logger(), "Loaded %zu quest controller parameters from rosparam", quest_controller_mappings.size());
     has_quest_controls = !controller_types.empty();
+
+    // Create one enable-publisher per arm (planning group)
+    for (const auto & [ctrl_name, qcm_ref] : quest_controller_mappings) {
+      if (!qcm_ref.arm.empty() && arm_track_pubs_.find(qcm_ref.arm) == arm_track_pubs_.end()) {
+        arm_track_pubs_[qcm_ref.arm] = this->create_publisher<std_msgs::msg::Bool>(
+          qcm_ref.arm + "/moveit_track_enabled", rclcpp::QoS(1));
+        RCLCPP_INFO(get_logger(),
+          "Created arm track publisher for '%s'", qcm_ref.arm.c_str());
+      }
+    }
   }
 
   requires_joint_states = !joint_mappings.empty() || has_quest_controls;
@@ -384,20 +405,24 @@ void SOBITSTeleop::teleop()
   // Quest controllers
   if (this->has_parameter("quest_control.controller")) {
     // Head
+    bool head_tf_ok = false;
     try {
         tf_msg = tf_buffer->lookupTransform(
-          std::string(this->get_namespace()).substr(1) + "/base_footprint",
+          "base_footprint",
           "hmd_odom",
-          tf2::TimePointZero
+            tf2::TimePointZero,
+            tf2::Duration(0)
         );
         tf2::fromMsg(tf_msg.transform, current_tf);
+        head_tf_ok = true;
       }
       catch (tf2::TransformException &ex) {
-        RCLCPP_WARN(this->get_logger(), "TF lookup failed: %s", ex.what());
-        return;
+        RCLCPP_WARN_THROTTLE(this->get_logger(), *get_clock(), 2000,
+          "Head TF lookup failed: %s", ex.what());
       }
 
     // --- (hold) ---
+    if (head_tf_ok) {
     if (qhm.head_mode >= 0 &&
         qhm.head_mode < static_cast<int>(latest_axes.size())){
           head_control_enabled = (latest_axes[qhm.head_mode] > 0.5);
@@ -470,44 +495,92 @@ void SOBITSTeleop::teleop()
       head_tracking = false;
       RCLCPP_INFO(this->get_logger(), "Head tracking stopped");
     }
+    } // if (head_tf_ok)
 
 
     // Arm
+    // Helper: returns false if any component of the transform is NaN/Inf
+    // (Quest controllers broadcast NaN when not yet tracked)
+    auto transform_valid = [](const geometry_msgs::msg::Transform & t) {
+      const auto & q = t.rotation;
+      const auto & v = t.translation;
+      return std::isfinite(q.x) && std::isfinite(q.y) &&
+             std::isfinite(q.z) && std::isfinite(q.w) &&
+             std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z) &&
+             (q.x*q.x + q.y*q.y + q.z*q.z + q.w*q.w) > 0.01;
+    };
+
+    bool right_tf_ok = false;
     try {
       tf_msg = tf_buffer->lookupTransform(
-        std::string(this->get_namespace()).substr(1) + "/base_footprint",
+        "base_footprint",
         "right_controller_odom",
-        tf2::TimePointZero
+          tf2::TimePointZero,
+          tf2::Duration(0)
       );
-      tf2::fromMsg(tf_msg.transform, current_tf_r);
+      if (!transform_valid(tf_msg.transform)) {
+        RCLCPP_WARN_THROTTLE(this->get_logger(), *get_clock(), 2000,
+          "right_controller_odom has invalid (NaN/zero) transform — waiting for controller tracking");
+      } else {
+        tf2::fromMsg(tf_msg.transform, current_tf_r);
+        right_tf_ok = true;
+      }
     }
     catch (tf2::TransformException &ex) {
-      RCLCPP_WARN(this->get_logger(), "TF lookup failed: %s", ex.what());
-      return;
+      RCLCPP_WARN_THROTTLE(this->get_logger(), *get_clock(), 2000,
+        "Right controller TF lookup failed: %s", ex.what());
     }
-    
+
+    bool left_tf_ok = false;
     try {
       tf_msg = tf_buffer->lookupTransform(
-        std::string(this->get_namespace()).substr(1) + "/base_footprint",
+        "base_footprint",
         "left_controller_odom",
-        tf2::TimePointZero
+          tf2::TimePointZero,
+          tf2::Duration(0)
       );
-      tf2::fromMsg(tf_msg.transform, current_tf_l);
+      if (!transform_valid(tf_msg.transform)) {
+        RCLCPP_WARN_THROTTLE(this->get_logger(), *get_clock(), 2000,
+          "left_controller_odom has invalid (NaN/zero) transform — waiting for controller tracking");
+      } else {
+        tf2::fromMsg(tf_msg.transform, current_tf_l);
+        left_tf_ok = true;
+      }
     }
     catch (tf2::TransformException &ex) {
-      RCLCPP_WARN(this->get_logger(), "TF lookup failed: %s", ex.what());
-      return;
+      RCLCPP_WARN_THROTTLE(this->get_logger(), *get_clock(), 2000,
+        "Left controller TF lookup failed: %s", ex.what());
     }
 
     q_align.setRPY(0.0, -M_PI_4, 0.0);   // pitch -45deg
     T_align.setOrigin(tf2::Vector3(0,0,0));
     T_align.setRotation(q_align);
 
+    // Determine arm_control_enabled from the first arm with a valid arm_mode
+    // (both left and right share the same button in the default quest.yaml)
     for (auto &[name, m] : quest_controller_mappings) {
-      if (m.arm_mode >= 0 &&
-        m.arm_mode < static_cast<int>(latest_axes.size())){
-          arm_control_enabled = (latest_axes[m.arm_mode] > 0.5);
+      if (m.arm_mode >= 0 && m.arm_mode < static_cast<int>(latest_axes.size())) {
+        arm_control_enabled = (latest_axes[m.arm_mode] > 0.5);
+        break;
       }
+    }
+
+    // Stop tracking immediately when the grip button is released.
+    if (!arm_control_enabled && arm_tracking) {
+      arm_tracking = false;
+      right_arm_latched = false;
+      left_arm_latched  = false;
+      RCLCPP_INFO(this->get_logger(), "Arm tracking stopped");
+      std_msgs::msg::Bool track_msg;
+      track_msg.data = false;
+      for (auto & [arm_name, pub] : arm_track_pubs_) {
+        pub->publish(track_msg);
+      }
+    }
+    // Per-arm latching is handled inside the per-arm loop below, after the
+    // fresh end-effector TF has been read and the proximity check can be done.
+
+    for (auto &[name, m] : quest_controller_mappings) {
       if (!m.hand.empty()) {
         if (m.gripper_mode >= 0 &&
           m.gripper_mode < static_cast<int>(latest_axes.size())){
@@ -515,72 +588,159 @@ void SOBITSTeleop::teleop()
         }
       }
 
-      if (arm_control_enabled && !arm_tracking) {
-        last_tf_r = current_tf_r;
-        last_tf_ee_r = current_tf_ee_r;
-        last_tf_l = current_tf_l;
-        last_tf_ee_l = current_tf_ee_l;
-        arm_tracking = true;
-        RCLCPP_INFO(this->get_logger(), "arm tracking started");
-      }
-
-      if (!arm_control_enabled && arm_tracking) {
-        arm_tracking = false;
-        RCLCPP_INFO(this->get_logger(), "arm tracking stopped");
-      }
-
-      if (name == "right") {
+      if (name == "right" && right_tf_ok) {
+        bool ee_r_ok = false;
         try {
           tf_msg = tf_buffer->lookupTransform(
-            std::string(this->get_namespace()).substr(1) + "/base_footprint",
-            std::string(this->get_namespace()).substr(1) + "/" + m.end_effector_frame_name,
-            tf2::TimePointZero
+            "base_footprint",
+            m.end_effector_frame_name,
+              tf2::TimePointZero,
+              tf2::Duration(0)
           );
           tf2::fromMsg(tf_msg.transform, current_tf_ee_r);
+          ee_r_ok = true;
         }
         catch (tf2::TransformException &ex) {
-          RCLCPP_WARN(this->get_logger(), "TF lookup failed: %s", ex.what());
-          return;
+          RCLCPP_WARN_THROTTLE(this->get_logger(), *get_clock(), 2000,
+            "Right EE TF lookup failed: %s", ex.what());
         }
 
-        // --- (right_hold) ---
-        if (arm_tracking) {
+        // Per-arm latch: requires grip button AND controller near EE (or proximity
+        // check disabled). Checked on each cycle so late-latch also respects proximity.
+        if (arm_control_enabled && !right_arm_latched && ee_r_ok) {
+          bool prox_ok = true;
+          if (m.arm_proximity_threshold > 0.0 || m.arm_proximity_angle_threshold > 0.0) {
+            tf2::Vector3 pos_diff = current_tf_r.getOrigin() - current_tf_ee_r.getOrigin();
+            double pos_err = pos_diff.length();
+            tf2::Quaternion q_diff =
+              current_tf_ee_r.getRotation().inverse() * current_tf_r.getRotation();
+            q_diff.normalize();
+            double angle_err = 2.0 * std::acos(std::clamp(std::abs(q_diff.w()), 0.0, 1.0));
+
+            if (m.arm_proximity_threshold > 0.0 && pos_err > m.arm_proximity_threshold) {
+              RCLCPP_WARN_THROTTLE(this->get_logger(), *get_clock(), 1000,
+                "Right arm: controller %.3f m from EE (threshold %.3f m) — move controller to EE before gripping",
+                pos_err, m.arm_proximity_threshold);
+              prox_ok = false;
+            }
+            if (prox_ok && m.arm_proximity_angle_threshold > 0.0 &&
+                angle_err > m.arm_proximity_angle_threshold) {
+              RCLCPP_WARN_THROTTLE(this->get_logger(), *get_clock(), 1000,
+                "Right arm: controller %.1f deg from EE orientation (threshold %.1f deg) — align controller before gripping",
+                angle_err * 180.0 / M_PI,
+                m.arm_proximity_angle_threshold * 180.0 / M_PI);
+              prox_ok = false;
+            }
+          }
+          if (prox_ok) {
+            last_tf_r    = current_tf_r;
+            last_tf_ee_r = current_tf_ee_r;
+            right_arm_latched = true;
+            if (!arm_tracking) {
+              arm_tracking = true;
+              RCLCPP_INFO(this->get_logger(), "Arm tracking started (right latched)");
+              std_msgs::msg::Bool track_msg;
+              track_msg.data = true;
+              for (auto & [arm_name, pub] : arm_track_pubs_) {
+                pub->publish(track_msg);
+              }
+            } else {
+              RCLCPP_INFO(this->get_logger(), "Right arm latched");
+            }
+          }
+        }
+
+        // Broadcast target TF (used by MoveitArmTeleop and for visualisation)
+        if (arm_tracking && ee_r_ok && right_arm_latched) {
           T_delta_r = last_tf_r.inverse() * current_tf_r;
+          // Scale translation by qcm.scale to reduce arm motion sensitivity.
+          // Rotation is kept 1:1 so wrist orientation tracks naturally.
+          T_delta_r.setOrigin(T_delta_r.getOrigin() * m.scale);
           T_delta_r_align = T_align * T_delta_r * T_align.inverse();
           T_target_r = last_tf_ee_r * T_delta_r_align;
 
           target_msg_r.header.stamp = this->now();
-          target_msg_r.header.frame_id = std::string(this->get_namespace()).substr(1) + "/base_footprint";
-          target_msg_r.child_frame_id = std::string(this->get_namespace()).substr(1) + "/" + m.target_frame_name;
+          target_msg_r.header.frame_id = "base_footprint";
+          target_msg_r.child_frame_id = m.target_frame_name;
           target_msg_r.transform = tf2::toMsg(T_target_r);
 
           tf_broadcaster->sendTransform(target_msg_r);
         }
       }
 
-      if (name == "left") {
+      if (name == "left" && left_tf_ok) {
+        bool ee_l_ok = false;
         try {
           tf_msg = tf_buffer->lookupTransform(
-            std::string(this->get_namespace()).substr(1) + "/base_footprint",
-            std::string(this->get_namespace()).substr(1) + "/" + m.end_effector_frame_name,
-            tf2::TimePointZero
+            "base_footprint",
+            m.end_effector_frame_name,
+              tf2::TimePointZero,
+              tf2::Duration(0)
           );
           tf2::fromMsg(tf_msg.transform, current_tf_ee_l);
+          ee_l_ok = true;
         }
         catch (tf2::TransformException &ex) {
-          RCLCPP_WARN(this->get_logger(), "TF lookup failed: %s", ex.what());
-          return;
+          RCLCPP_WARN_THROTTLE(this->get_logger(), *get_clock(), 2000,
+            "Left EE TF lookup failed: %s", ex.what());
         }
 
-        // --- (left_hold) ---
-        if (arm_tracking) {
+        // Per-arm latch: requires grip button AND controller near EE (or proximity
+        // check disabled). Checked on each cycle so late-latch also respects proximity.
+        if (arm_control_enabled && !left_arm_latched && ee_l_ok) {
+          bool prox_ok = true;
+          if (m.arm_proximity_threshold > 0.0 || m.arm_proximity_angle_threshold > 0.0) {
+            tf2::Vector3 pos_diff = current_tf_l.getOrigin() - current_tf_ee_l.getOrigin();
+            double pos_err = pos_diff.length();
+            tf2::Quaternion q_diff =
+              current_tf_ee_l.getRotation().inverse() * current_tf_l.getRotation();
+            q_diff.normalize();
+            double angle_err = 2.0 * std::acos(std::clamp(std::abs(q_diff.w()), 0.0, 1.0));
+
+            if (m.arm_proximity_threshold > 0.0 && pos_err > m.arm_proximity_threshold) {
+              RCLCPP_WARN_THROTTLE(this->get_logger(), *get_clock(), 1000,
+                "Left arm: controller %.3f m from EE (threshold %.3f m) — move controller to EE before gripping",
+                pos_err, m.arm_proximity_threshold);
+              prox_ok = false;
+            }
+            if (prox_ok && m.arm_proximity_angle_threshold > 0.0 &&
+                angle_err > m.arm_proximity_angle_threshold) {
+              RCLCPP_WARN_THROTTLE(this->get_logger(), *get_clock(), 1000,
+                "Left arm: controller %.1f deg from EE orientation (threshold %.1f deg) — align controller before gripping",
+                angle_err * 180.0 / M_PI,
+                m.arm_proximity_angle_threshold * 180.0 / M_PI);
+              prox_ok = false;
+            }
+          }
+          if (prox_ok) {
+            last_tf_l    = current_tf_l;
+            last_tf_ee_l = current_tf_ee_l;
+            left_arm_latched = true;
+            if (!arm_tracking) {
+              arm_tracking = true;
+              RCLCPP_INFO(this->get_logger(), "Arm tracking started (left latched)");
+              std_msgs::msg::Bool track_msg;
+              track_msg.data = true;
+              for (auto & [arm_name, pub] : arm_track_pubs_) {
+                pub->publish(track_msg);
+              }
+            } else {
+              RCLCPP_INFO(this->get_logger(), "Left arm latched");
+            }
+          }
+        }
+
+        // Broadcast target TF (used by MoveitArmTeleop and for visualisation)
+        if (arm_tracking && ee_l_ok && left_arm_latched) {
           T_delta_l = last_tf_l.inverse() * current_tf_l;
+          // Scale translation by qcm.scale to reduce arm motion sensitivity.
+          T_delta_l.setOrigin(T_delta_l.getOrigin() * m.scale);
           T_delta_l_align = T_align * T_delta_l * T_align.inverse();
           T_target_l = last_tf_ee_l * T_delta_l_align;
 
           target_msg_l.header.stamp = this->now();
-          target_msg_l.header.frame_id = std::string(this->get_namespace()).substr(1) + "/base_footprint";
-          target_msg_l.child_frame_id = std::string(this->get_namespace()).substr(1) + "/" + m.target_frame_name;
+          target_msg_l.header.frame_id = "base_footprint";
+          target_msg_l.child_frame_id = m.target_frame_name;
           target_msg_l.transform = tf2::toMsg(T_target_l);
 
           tf_broadcaster->sendTransform(target_msg_l);
