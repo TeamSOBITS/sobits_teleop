@@ -42,6 +42,11 @@ def generate_launch_description():
         default_value='True',
         description='Whether to launch ds4drv for PS4 controller support'
     )
+    declare_use_sim_time_cmd = DeclareLaunchArgument(
+        'use_sim_time',
+        default_value='false',
+        description='Use simulation (Gazebo) clock — set true when running with gz_minimal'
+    )
 
     # LaunchConfiguration handles runtime values
     robot_name = LaunchConfiguration('robot_name')
@@ -70,8 +75,11 @@ def generate_launch_description():
         name='sobits_teleop',
         output='screen',
         namespace=robot_name,
-        parameters=[[robot_config, '.yaml'],
-                    [controller_config, '.yaml']],
+        parameters=[
+            [robot_config, '.yaml'],
+            [controller_config, '.yaml'],
+            {'use_sim_time': LaunchConfiguration('use_sim_time')},
+        ],
     )
 
     ds4drv_cmd = ExecuteProcess(
@@ -103,7 +111,10 @@ def generate_launch_description():
         name='quest_node',
         output='screen',
         namespace=robot_name,
-        parameters=[{'ROS_IP': ros_ip}],
+        parameters=[
+            {'ROS_IP': ros_ip},
+            {'use_sim_time': LaunchConfiguration('use_sim_time')},
+        ],
         condition=IfCondition(EqualsSubstitution(LaunchConfiguration('device'), 'quest'))
     )
 
@@ -123,6 +134,7 @@ def generate_launch_description():
         declare_joystick_device_cmd,
         declare_ros_ip_cmd,
         declare_use_ds4drv_cmd,
+        declare_use_sim_time_cmd,
         sobits_teleop_node,
         ds4drv_cmd,
         joystick_node,
