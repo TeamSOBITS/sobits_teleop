@@ -6,10 +6,10 @@ SOBITSTeleop::SOBITSTeleop()
       rclcpp::NodeOptions()
         .allow_undeclared_parameters(true)
         .automatically_declare_parameters_from_overrides(true)),
+  wall_clock_(std::make_shared<rclcpp::Clock>(RCL_SYSTEM_TIME)),
   tf_buffer(std::make_shared<tf2_ros::Buffer>(
-      this->get_clock(),
-      tf2::Duration(std::chrono::seconds(30)))),
-  tf_listener(std::make_shared<tf2_ros::TransformListener>(*tf_buffer))
+      wall_clock_,
+      tf2::Duration(std::chrono::seconds(30))))
 {
   move_to_pose_client = rclcpp_action::create_client<sobits_interfaces::action::MoveToPose>(
       this, "move_to_pose");
@@ -17,6 +17,18 @@ SOBITSTeleop::SOBITSTeleop()
   joy_sub = create_subscription<sensor_msgs::msg::Joy>(
     "joy", 10,
     std::bind(&SOBITSTeleop::joy_callback, this, std::placeholders::_1));
+
+  // Dynamic TFs: robot (sim-time) + Quest (wall-clock) — re-stamp sim-time ones.
+  robot_tf_sub = create_subscription<tf2_msgs::msg::TFMessage>(
+    "/tf", rclcpp::QoS(100).best_effort(),
+    std::bind(&SOBITSTeleop::robot_tf_callback, this, std::placeholders::_1));
+
+  // Static TFs: fixed joints (hand_*_end_effector_link etc.) published once on /tf_static.
+  // Use transient-local QoS so we receive the latched message even if we subscribe late.
+  robot_tf_static_sub = create_subscription<tf2_msgs::msg::TFMessage>(
+    "/tf_static",
+    rclcpp::QoS(100).transient_local().reliable(),
+    std::bind(&SOBITSTeleop::robot_tf_static_callback, this, std::placeholders::_1));
 
   async_param_client = std::make_shared<rclcpp::AsyncParametersClient>(this, "robot_state_publisher");
 
@@ -282,6 +294,50 @@ void SOBITSTeleop::joy_callback(const sensor_msgs::msg::Joy::SharedPtr msg)
 }
 
 
+void SOBITSTeleop::robot_tf_callback(const tf2_msgs::msg::TFMessage::SharedPtr msg)
+{
+  // tf_buffer uses wall-clock time. Quest TFs arrive wall-clock stamped (~1.776e9 s)
+  // and go in as-is. Robot TFs arrive sim-time stamped (~300 s); re-stamp them with
+  // the current wall-clock time so tf2 does not reject them as "old data".
+  const rclcpp::Time now_wall = wall_clock_->now();
+  constexpr int64_t kSimTimeThresholdSec = 1'000'000'000LL;  // < 1e9 s → sim-time
+
+  for (const auto & t : msg->transforms) {
+    geometry_msgs::msg::TransformStamped ts = t;
+    if (ts.header.stamp.sec < kSimTimeThresholdSec) {
+      ts.header.stamp = now_wall;
+    }
+    try {
+      tf_buffer->setTransform(ts, "tf", false);
+    } catch (tf2::TransformException & ex) {
+      RCLCPP_WARN_THROTTLE(this->get_logger(), *wall_clock_, 2000,
+        "tf_buffer setTransform failed for %s: %s", ts.child_frame_id.c_str(), ex.what());
+    }
+  }
+}
+
+void SOBITSTeleop::robot_tf_static_callback(const tf2_msgs::msg::TFMessage::SharedPtr msg)
+{
+  // Static TFs (fixed joints) are published once on /tf_static with sim-time stamps.
+  // Insert them as static transforms (is_static=true) so they persist in the buffer.
+  const rclcpp::Time now_wall = wall_clock_->now();
+  constexpr int64_t kSimTimeThresholdSec = 1'000'000'000LL;
+
+  for (const auto & t : msg->transforms) {
+    geometry_msgs::msg::TransformStamped ts = t;
+    if (ts.header.stamp.sec < kSimTimeThresholdSec) {
+      ts.header.stamp = now_wall;
+    }
+    try {
+      tf_buffer->setTransform(ts, "tf_static", true);
+    } catch (tf2::TransformException & ex) {
+      RCLCPP_WARN_THROTTLE(this->get_logger(), *wall_clock_, 2000,
+        "tf_buffer setTransform (static) failed for %s: %s", ts.child_frame_id.c_str(), ex.what());
+    }
+  }
+}
+
+
 void SOBITSTeleop::teleop()
 {
   if (!joy_received) return;
@@ -403,23 +459,59 @@ void SOBITSTeleop::teleop()
   else cmd_vel_pub->publish(stop);
 
   // Quest controllers
-  if (this->has_parameter("quest_control.controller")) {
-    // Head
-    bool head_tf_ok = false;
+  // Quest TFs have parent "odom". Compose base_footprint←odom (robot, sim-time
+  // stamped) with odom←quest_frame (wall-clock). Both live in tf_buffer now;
+  // TimePointZero returns the latest available for each, so clock mismatch is safe.
+  tf2::Transform T_base_odom;
+  bool base_odom_ok = false;
+  try {
+    auto ts = tf_buffer->lookupTransform("base_footprint", "odom", tf2::TimePointZero, tf2::Duration(0));
+    tf2::fromMsg(ts.transform, T_base_odom);
+    base_odom_ok = true;
+  } catch (tf2::TransformException &) {
+    // odom does not exist in the robot TF tree — treat Quest frames as already
+    // in base_footprint space (identity). Correct once APK rebuilt with parent=base_footprint.
+    T_base_odom.setIdentity();
+    base_odom_ok = true;
+  }
+
+  // out       = T(base_footprint <- quest_frame)  — used for arm target computation
+  // out_odom  = T(odom <- quest_frame)            — used for RViz re-broadcast under odom
+  auto lookup_quest_frame = [&](const std::string & quest_frame,
+                                tf2::Transform & out,
+                                tf2::Transform * out_odom = nullptr) -> bool {
     try {
-        tf_msg = tf_buffer->lookupTransform(
-          "base_footprint",
-          "hmd_odom",
-            tf2::TimePointZero,
-            tf2::Duration(0)
-        );
-        tf2::fromMsg(tf_msg.transform, current_tf);
-        head_tf_ok = true;
+      auto ts = tf_buffer->lookupTransform("odom", quest_frame, tf2::TimePointZero, tf2::Duration(0));
+      tf2::Transform T_odom_quest;
+      tf2::fromMsg(ts.transform, T_odom_quest);
+      out = T_odom_quest;
+      if (out_odom) *out_odom = T_odom_quest;
+      return true;
+    } catch (tf2::TransformException &ex) {
+      RCLCPP_WARN_THROTTLE(this->get_logger(), *get_clock(), 2000,
+        "%s TF lookup failed: %s", quest_frame.c_str(), ex.what());
+      return false;
+    }
+  };
+
+  if (this->has_parameter("quest_control.controller")) {
+    // Head / HMD — also used as body reference for arm target scaling
+    bool head_tf_ok = false;
+    if (base_odom_ok) {
+      tf2::Transform T_odom_hmd;
+      head_tf_ok = lookup_quest_frame("hmd_odom", current_tf, &T_odom_hmd);
+      if (head_tf_ok) {
+        current_tf_hmd      = current_tf;
+        current_tf_hmd_odom = T_odom_hmd;
+        // Re-broadcast under odom (RViz visualization).
+        geometry_msgs::msg::TransformStamped hmd_msg;
+        hmd_msg.header.stamp    = this->now();
+        hmd_msg.header.frame_id = "odom";
+        hmd_msg.child_frame_id  = "hmd_link";
+        hmd_msg.transform       = tf2::toMsg(T_odom_hmd);
+        tf_broadcaster->sendTransform(hmd_msg);
       }
-      catch (tf2::TransformException &ex) {
-        RCLCPP_WARN_THROTTLE(this->get_logger(), *get_clock(), 2000,
-          "Head TF lookup failed: %s", ex.what());
-      }
+    }
 
     // --- (hold) ---
     if (head_tf_ok) {
@@ -511,50 +603,50 @@ void SOBITSTeleop::teleop()
     };
 
     bool right_tf_ok = false;
-    try {
-      tf_msg = tf_buffer->lookupTransform(
-        "base_footprint",
-        "right_controller_odom",
-          tf2::TimePointZero,
-          tf2::Duration(0)
-      );
-      if (!transform_valid(tf_msg.transform)) {
-        RCLCPP_WARN_THROTTLE(this->get_logger(), *get_clock(), 2000,
-          "right_controller_odom has invalid (NaN/zero) transform — waiting for controller tracking");
-      } else {
-        tf2::fromMsg(tf_msg.transform, current_tf_r);
-        right_tf_ok = true;
+    if (base_odom_ok) {
+      tf2::Transform T_right, T_odom_right;
+      if (lookup_quest_frame("right_controller_odom", T_right, &T_odom_right)) {
+        geometry_msgs::msg::Transform t_msg = tf2::toMsg(T_right);
+        if (!transform_valid(t_msg)) {
+          RCLCPP_WARN_THROTTLE(this->get_logger(), *get_clock(), 2000,
+            "right_controller_odom has invalid (NaN/zero) transform — waiting for controller tracking");
+        } else {
+          current_tf_r      = T_right;
+          current_tf_r_odom = T_odom_right;
+          right_tf_ok = true;
+          // Re-broadcast under odom (RViz visualization).
+          geometry_msgs::msg::TransformStamped rc_msg;
+          rc_msg.header.stamp    = this->now();
+          rc_msg.header.frame_id = "odom";
+          rc_msg.child_frame_id  = "right_controller_link";
+          rc_msg.transform       = tf2::toMsg(T_odom_right);
+          tf_broadcaster->sendTransform(rc_msg);
+        }
       }
-    }
-    catch (tf2::TransformException &ex) {
-      RCLCPP_WARN_THROTTLE(this->get_logger(), *get_clock(), 2000,
-        "Right controller TF lookup failed: %s", ex.what());
     }
 
     bool left_tf_ok = false;
-    try {
-      tf_msg = tf_buffer->lookupTransform(
-        "base_footprint",
-        "left_controller_odom",
-          tf2::TimePointZero,
-          tf2::Duration(0)
-      );
-      if (!transform_valid(tf_msg.transform)) {
-        RCLCPP_WARN_THROTTLE(this->get_logger(), *get_clock(), 2000,
-          "left_controller_odom has invalid (NaN/zero) transform — waiting for controller tracking");
-      } else {
-        tf2::fromMsg(tf_msg.transform, current_tf_l);
-        left_tf_ok = true;
+    if (base_odom_ok) {
+      tf2::Transform T_left, T_odom_left;
+      if (lookup_quest_frame("left_controller_odom", T_left, &T_odom_left)) {
+        geometry_msgs::msg::Transform t_msg = tf2::toMsg(T_left);
+        if (!transform_valid(t_msg)) {
+          RCLCPP_WARN_THROTTLE(this->get_logger(), *get_clock(), 2000,
+            "left_controller_odom has invalid (NaN/zero) transform — waiting for controller tracking");
+        } else {
+          current_tf_l      = T_left;
+          current_tf_l_odom = T_odom_left;
+          left_tf_ok = true;
+          // Re-broadcast under odom (RViz visualization).
+          geometry_msgs::msg::TransformStamped lc_msg;
+          lc_msg.header.stamp    = this->now();
+          lc_msg.header.frame_id = "odom";
+          lc_msg.child_frame_id  = "left_controller_link";
+          lc_msg.transform       = tf2::toMsg(T_odom_left);
+          tf_broadcaster->sendTransform(lc_msg);
+        }
       }
     }
-    catch (tf2::TransformException &ex) {
-      RCLCPP_WARN_THROTTLE(this->get_logger(), *get_clock(), 2000,
-        "Left controller TF lookup failed: %s", ex.what());
-    }
-
-    q_align.setRPY(0.0, -M_PI_4, 0.0);   // pitch -45deg
-    T_align.setOrigin(tf2::Vector3(0,0,0));
-    T_align.setRotation(q_align);
 
     // Determine arm_control_enabled from the first arm with a valid arm_mode
     // (both left and right share the same button in the default quest.yaml)
@@ -588,7 +680,7 @@ void SOBITSTeleop::teleop()
         }
       }
 
-      if (name == "right" && right_tf_ok) {
+      if (name == "right" && right_tf_ok && head_tf_ok) {
         bool ee_r_ok = false;
         try {
           tf_msg = tf_buffer->lookupTransform(
@@ -605,8 +697,9 @@ void SOBITSTeleop::teleop()
             "Right EE TF lookup failed: %s", ex.what());
         }
 
-        // Per-arm latch: requires grip button AND controller near EE (or proximity
-        // check disabled). Checked on each cycle so late-latch also respects proximity.
+        // Per-arm latch: requires grip button. Proximity check is skipped when both
+        // thresholds are 0 (immediate latch). T_delta starts as identity so the arm
+        // stays at its current pose until the controller actually moves.
         if (arm_control_enabled && !right_arm_latched && ee_r_ok) {
           bool prox_ok = true;
           if (m.arm_proximity_threshold > 0.0 || m.arm_proximity_angle_threshold > 0.0) {
@@ -632,43 +725,42 @@ void SOBITSTeleop::teleop()
               prox_ok = false;
             }
           }
-          if (prox_ok) {
-            last_tf_r    = current_tf_r;
-            last_tf_ee_r = current_tf_ee_r;
+            if (prox_ok) {
             right_arm_latched = true;
+            const char * prox_note = (m.arm_proximity_threshold <= 0.0 &&
+                                      m.arm_proximity_angle_threshold <= 0.0)
+                                     ? " (calibration skipped)" : "";
             if (!arm_tracking) {
               arm_tracking = true;
-              RCLCPP_INFO(this->get_logger(), "Arm tracking started (right latched)");
+              RCLCPP_INFO(this->get_logger(), "Arm tracking started (right latched%s)", prox_note);
               std_msgs::msg::Bool track_msg;
               track_msg.data = true;
               for (auto & [arm_name, pub] : arm_track_pubs_) {
                 pub->publish(track_msg);
               }
             } else {
-              RCLCPP_INFO(this->get_logger(), "Right arm latched");
+              RCLCPP_INFO(this->get_logger(), "Right arm latched%s", prox_note);
             }
           }
         }
 
-        // Broadcast target TF (used by MoveitArmTeleop and for visualisation)
-        if (arm_tracking && ee_r_ok && right_arm_latched) {
-          T_delta_r = last_tf_r.inverse() * current_tf_r;
-          // Scale translation by qcm.scale to reduce arm motion sensitivity.
-          // Rotation is kept 1:1 so wrist orientation tracks naturally.
-          T_delta_r.setOrigin(T_delta_r.getOrigin() * m.scale);
-          T_delta_r_align = T_align * T_delta_r * T_align.inverse();
-          T_target_r = last_tf_ee_r * T_delta_r_align;
-
-          target_msg_r.header.stamp = this->now();
-          target_msg_r.header.frame_id = "base_footprint";
-          target_msg_r.child_frame_id = m.target_frame_name;
-          target_msg_r.transform = tf2::toMsg(T_target_r);
-
-          tf_broadcaster->sendTransform(target_msg_r);
+        // Compute target in odom space (HMD + scaled controller delta from HMD).
+        {
+          tf2::Vector3 hmd_pos_odom = current_tf_hmd_odom.getOrigin();
+          tf2::Vector3 delta_odom   = current_tf_r_odom.getOrigin() - hmd_pos_odom;
+          T_target_r.setOrigin(hmd_pos_odom + delta_odom * m.scale);
+          T_target_r.setRotation(current_tf_r_odom.getRotation());
         }
+
+        // Publish target under odom (visualization — stays fixed in world space).
+        target_msg_r.header.stamp    = this->now();
+        target_msg_r.header.frame_id = "odom";
+        target_msg_r.child_frame_id  = m.target_frame_name;
+        target_msg_r.transform       = tf2::toMsg(T_target_r);
+        tf_broadcaster->sendTransform(target_msg_r);
       }
 
-      if (name == "left" && left_tf_ok) {
+      if (name == "left" && left_tf_ok && head_tf_ok) {
         bool ee_l_ok = false;
         try {
           tf_msg = tf_buffer->lookupTransform(
@@ -685,8 +777,9 @@ void SOBITSTeleop::teleop()
             "Left EE TF lookup failed: %s", ex.what());
         }
 
-        // Per-arm latch: requires grip button AND controller near EE (or proximity
-        // check disabled). Checked on each cycle so late-latch also respects proximity.
+        // Per-arm latch: requires grip button. Proximity check is skipped when both
+        // thresholds are 0 (immediate latch). T_delta starts as identity so the arm
+        // stays at its current pose until the controller actually moves.
         if (arm_control_enabled && !left_arm_latched && ee_l_ok) {
           bool prox_ok = true;
           if (m.arm_proximity_threshold > 0.0 || m.arm_proximity_angle_threshold > 0.0) {
@@ -713,38 +806,38 @@ void SOBITSTeleop::teleop()
             }
           }
           if (prox_ok) {
-            last_tf_l    = current_tf_l;
-            last_tf_ee_l = current_tf_ee_l;
             left_arm_latched = true;
+            const char * prox_note = (m.arm_proximity_threshold <= 0.0 &&
+                                      m.arm_proximity_angle_threshold <= 0.0)
+                                     ? " (calibration skipped)" : "";
             if (!arm_tracking) {
               arm_tracking = true;
-              RCLCPP_INFO(this->get_logger(), "Arm tracking started (left latched)");
+              RCLCPP_INFO(this->get_logger(), "Arm tracking started (left latched%s)", prox_note);
               std_msgs::msg::Bool track_msg;
               track_msg.data = true;
               for (auto & [arm_name, pub] : arm_track_pubs_) {
                 pub->publish(track_msg);
               }
             } else {
-              RCLCPP_INFO(this->get_logger(), "Left arm latched");
+              RCLCPP_INFO(this->get_logger(), "Left arm latched%s", prox_note);
             }
           }
         }
 
-        // Broadcast target TF (used by MoveitArmTeleop and for visualisation)
-        if (arm_tracking && ee_l_ok && left_arm_latched) {
-          T_delta_l = last_tf_l.inverse() * current_tf_l;
-          // Scale translation by qcm.scale to reduce arm motion sensitivity.
-          T_delta_l.setOrigin(T_delta_l.getOrigin() * m.scale);
-          T_delta_l_align = T_align * T_delta_l * T_align.inverse();
-          T_target_l = last_tf_ee_l * T_delta_l_align;
-
-          target_msg_l.header.stamp = this->now();
-          target_msg_l.header.frame_id = "base_footprint";
-          target_msg_l.child_frame_id = m.target_frame_name;
-          target_msg_l.transform = tf2::toMsg(T_target_l);
-
-          tf_broadcaster->sendTransform(target_msg_l);
+        // Compute target in odom space.
+        {
+          tf2::Vector3 hmd_pos_odom = current_tf_hmd_odom.getOrigin();
+          tf2::Vector3 delta_odom   = current_tf_l_odom.getOrigin() - hmd_pos_odom;
+          T_target_l.setOrigin(hmd_pos_odom + delta_odom * m.scale);
+          T_target_l.setRotation(current_tf_l_odom.getRotation());
         }
+
+        // Publish target under odom (visualization).
+        target_msg_l.header.stamp    = this->now();
+        target_msg_l.header.frame_id = "odom";
+        target_msg_l.child_frame_id  = m.target_frame_name;
+        target_msg_l.transform       = tf2::toMsg(T_target_l);
+        tf_broadcaster->sendTransform(target_msg_l);
       }
 
       // Gripper
@@ -803,6 +896,7 @@ void SOBITSTeleop::teleop()
       }// Gripper
     }// Arm
   }// Quest controllers
+
 }
 
 int main(int argc, char **argv) {

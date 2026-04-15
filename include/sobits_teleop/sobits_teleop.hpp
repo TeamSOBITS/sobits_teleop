@@ -5,6 +5,7 @@
 #include <trajectory_msgs/msg/joint_trajectory.hpp>
 #include <geometry_msgs/msg/twist.hpp>
 #include <std_msgs/msg/bool.hpp>
+#include <tf2_msgs/msg/tf_message.hpp>
 #include "sobits_interfaces/action/move_to_pose.hpp"
 
 #include <string>
@@ -19,7 +20,7 @@
 #include <tf2_ros/transform_broadcaster.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 
-struct Limit { 
+struct Limit {
   double lower;
   double upper;
 };
@@ -109,10 +110,14 @@ private:
   void load_parameters();
   void joint_state_callback(const sensor_msgs::msg::JointState::SharedPtr msg);
   void joy_callback(const sensor_msgs::msg::Joy::SharedPtr msg);
+  void robot_tf_callback(const tf2_msgs::msg::TFMessage::SharedPtr msg);
+  void robot_tf_static_callback(const tf2_msgs::msg::TFMessage::SharedPtr msg);
   void teleop();
 
   rclcpp::Subscription<sensor_msgs::msg::Joy>::SharedPtr joy_sub;
   rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr joint_state_sub;
+  rclcpp::Subscription<tf2_msgs::msg::TFMessage>::SharedPtr robot_tf_sub;
+  rclcpp::Subscription<tf2_msgs::msg::TFMessage>::SharedPtr robot_tf_static_sub;
 
   rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_pub;
   std::map<std::string,
@@ -165,8 +170,8 @@ private:
 
   bool head_tracking = false;
   bool arm_tracking = false;
-  bool right_arm_latched = false;  // true once last_tf_r / last_tf_ee_r are set for this tracking session
-  bool left_arm_latched  = false;  // true once last_tf_l / last_tf_ee_l are set for this tracking session
+  bool right_arm_latched = false;
+  bool left_arm_latched  = false;
 
   tf2::Transform last_tf;
   tf2::Transform current_tf;
@@ -177,31 +182,29 @@ private:
   double pan_target, tilt_target, body_lift_target;
   double target_rad = 0.0;
 
-  tf2::Transform last_tf_r;
+  // Current controller poses in base_footprint (recomputed every tick)
+  tf2::Transform current_tf_hmd;
   tf2::Transform current_tf_r;
-  tf2::Transform last_tf_l;
   tf2::Transform current_tf_l;
   tf2::Transform current_tf_ee_r;
-  tf2::Transform last_tf_ee_r;
   tf2::Transform current_tf_ee_l;
-  tf2::Transform last_tf_ee_l;
-  tf2::Transform T_delta_l;
-  tf2::Transform T_target_l;
-  tf2::Transform T_delta_r;
-  tf2::Transform T_target_r;
-  tf2::Transform T_delta_r_align;
-  tf2::Transform T_delta_l_align;
 
-  tf2::Quaternion q_align;
-  tf2::Transform T_align;
+  // Current controller poses in odom (wall-clock, recomputed every tick)
+  tf2::Transform current_tf_r_odom;
+  tf2::Transform current_tf_l_odom;
+  tf2::Transform current_tf_hmd_odom;
+
+  tf2::Transform T_target_r;
+  tf2::Transform T_target_l;
 
   geometry_msgs::msg::TransformStamped tf_msg;
   geometry_msgs::msg::TransformStamped target_msg_r;
   geometry_msgs::msg::TransformStamped target_msg_l;
 
   std::shared_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster;
+  std::shared_ptr<rclcpp::Clock> wall_clock_;
+  // Single wall-clock buffer for all TFs (Quest wall-clock + robot re-stamped).
   std::shared_ptr<tf2_ros::Buffer> tf_buffer;
-  std::shared_ptr<tf2_ros::TransformListener> tf_listener;
 
   Limit lim;
   JointMap jm;

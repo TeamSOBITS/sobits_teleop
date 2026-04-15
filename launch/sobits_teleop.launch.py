@@ -128,6 +128,12 @@ def generate_launch_description():
         condition=IfCondition(EqualsSubstitution(LaunchConfiguration('device'), 'keyboard'))
     )
 
+    # Kill any process still holding port 10000 (stale quest_node from a previous launch)
+    kill_stale_quest = ExecuteProcess(
+        cmd=['bash', '-c', 'fuser -k 10000/tcp 2>/dev/null || true'],
+        output='screen',
+    )
+
     return LaunchDescription([
         declare_robot_name_cmd,
         declare_device_cmd,
@@ -135,6 +141,7 @@ def generate_launch_description():
         declare_ros_ip_cmd,
         declare_use_ds4drv_cmd,
         declare_use_sim_time_cmd,
+        kill_stale_quest,
         sobits_teleop_node,
         ds4drv_cmd,
         joystick_node,
