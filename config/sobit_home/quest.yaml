@@ -32,9 +32,9 @@
         end_effector_frame_name: "hand_right_end_effector_link"
         target_frame_name: "right_target_link"
         arm_mode: 7         # right grip button
-        scale: 1.5          # amplify: robot arm longer than human, boost range; tune 1.0–2.0
-        arm_proximity_threshold: 0.15       # metres: controller must be within this distance of EE to start tracking (0.0 = disabled)
-        arm_proximity_angle_threshold: 0.52 # radians (~30 deg): controller orientation must match EE within this angle (0.0 = disabled)
+        scale: 2.0       # calibrated: robot arm (1.2926 m) / human arm (0.9150 m)
+        arm_proximity_threshold: 0.0        # metres: 0.0 = skip calibration, latch immediately on button press
+        arm_proximity_angle_threshold: 0.0  # radians: 0.0 = skip calibration, latch immediately on button press
         gripper:
           hand: "hand_right"
           names:
@@ -56,9 +56,9 @@
         end_effector_frame_name: "hand_left_end_effector_link"
         target_frame_name: "left_target_link"
         arm_mode: 7           # right grip button
-        scale: 1.5            # amplify: robot arm longer than human, boost range; tune 1.0–2.0
-        arm_proximity_threshold: 0.15       # metres: controller must be within this distance of EE to start tracking (0.0 = disabled)
-        arm_proximity_angle_threshold: 0.52 # radians (~30 deg): controller orientation must match EE within this angle (0.0 = disabled)
+        scale: 2.0         # calibrated: robot arm (1.2926 m) / human arm (0.9150 m)
+        arm_proximity_threshold: 0.0        # metres: 0.0 = skip calibration, latch immediately on button press
+        arm_proximity_angle_threshold: 0.0  # radians: 0.0 = skip calibration, latch immediately on button press
         gripper:
           hand: "hand_left"
           names:
