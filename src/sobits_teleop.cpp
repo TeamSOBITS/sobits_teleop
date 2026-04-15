@@ -459,33 +459,21 @@ void SOBITSTeleop::teleop()
   else cmd_vel_pub->publish(stop);
 
   // Quest controllers
-  // Quest TFs have parent "odom". Compose base_footprint←odom (robot, sim-time
-  // stamped) with odom←quest_frame (wall-clock). Both live in tf_buffer now;
-  // TimePointZero returns the latest available for each, so clock mismatch is safe.
-  tf2::Transform T_base_odom;
-  bool base_odom_ok = false;
-  try {
-    auto ts = tf_buffer->lookupTransform("base_footprint", "odom", tf2::TimePointZero, tf2::Duration(0));
-    tf2::fromMsg(ts.transform, T_base_odom);
-    base_odom_ok = true;
-  } catch (tf2::TransformException &) {
-    // odom does not exist in the robot TF tree — treat Quest frames as already
-    // in base_footprint space (identity). Correct once APK rebuilt with parent=base_footprint.
-    T_base_odom.setIdentity();
-    base_odom_ok = true;
-  }
+  // Unity publishes Quest frames directly under base_footprint, so we look them
+  // up from base_footprint. No odom intermediate is needed.
+  bool base_odom_ok = true;  // always ready; kept as guard variable for structure
 
-  // out       = T(base_footprint <- quest_frame)  — used for arm target computation
-  // out_odom  = T(odom <- quest_frame)            — used for RViz re-broadcast under odom
+  // out      = T(base_footprint <- quest_frame)  — used for arm target computation
+  // out_base = T(base_footprint <- quest_frame)  — used for RViz re-broadcast under base_footprint
   auto lookup_quest_frame = [&](const std::string & quest_frame,
                                 tf2::Transform & out,
-                                tf2::Transform * out_odom = nullptr) -> bool {
+                                tf2::Transform * out_base = nullptr) -> bool {
     try {
-      auto ts = tf_buffer->lookupTransform("odom", quest_frame, tf2::TimePointZero, tf2::Duration(0));
-      tf2::Transform T_odom_quest;
-      tf2::fromMsg(ts.transform, T_odom_quest);
-      out = T_odom_quest;
-      if (out_odom) *out_odom = T_odom_quest;
+      auto ts = tf_buffer->lookupTransform("base_footprint", quest_frame, tf2::TimePointZero, tf2::Duration(0));
+      tf2::Transform T_base_quest;
+      tf2::fromMsg(ts.transform, T_base_quest);
+      out = T_base_quest;
+      if (out_base) *out_base = T_base_quest;
       return true;
     } catch (tf2::TransformException &ex) {
       RCLCPP_WARN_THROTTLE(this->get_logger(), *get_clock(), 2000,
@@ -498,17 +486,17 @@ void SOBITSTeleop::teleop()
     // Head / HMD — also used as body reference for arm target scaling
     bool head_tf_ok = false;
     if (base_odom_ok) {
-      tf2::Transform T_odom_hmd;
-      head_tf_ok = lookup_quest_frame("hmd_odom", current_tf, &T_odom_hmd);
+      tf2::Transform T_base_hmd;
+      head_tf_ok = lookup_quest_frame("hmd_odom", current_tf, &T_base_hmd);
       if (head_tf_ok) {
         current_tf_hmd      = current_tf;
-        current_tf_hmd_odom = T_odom_hmd;
-        // Re-broadcast under odom (RViz visualization).
+        current_tf_hmd_odom = T_base_hmd;
+        // Re-broadcast under base_footprint (RViz visualization).
         geometry_msgs::msg::TransformStamped hmd_msg;
         hmd_msg.header.stamp    = this->now();
-        hmd_msg.header.frame_id = "odom";
+        hmd_msg.header.frame_id = "base_footprint";
         hmd_msg.child_frame_id  = "hmd_link";
-        hmd_msg.transform       = tf2::toMsg(T_odom_hmd);
+        hmd_msg.transform       = tf2::toMsg(T_base_hmd);
         tf_broadcaster->sendTransform(hmd_msg);
       }
     }
@@ -604,22 +592,22 @@ void SOBITSTeleop::teleop()
 
     bool right_tf_ok = false;
     if (base_odom_ok) {
-      tf2::Transform T_right, T_odom_right;
-      if (lookup_quest_frame("right_controller_odom", T_right, &T_odom_right)) {
+      tf2::Transform T_right, T_base_right;
+      if (lookup_quest_frame("right_controller_odom", T_right, &T_base_right)) {
         geometry_msgs::msg::Transform t_msg = tf2::toMsg(T_right);
         if (!transform_valid(t_msg)) {
           RCLCPP_WARN_THROTTLE(this->get_logger(), *get_clock(), 2000,
             "right_controller_odom has invalid (NaN/zero) transform — waiting for controller tracking");
         } else {
           current_tf_r      = T_right;
-          current_tf_r_odom = T_odom_right;
+          current_tf_r_odom = T_base_right;
           right_tf_ok = true;
-          // Re-broadcast under odom (RViz visualization).
+          // Re-broadcast under base_footprint (RViz visualization).
           geometry_msgs::msg::TransformStamped rc_msg;
           rc_msg.header.stamp    = this->now();
-          rc_msg.header.frame_id = "odom";
+          rc_msg.header.frame_id = "base_footprint";
           rc_msg.child_frame_id  = "right_controller_link";
-          rc_msg.transform       = tf2::toMsg(T_odom_right);
+          rc_msg.transform       = tf2::toMsg(T_base_right);
           tf_broadcaster->sendTransform(rc_msg);
         }
       }
@@ -627,22 +615,22 @@ void SOBITSTeleop::teleop()
 
     bool left_tf_ok = false;
     if (base_odom_ok) {
-      tf2::Transform T_left, T_odom_left;
-      if (lookup_quest_frame("left_controller_odom", T_left, &T_odom_left)) {
+      tf2::Transform T_left, T_base_left;
+      if (lookup_quest_frame("left_controller_odom", T_left, &T_base_left)) {
         geometry_msgs::msg::Transform t_msg = tf2::toMsg(T_left);
         if (!transform_valid(t_msg)) {
           RCLCPP_WARN_THROTTLE(this->get_logger(), *get_clock(), 2000,
             "left_controller_odom has invalid (NaN/zero) transform — waiting for controller tracking");
         } else {
           current_tf_l      = T_left;
-          current_tf_l_odom = T_odom_left;
+          current_tf_l_odom = T_base_left;
           left_tf_ok = true;
-          // Re-broadcast under odom (RViz visualization).
+          // Re-broadcast under base_footprint (RViz visualization).
           geometry_msgs::msg::TransformStamped lc_msg;
           lc_msg.header.stamp    = this->now();
-          lc_msg.header.frame_id = "odom";
+          lc_msg.header.frame_id = "base_footprint";
           lc_msg.child_frame_id  = "left_controller_link";
-          lc_msg.transform       = tf2::toMsg(T_odom_left);
+          lc_msg.transform       = tf2::toMsg(T_base_left);
           tf_broadcaster->sendTransform(lc_msg);
         }
       }
@@ -744,7 +732,7 @@ void SOBITSTeleop::teleop()
           }
         }
 
-        // Compute target in odom space (HMD + scaled controller delta from HMD).
+        // Compute target in base_footprint space (HMD + scaled controller delta from HMD).
         {
           tf2::Vector3 hmd_pos_odom = current_tf_hmd_odom.getOrigin();
           tf2::Vector3 delta_odom   = current_tf_r_odom.getOrigin() - hmd_pos_odom;
@@ -752,9 +740,9 @@ void SOBITSTeleop::teleop()
           T_target_r.setRotation(current_tf_r_odom.getRotation());
         }
 
-        // Publish target under odom (visualization — stays fixed in world space).
+        // Publish target under base_footprint (visualization — stays fixed in robot space).
         target_msg_r.header.stamp    = this->now();
-        target_msg_r.header.frame_id = "odom";
+        target_msg_r.header.frame_id = "base_footprint";
         target_msg_r.child_frame_id  = m.target_frame_name;
         target_msg_r.transform       = tf2::toMsg(T_target_r);
         tf_broadcaster->sendTransform(target_msg_r);
@@ -824,7 +812,7 @@ void SOBITSTeleop::teleop()
           }
         }
 
-        // Compute target in odom space.
+        // Compute target in base_footprint space.
         {
           tf2::Vector3 hmd_pos_odom = current_tf_hmd_odom.getOrigin();
           tf2::Vector3 delta_odom   = current_tf_l_odom.getOrigin() - hmd_pos_odom;
@@ -832,9 +820,9 @@ void SOBITSTeleop::teleop()
           T_target_l.setRotation(current_tf_l_odom.getRotation());
         }
 
-        // Publish target under odom (visualization).
+        // Publish target under base_footprint (visualization).
         target_msg_l.header.stamp    = this->now();
-        target_msg_l.header.frame_id = "odom";
+        target_msg_l.header.frame_id = "base_footprint";
         target_msg_l.child_frame_id  = m.target_frame_name;
         target_msg_l.transform       = tf2::toMsg(T_target_l);
         tf_broadcaster->sendTransform(target_msg_l);

@@ -26,7 +26,7 @@ static constexpr double ROBOT_ARM_REACH_M = 1.2926;
 
 static const std::string RIGHT_FRAME  = "right_controller_odom";
 static const std::string LEFT_FRAME   = "left_controller_odom";
-static const std::string PARENT_FRAME = "odom";
+static const std::string PARENT_FRAME = "base_footprint";
 
 // Right grip axis index in the Joy message (quest.yaml: arm_mode: 7 — it's an axis, not a button)
 static constexpr int GRIP_AXIS = 7;
