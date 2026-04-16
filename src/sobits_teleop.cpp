@@ -13,6 +13,8 @@ SOBITSTeleop::SOBITSTeleop()
 {
   move_to_pose_client = rclcpp_action::create_client<sobits_interfaces::action::MoveToPose>(
       this, "move_to_pose");
+  move_joint_client = rclcpp_action::create_client<sobits_interfaces::action::MoveJoint>(
+      this, "move_joint");
 
   joy_sub = create_subscription<sensor_msgs::msg::Joy>(
     "joy", 10,
@@ -204,6 +206,7 @@ void SOBITSTeleop::load_parameters()
         }
       }
       else {
+        qcm = QuestControllerMap{};
         if (this->has_parameter("quest_control." + controller_type + ".arm")) {
           this->get_parameter("quest_control." + controller_type + ".arm",                     qcm.arm);
           this->get_parameter("quest_control." + controller_type + ".base_frame_name",         qcm.base_frame_name);
@@ -237,6 +240,37 @@ void SOBITSTeleop::load_parameters()
             this->get_parameter("quest_control." + controller_type + ".gripper.type_axis",     qcm.type_axis);
             this->get_parameter("quest_control." + controller_type + ".gripper.type_joint",    qcm.type_joint);
           }
+          if (this->has_parameter("quest_control." + controller_type + ".gripper.hand_pose_button")) {
+            this->get_parameter("quest_control." + controller_type + ".gripper.hand_pose_button", qcm.hand_pose_button);
+          }
+          if (this->has_parameter("quest_control." + controller_type + ".gripper.hand_pose_open")) {
+            this->get_parameter("quest_control." + controller_type + ".gripper.hand_pose_open",   qcm.hand_pose_open);
+            this->get_parameter("quest_control." + controller_type + ".gripper.hand_pose_close",  qcm.hand_pose_close);
+            this->get_parameter("quest_control." + controller_type + ".gripper.hand_pose_action", qcm.hand_pose_action);
+          }
+          if (this->has_parameter("quest_control." + controller_type + ".gripper.adaptive_trigger_axis")) {
+            this->get_parameter("quest_control." + controller_type + ".gripper.adaptive_trigger_axis", qcm.adaptive_trigger_axis);
+            this->get_parameter("quest_control." + controller_type + ".gripper.adaptive_stick_axis",   qcm.adaptive_stick_axis);
+            this->get_parameter("quest_control." + controller_type + ".gripper.adaptive_close_sign",   qcm.adaptive_close_sign);
+
+            // Load adaptive joint list: adaptive_joints is a list of joint names,
+            // each with close_pos, open_pos, and optional fixed flag.
+            const std::string aj_prefix = "quest_control." + controller_type + ".gripper.adaptive_joints";
+            if (this->has_parameter(aj_prefix + ".names")) {
+              std::vector<std::string> aj_names;
+              this->get_parameter(aj_prefix + ".names", aj_names);
+              for (const auto & jname : aj_names) {
+                AdaptiveJointTarget ajt;
+                ajt.name = jname;
+                this->get_parameter(aj_prefix + "." + jname + ".close_pos", ajt.close_pos);
+                this->get_parameter(aj_prefix + "." + jname + ".open_pos",  ajt.open_pos);
+                if (this->has_parameter(aj_prefix + "." + jname + ".fixed")) {
+                  this->get_parameter(aj_prefix + "." + jname + ".fixed", ajt.fixed);
+                }
+                qcm.adaptive_joints.push_back(ajt);
+              }
+            }
+          }
           joint_pub[qcm.hand_joint_trajectory_topic] = this->create_publisher<trajectory_msgs::msg::JointTrajectory>(
             qcm.hand_joint_trajectory_topic, 10);
         }
@@ -253,6 +287,18 @@ void SOBITSTeleop::load_parameters()
           qcm_ref.arm + "/moveit_track_enabled", rclcpp::QoS(1));
         RCLCPP_INFO(get_logger(),
           "Created arm track publisher for '%s'", qcm_ref.arm.c_str());
+      }
+      // Create hand pose action client if configured
+      if (!qcm_ref.hand_pose_action.empty() &&
+          hand_pose_clients_.find(ctrl_name) == hand_pose_clients_.end()) {
+        hand_pose_clients_[ctrl_name] =
+          rclcpp_action::create_client<sobits_interfaces::action::MoveToPose>(
+            this, qcm_ref.hand_pose_action);
+        hand_open_state_[ctrl_name]  = true;
+        hand_toggle_time_[ctrl_name] = rclcpp::Time(0, 0, RCL_ROS_TIME);
+        RCLCPP_INFO(get_logger(),
+          "Created hand pose client for '%s' → '%s'",
+          ctrl_name.c_str(), qcm_ref.hand_pose_action.c_str());
       }
     }
   }
@@ -661,6 +707,7 @@ void SOBITSTeleop::teleop()
     // fresh end-effector TF has been read and the proximity check can be done.
 
     for (auto &[name, m] : quest_controller_mappings) {
+      bool gripper_control_enabled = false;
       if (!m.hand.empty()) {
         if (m.gripper_mode >= 0 &&
           m.gripper_mode < static_cast<int>(latest_axes.size())){
@@ -829,56 +876,134 @@ void SOBITSTeleop::teleop()
       }
 
       // Gripper
-      if (!m.hand.empty() && gripper_control_enabled) {
-        trajectory_msgs::msg::JointTrajectory traj;
-        trajectory_msgs::msg::JointTrajectoryPoint p;
+      if (!m.hand.empty()) {
+        // ── 1. Hand pose toggle (open / close) on button press ───────────────
+        // Configured via gripper.hand_pose_button / hand_pose_open /
+        // hand_pose_close / hand_pose_action in quest.yaml.
+        auto hp_client_it = hand_pose_clients_.find(name);
+        if (m.hand_pose_button >= 0 && hp_client_it != hand_pose_clients_.end()) {
+          rclcpp::Time & toggle_time = hand_toggle_time_.at(name);
+          const bool debounce_ok = (this->now() - toggle_time).seconds() > 0.4;
 
-        for (const auto &joint_name : m.names) {
-          if (std::abs(latest_axes[m.axis]) > 0.2) {
-            if (name == "left") {
-              target_rad = joint_pos[joint_name] + m.speed * latest_axes[m.axis] * m.axis_sign;
-              if (joint_name == "hand_left_finger_l_pip_joint" || joint_name == "hand_left_finger_l_dip_joint") {
-                target_rad = joint_pos[joint_name] + m.speed * latest_axes[m.axis] * -m.axis_sign;
-              }
+          if (m.hand_pose_button < static_cast<int>(latest_buttons.size()) &&
+              latest_buttons[m.hand_pose_button] == 1 &&
+              (previous_buttons.empty() ||
+               m.hand_pose_button >= static_cast<int>(previous_buttons.size()) ||
+               previous_buttons[m.hand_pose_button] == 0) &&
+              debounce_ok)
+          {
+            toggle_time = this->now();
+            bool & is_open = hand_open_state_.at(name);
+            is_open = !is_open;
+            const std::string pose_name = is_open ? m.hand_pose_open : m.hand_pose_close;
+
+            auto & client = hp_client_it->second;
+            if (client->wait_for_action_server(std::chrono::milliseconds(200))) {
+              auto goal = sobits_interfaces::action::MoveToPose::Goal();
+              goal.pose_name = pose_name;
+              goal.time_allowance.sec = 5;
+              auto opts = rclcpp_action::Client<sobits_interfaces::action::MoveToPose>::SendGoalOptions();
+              opts.result_callback = [this, pose_name](const auto & result) {
+                if (result.code == rclcpp_action::ResultCode::SUCCEEDED)
+                  RCLCPP_INFO(get_logger(), "Hand pose '%s' succeeded", pose_name.c_str());
+                else
+                  RCLCPP_WARN(get_logger(), "Hand pose '%s' failed", pose_name.c_str());
+              };
+              client->async_send_goal(goal, opts);
+              RCLCPP_INFO(get_logger(), "%s hand → %s", name.c_str(), pose_name.c_str());
+            } else {
+              RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
+                "'%s' hand pose action server not available", name.c_str());
             }
-            if (name == "right") {
-              target_rad = joint_pos[joint_name] + m.speed * latest_axes[m.axis] * -m.axis_sign;
-              if (joint_name == "hand_right_finger_r_pip_joint" || joint_name == "hand_right_finger_r_dip_joint") {
-                target_rad = joint_pos[joint_name] + m.speed * latest_axes[m.axis] * m.axis_sign;
-              }
-            }
-            target_rad = std::clamp(target_rad, 
-              std::min(joint_limits[joint_name].lower, joint_limits[joint_name].upper), 
-              std::max(joint_limits[joint_name].lower, joint_limits[joint_name].upper));
-            traj.joint_names.push_back(joint_name);
-            p.positions.push_back(target_rad);
           }
         }
 
-        if (m.type_axis >= 0 && m.type_axis < static_cast<int>(latest_axes.size()) && 
-        std::abs(latest_axes[m.type_axis]) > 0.8) {
-          target_rad = 0.0;
+        // ── 2. Adaptive gripper control (trigger held + thumbstick) ──────────
+        // Configured via gripper.adaptive_trigger_axis / adaptive_stick_axis /
+        // adaptive_close_sign / adaptive_joints in quest.yaml.
+        // adaptive_close_sign: +1 → positive stick = close, -1 → negative = close.
+        if (m.adaptive_trigger_axis >= 0 && !m.adaptive_joints.empty() &&
+            m.adaptive_trigger_axis < static_cast<int>(latest_axes.size()) &&
+            m.adaptive_stick_axis   < static_cast<int>(latest_axes.size()) &&
+            latest_axes[m.adaptive_trigger_axis] > 0.1)
+        {
+          float raw_stick  = latest_axes[m.adaptive_stick_axis];
+          float close_frac = std::clamp( raw_stick * m.adaptive_close_sign, 0.0f, 1.0f);
+          float open_frac  = std::clamp(-raw_stick * m.adaptive_close_sign, 0.0f, 1.0f);
+          float deflection = std::max(close_frac, open_frac);
 
-          target_rad = joint_pos[m.type_joint] + m.speed * std::copysign(1.0, latest_axes[m.type_axis]) * -m.axis_sign;
+          if (deflection >= 0.1f) {
+            const bool closing = (close_frac >= open_frac);
+            float step = m.speed * deflection;
 
-          target_rad = std::clamp(target_rad, 
-            std::min(joint_limits[m.type_joint].lower, joint_limits[m.type_joint].upper), 
-            std::max(joint_limits[m.type_joint].lower, joint_limits[m.type_joint].upper));
+            auto step_toward = [&](const std::string & jname, float target) -> float {
+              if (joint_pos.find(jname) == joint_pos.end()) return target;
+              float cur = static_cast<float>(joint_pos.at(jname));
+              float dir = (target > cur) ? 1.0f : -1.0f;
+              float next = cur + dir * step;
+              if ((dir > 0 && next > target) || (dir < 0 && next < target)) next = target;
+              if (joint_limits.count(jname)) {
+                next = std::clamp(next,
+                  static_cast<float>(std::min(joint_limits.at(jname).lower, joint_limits.at(jname).upper)),
+                  static_cast<float>(std::max(joint_limits.at(jname).lower, joint_limits.at(jname).upper)));
+              }
+              return next;
+            };
 
-          traj.joint_names.push_back(m.type_joint);
-          p.positions.push_back(target_rad);
+            auto goal = sobits_interfaces::action::MoveJoint::Goal();
+            for (const auto & ajt : m.adaptive_joints) {
+              goal.target_joint_names.push_back(ajt.name);
+              if (ajt.fixed) {
+                goal.target_joint_rad.push_back(ajt.close_pos);
+              } else {
+                float tgt = closing ? ajt.close_pos : ajt.open_pos;
+                goal.target_joint_rad.push_back(step_toward(ajt.name, tgt));
+              }
+            }
+            goal.time_allowance.nanosec = static_cast<uint32_t>(100'000'000u);  // 100 ms
+
+            if (move_joint_client->action_server_is_ready()) {
+              auto opts = rclcpp_action::Client<sobits_interfaces::action::MoveJoint>::SendGoalOptions();
+              move_joint_client->async_send_goal(goal, opts);
+            }
+          }
         }
-        
-        if (!traj.joint_names.empty()){
-          // p.time_from_start = rclcpp::Duration::from_seconds(0.1);
-          traj.points.push_back(p);
 
-          auto it = joint_pub.find(m.hand_joint_trajectory_topic);
-          if (it != joint_pub.end() && it->second) {
-            it->second->publish(traj);
-          } else {
-            RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
-                                "Publisher for %s not found", m.hand_joint_trajectory_topic.c_str());
+        // ── 3. Continuous gripper via joint trajectory publisher ─────────────
+        if (gripper_control_enabled) {
+          trajectory_msgs::msg::JointTrajectory traj;
+          trajectory_msgs::msg::JointTrajectoryPoint p;
+
+          for (const auto & joint_name : m.names) {
+            if (std::abs(latest_axes[m.axis]) > 0.2) {
+              target_rad = joint_pos[joint_name] + m.speed * latest_axes[m.axis] * m.axis_sign;
+              target_rad = std::clamp(target_rad,
+                std::min(joint_limits[joint_name].lower, joint_limits[joint_name].upper),
+                std::max(joint_limits[joint_name].lower, joint_limits[joint_name].upper));
+              traj.joint_names.push_back(joint_name);
+              p.positions.push_back(target_rad);
+            }
+          }
+
+          if (m.type_axis >= 0 && m.type_axis < static_cast<int>(latest_axes.size()) &&
+              std::abs(latest_axes[m.type_axis]) > 0.8) {
+            target_rad = joint_pos[m.type_joint] + m.speed * std::copysign(1.0, latest_axes[m.type_axis]) * -m.axis_sign;
+            target_rad = std::clamp(target_rad,
+              std::min(joint_limits[m.type_joint].lower, joint_limits[m.type_joint].upper),
+              std::max(joint_limits[m.type_joint].lower, joint_limits[m.type_joint].upper));
+            traj.joint_names.push_back(m.type_joint);
+            p.positions.push_back(target_rad);
+          }
+
+          if (!traj.joint_names.empty()) {
+            traj.points.push_back(p);
+            auto it = joint_pub.find(m.hand_joint_trajectory_topic);
+            if (it != joint_pub.end() && it->second) {
+              it->second->publish(traj);
+            } else {
+              RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
+                "Publisher for %s not found", m.hand_joint_trajectory_topic.c_str());
+            }
           }
         }
       }// Gripper

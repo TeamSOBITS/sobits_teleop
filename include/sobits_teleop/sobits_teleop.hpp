@@ -7,6 +7,7 @@
 #include <std_msgs/msg/bool.hpp>
 #include <tf2_msgs/msg/tf_message.hpp>
 #include "sobits_interfaces/action/move_to_pose.hpp"
+#include "sobits_interfaces/action/move_joint.hpp"
 
 #include <string>
 #include <map>
@@ -74,6 +75,15 @@ struct QuestHeadMap {
   float scale;
 };
 
+// Per-joint adaptive gripper target (close and open positions).
+// Joints omitted from this list are not commanded by the adaptive gripper.
+struct AdaptiveJointTarget {
+  std::string name;
+  float close_pos;
+  float open_pos;
+  bool fixed = false;  // true: always commanded at close_pos regardless of direction
+};
+
 struct QuestControllerMap {
   std::string controller_group;
   std::string controller_name;
@@ -90,6 +100,14 @@ struct QuestControllerMap {
   int arm_mode;
   float scale;
   int gripper_mode;
+  int hand_pose_button = -1;    // button to toggle open/close hand pose
+  std::string hand_pose_open;   // pose name sent when toggling open
+  std::string hand_pose_close;  // pose name sent when toggling close
+  std::string hand_pose_action; // action server name for hand pose (e.g. "move_left_hand_to_pose")
+  int adaptive_trigger_axis = -1;   // trigger axis that enables adaptive grip
+  int adaptive_stick_axis   = -1;   // stick axis that controls open/close
+  int adaptive_close_sign   = 1;    // +1: positive stick = close, -1: negative stick = close
+  std::vector<AdaptiveJointTarget> adaptive_joints;  // per-joint targets for adaptive grip
   int axis;
   int axis_sign;
   float speed;
@@ -129,6 +147,12 @@ private:
     arm_track_pubs_;
 
   rclcpp_action::Client<sobits_interfaces::action::MoveToPose>::SharedPtr move_to_pose_client;
+  rclcpp_action::Client<sobits_interfaces::action::MoveJoint>::SharedPtr move_joint_client;
+  // Per-controller hand pose action clients, keyed by controller name (e.g. "left", "right").
+  // Created at startup from hand_pose_action in each controller's config.
+  std::map<std::string,
+    rclcpp_action::Client<sobits_interfaces::action::MoveToPose>::SharedPtr>
+    hand_pose_clients_;
 
   rclcpp::TimerBase::SharedPtr timer;
 
@@ -172,6 +196,10 @@ private:
   bool arm_tracking = false;
   bool right_arm_latched = false;
   bool left_arm_latched  = false;
+
+  // Hand pose toggle state per controller: true = open, false = closed
+  std::map<std::string, bool>          hand_open_state_;    // keyed by controller name
+  std::map<std::string, rclcpp::Time>  hand_toggle_time_;   // debounce timestamp per controller
 
   tf2::Transform last_tf;
   tf2::Transform current_tf;
