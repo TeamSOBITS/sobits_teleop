@@ -132,6 +132,7 @@ def generate_launch_description():
     kill_stale_quest = ExecuteProcess(
         cmd=['bash', '-c', 'fuser -k 10000/tcp 2>/dev/null || true'],
         output='screen',
+        condition=IfCondition(EqualsSubstitution(LaunchConfiguration('device'), 'quest'))
     )
 
     return LaunchDescription([
