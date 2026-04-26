@@ -14,10 +14,12 @@ endif()
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_action REQUIRED)
+find_package(std_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(trajectory_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(tf2_ros REQUIRED)
+find_package(tf2_msgs REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
 find_package(sobits_interfaces REQUIRED)
 find_package(urdf REQUIRED)
@@ -35,17 +37,30 @@ ament_target_dependencies(
   sobits_teleop
   rclcpp
   rclcpp_action
+  std_msgs
   sensor_msgs
   trajectory_msgs
   geometry_msgs
   tf2_ros
+  tf2_msgs
   tf2_geometry_msgs
   sobits_interfaces
   urdf
 )
 
-install(TARGETS 
+add_executable(arm_scale_calibrator src/arm_scale_calibrator.cpp)
+ament_target_dependencies(
+  arm_scale_calibrator
+  rclcpp
+  sensor_msgs
+  geometry_msgs
+  tf2_ros
+  tf2_geometry_msgs
+)
+
+install(TARGETS
   sobits_teleop
+  arm_scale_calibrator
   DESTINATION lib/${PROJECT_NAME})
   
 install(DIRECTORY include/
