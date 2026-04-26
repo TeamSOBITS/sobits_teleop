@@ -16,10 +16,12 @@
 #include <tf2_ros/transform_listener.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <vector>
 #include <string>
 #include <mutex>
+#include <thread>
 
 // Full kinematic chain shoulder→EE from sobit_home URDF (metres)
 static constexpr double ROBOT_ARM_REACH_M = 1.2926;
