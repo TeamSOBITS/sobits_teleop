@@ -1,7 +1,7 @@
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, ExecuteProcess
 from launch.conditions import IfCondition
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, EqualsSubstitution
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, EqualsSubstitution, AndSubstitution
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
 import os
@@ -47,6 +47,11 @@ def generate_launch_description():
         default_value='false',
         description='Use simulation (Gazebo) clock — set true when running with gz_minimal'
     )
+    declare_use_moveit_cmd = DeclareLaunchArgument(
+        'use_moveit',
+        default_value='false',
+        description='Launch MoveIt arm controller for Quest arm teleoperation'
+    )
 
     # LaunchConfiguration handles runtime values
     robot_name = LaunchConfiguration('robot_name')
@@ -62,10 +67,17 @@ def generate_launch_description():
     ])
 
     controller_config = PathJoinSubstitution([
-        get_package_share_directory(pkg_name), 
+        get_package_share_directory(pkg_name),
         'config',
         robot_name,
-        device 
+        device
+    ])
+
+    moveit_arm_config = PathJoinSubstitution([
+        get_package_share_directory(pkg_name),
+        'config',
+        robot_name,
+        'moveit_arm_controller'
     ])
 
     # Main teleop node (loads parameters from YAML)
@@ -128,6 +140,23 @@ def generate_launch_description():
         condition=IfCondition(EqualsSubstitution(LaunchConfiguration('device'), 'keyboard'))
     )
 
+    # MoveIt arm controller — only launched when device=quest AND use_moveit=true
+    moveit_arm_controller_node = Node(
+        package=pkg_name,
+        executable='moveit_arm_controller',
+        name='moveit_arm_controller',
+        output='screen',
+        namespace=robot_name,
+        parameters=[
+            [moveit_arm_config, '.yaml'],
+            {'use_sim_time': LaunchConfiguration('use_sim_time')},
+        ],
+        condition=IfCondition(AndSubstitution(
+            EqualsSubstitution(LaunchConfiguration('device'), 'quest'),
+            LaunchConfiguration('use_moveit')
+        ))
+    )
+
     # Kill any process still holding port 10000 (stale quest_node from a previous launch)
     kill_stale_quest = ExecuteProcess(
         cmd=['bash', '-c', 'fuser -k 10000/tcp 2>/dev/null || true'],
@@ -142,8 +171,10 @@ def generate_launch_description():
         declare_ros_ip_cmd,
         declare_use_ds4drv_cmd,
         declare_use_sim_time_cmd,
+        declare_use_moveit_cmd,
         kill_stale_quest,
         sobits_teleop_node,
+        moveit_arm_controller_node,
         ds4drv_cmd,
         joystick_node,
         quest_node,
