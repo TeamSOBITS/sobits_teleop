@@ -110,7 +110,8 @@ def generate_launch_description():
         parameters=[
             {'dev': joystick_device},
             {'deadzone': 0.05},
-            {'autorepeat_rate': 20.0}
+            {'autorepeat_rate': 20.0},
+            {'use_sim_time': LaunchConfiguration('use_sim_time')},
         ],
         arguments=['--ros-args', '--log-level', 'fatal'],
         condition=IfCondition(EqualsSubstitution(LaunchConfiguration('device'), 'ps4') or EqualsSubstitution(LaunchConfiguration('device'), 'ps5'))
@@ -137,6 +138,9 @@ def generate_launch_description():
         name='keyboard_node',
         output='screen',
         namespace=robot_name,
+        parameters=[
+            {'use_sim_time': LaunchConfiguration('use_sim_time')},
+        ],
         condition=IfCondition(EqualsSubstitution(LaunchConfiguration('device'), 'keyboard'))
     )
 
