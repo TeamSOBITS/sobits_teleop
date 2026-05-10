@@ -32,6 +32,12 @@ private:
   rclcpp::Subscription<sensor_msgs::msg::Joy>::SharedPtr joy_sub_;
   rclcpp::TimerBase::SharedPtr                         sample_timer_;
 
+  double      robot_arm_reach_m_;
+  std::string right_frame_;
+  std::string left_frame_;
+  std::string parent_frame_;
+  int         grip_axis_;
+
   std::mutex   mutex_;
   State        state_;
   bool         prev_grip_;

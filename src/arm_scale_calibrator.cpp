@@ -18,16 +18,6 @@
 namespace sobits_teleop
 {
 
-// Full kinematic chain shoulder→EE from sobit_home URDF (metres)
-static constexpr double ROBOT_ARM_REACH_M = 1.2926;
-
-static const std::string RIGHT_FRAME  = "right_controller_odom";
-static const std::string LEFT_FRAME   = "left_controller_odom";
-static const std::string PARENT_FRAME = "base_footprint";
-
-// Right grip axis index in the Joy message (quest.yaml: arm_mode: 7)
-static constexpr int GRIP_AXIS = 7;
-
 static double dist3(const Sample & a, const Sample & b)
 {
   return std::sqrt(std::pow(a.x-b.x,2) + std::pow(a.y-b.y,2) + std::pow(a.z-b.z,2));
@@ -37,6 +27,11 @@ ArmScaleCalibrator::ArmScaleCalibrator(const rclcpp::NodeOptions & options)
 : Node("arm_scale_calibrator", options),
   tf_buffer_(this->get_clock(), tf2::Duration(std::chrono::seconds(10))),
   tf_listener_(tf_buffer_),
+  robot_arm_reach_m_(this->declare_parameter<double>("robot_arm_reach_m", 1.2926)),
+  right_frame_(this->declare_parameter<std::string>("right_frame", "right_controller_odom")),
+  left_frame_(this->declare_parameter<std::string>("left_frame",  "left_controller_odom")),
+  parent_frame_(this->declare_parameter<std::string>("parent_frame", "base_footprint")),
+  grip_axis_(this->declare_parameter<int>("grip_axis", 7)),
   state_(State::WAITING_FOR_START),
   prev_grip_(false),
   seen_grip_released_(false),
@@ -59,14 +54,14 @@ ArmScaleCalibrator::ArmScaleCalibrator(const rclcpp::NodeOptions & options)
     "STEP 1: Hold BOTH controllers.\n"
     "        Extend BOTH arms straight FORWARD (pointing at the robot).\n"
     "        Press and release RIGHT GRIP to start recording.",
-    ROBOT_ARM_REACH_M);
+    robot_arm_reach_m_);
 }
 
 void ArmScaleCalibrator::joy_cb(const sensor_msgs::msg::Joy::SharedPtr msg)
 {
-  if (GRIP_AXIS >= static_cast<int>(msg->axes.size())) return;
+  if (grip_axis_ >= static_cast<int>(msg->axes.size())) return;
 
-  bool grip = (msg->axes[GRIP_AXIS] > 0.5f);
+  bool grip = (msg->axes[grip_axis_] > 0.5f);
 
   // Ignore all edges until we have seen at least one message with grip released.
   // This prevents a grip that is already held at startup from immediately
@@ -84,8 +79,8 @@ void ArmScaleCalibrator::joy_cb(const sensor_msgs::msg::Joy::SharedPtr msg)
 
   if (state_ == State::WAITING_FOR_START && falling_edge) {
     try {
-      auto ts_r = tf_buffer_.lookupTransform(PARENT_FRAME, RIGHT_FRAME, tf2::TimePointZero);
-      auto ts_l = tf_buffer_.lookupTransform(PARENT_FRAME, LEFT_FRAME,  tf2::TimePointZero);
+      auto ts_r = tf_buffer_.lookupTransform(parent_frame_, right_frame_, tf2::TimePointZero);
+      auto ts_l = tf_buffer_.lookupTransform(parent_frame_, left_frame_,  tf2::TimePointZero);
       right_start_ = {ts_r.transform.translation.x,
                       ts_r.transform.translation.y,
                       ts_r.transform.translation.z};
@@ -131,8 +126,8 @@ void ArmScaleCalibrator::sample_cb()
   if (state_ != State::RECORDING) return;
 
   try {
-    auto ts_r = tf_buffer_.lookupTransform(PARENT_FRAME, RIGHT_FRAME, tf2::TimePointZero);
-    auto ts_l = tf_buffer_.lookupTransform(PARENT_FRAME, LEFT_FRAME,  tf2::TimePointZero);
+    auto ts_r = tf_buffer_.lookupTransform(parent_frame_, right_frame_, tf2::TimePointZero);
+    auto ts_l = tf_buffer_.lookupTransform(parent_frame_, left_frame_,  tf2::TimePointZero);
     right_samples_.push_back({ts_r.transform.translation.x,
                               ts_r.transform.translation.y,
                               ts_r.transform.translation.z});
@@ -161,7 +156,7 @@ void ArmScaleCalibrator::compute_and_print()
     return;
   }
 
-  double scale = ROBOT_ARM_REACH_M / human_reach;
+  double scale = robot_arm_reach_m_ / human_reach;
 
   RCLCPP_INFO(this->get_logger(),
     "\n\n=== RESULTS ===\n"
@@ -176,8 +171,8 @@ void ArmScaleCalibrator::compute_and_print()
     right_samples_.size(),
     right_max, left_max,
     human_reach,
-    ROBOT_ARM_REACH_M,
-    ROBOT_ARM_REACH_M, human_reach, scale,
+    robot_arm_reach_m_,
+    robot_arm_reach_m_, human_reach, scale,
     scale);
 
   rclcpp::shutdown();

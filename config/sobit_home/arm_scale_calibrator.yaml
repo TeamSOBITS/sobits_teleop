@@ -1,0 +1,13 @@
+/**:
+  ros__parameters:
+
+    # Full kinematic chain shoulder→EE (metres) — from sobit_home URDF
+    robot_arm_reach_m: 1.2926
+
+    # TF frames used for controller position lookup
+    right_frame:  "right_controller_odom"
+    left_frame:   "left_controller_odom"
+    parent_frame: "base_footprint"
+
+    # Axis index of the right grip in the Joy message (quest.yaml: arm_mode: 7)
+    grip_axis: 7
