@@ -4,7 +4,8 @@
     # Full kinematic chain shoulder→EE (metres) — from sobit_home URDF
     robot_arm_reach_m: 1.2926
 
-    # TF frames used for controller position lookup
+    # TF frames used for controller position lookup.
+    # Set a frame to "" to disable that arm (e.g. single-arm robots).
     right_frame:  "right_controller_odom"
     left_frame:   "left_controller_odom"
     parent_frame: "base_footprint"
