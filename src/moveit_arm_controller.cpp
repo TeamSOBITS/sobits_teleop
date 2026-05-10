@@ -72,7 +72,7 @@ MoveitArmController::MoveitArmController(const rclcpp::NodeOptions & options)
     if (!this->has_parameter(pg_key))
       this->declare_parameter(pg_key, arm_name);
     if (!this->has_parameter(tf_key))
-      this->declare_parameter(tf_key, arm_name == "arm_left" ? "left_target_link" : "right_target_link");
+      this->declare_parameter(tf_key, arm_name + "_target_link");
     if (!this->has_parameter(bf_key))
       this->declare_parameter(bf_key, "base_footprint");
     if (!this->has_parameter(traj_key))
