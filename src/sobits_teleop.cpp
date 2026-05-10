@@ -35,7 +35,8 @@ SOBITSTeleop::SOBITSTeleop(const rclcpp::NodeOptions & options)
     rclcpp::QoS(100).transient_local().reliable(),
     std::bind(&SOBITSTeleop::robot_tf_static_callback, this, std::placeholders::_1));
 
-  async_param_client = std::make_shared<rclcpp::AsyncParametersClient>(this, "robot_state_publisher");
+  robot_description_source_node = "robot_state_publisher";
+  async_param_client = std::make_shared<rclcpp::AsyncParametersClient>(this, robot_description_source_node);
 
   urdf_timer = this->create_wall_timer(
     std::chrono::milliseconds(200),
