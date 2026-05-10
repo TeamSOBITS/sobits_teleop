@@ -54,17 +54,24 @@ rclcpp_components_register_node(sobits_teleop_components
   EXECUTABLE sobits_teleop
 )
 
-add_executable(arm_scale_calibrator src/arm_scale_calibrator.cpp)
+add_library(arm_scale_calibrator_components SHARED src/arm_scale_calibrator.cpp)
 ament_target_dependencies(
-  arm_scale_calibrator
+  arm_scale_calibrator_components
   rclcpp
+  rclcpp_components
   sensor_msgs
   geometry_msgs
   tf2_ros
   tf2_geometry_msgs
 )
+rclcpp_components_register_node(arm_scale_calibrator_components
+  PLUGIN "sobits_teleop::ArmScaleCalibrator"
+  EXECUTABLE arm_scale_calibrator
+)
 
-install(TARGETS sobits_teleop_components
+install(TARGETS
+  sobits_teleop_components
+  arm_scale_calibrator_components
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION bin)
