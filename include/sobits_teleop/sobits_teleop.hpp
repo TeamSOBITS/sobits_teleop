@@ -1,3 +1,6 @@
+#ifndef SOBITS_TELEOP__SOBITS_TELEOP_HPP_
+#define SOBITS_TELEOP__SOBITS_TELEOP_HPP_
+
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
 #include <rclcpp_components/register_node_macro.hpp>
@@ -247,3 +250,5 @@ private:
 };
 
 }  // namespace sobits_teleop
+
+#endif  // SOBITS_TELEOP__SOBITS_TELEOP_HPP_
