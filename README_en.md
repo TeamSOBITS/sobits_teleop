@@ -25,6 +25,7 @@
       <ul>
         <li><a href="#create-config-file">Create Config File</a></li>
         <li><a href="#run-teleop-node">Run Teleop Node</a></li>
+        <li><a href="#arm-scale-calibration">Arm Scale Calibration (Meta Quest)</a></li>
       </ul>
     </li>
     <li><a href="#milestone">Milestone</a></li>
@@ -202,6 +203,96 @@ After that, configure the launch file and run it.
 
 > [!Note]
 > When using ds4drv inside a Docker container, you must mount `/dev/input/` and `/run/udev`
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+---
+
+## Arm Scale Calibration (Meta Quest)
+
+When using Meta Quest controllers for arm teleoperation, the `scale` parameter in `quest.yaml` maps the human arm reach to the robot arm reach. The `arm_scale_calibrator` tool measures your personal arm reach and computes the correct value automatically.
+
+### When to run
+
+Run this once per operator (or whenever the robot's URDF arm reach changes). The result is a single number to paste into `config/{robot_name}/quest.yaml` under `right.scale` and `left.scale`.
+
+### Configuration
+
+Each robot has its own calibrator config at `config/{robot_name}/arm_scale_calibrator.yaml`:
+
+```yaml
+# Full kinematic chain shoulder→EE (metres) — from the robot URDF
+robot_arm_reach_m: 1.2926
+
+# TF frames used for controller position lookup.
+# Set a frame to "" to disable that arm (e.g. single-arm robots).
+right_frame:  "right_controller_odom"
+left_frame:   "left_controller_odom"
+parent_frame: "base_footprint"
+
+# Axis index of the right grip in the Joy message
+grip_axis: 7
+```
+
+For a **single-arm robot**, disable the unused side by setting its frame to an empty string:
+
+```yaml
+right_frame: "right_controller_odom"
+left_frame:  ""   # disabled — only right arm will be measured
+```
+
+### How to run
+
+Make sure the Quest is connected and publishing TFs, then:
+
+```sh
+ros2 run sobits_teleop arm_scale_calibrator --ros-args \
+  --params-file install/sobits_teleop/share/sobits_teleop/config/{robot_name}/arm_scale_calibrator.yaml \
+  -p joy_topic:=/{robot_name}/joy
+```
+
+> [!Note]
+> Replace `{robot_name}` with your robot's name (e.g. `sobit_home`).
+
+### Procedure
+
+The calibrator guides you through two steps using the **right grip button**:
+
+**Step 1 — Set start position**
+1. Hold both controllers at your sides in a natural standing position.
+2. Extend **both arms straight forward**, pointing toward the robot.
+3. Press and release the **right grip button** to capture the start positions.
+
+**Step 2 — Sweep to T-pose**
+1. Slowly sweep both arms **out to your sides** (elbows straight) until you reach a full T-pose.
+2. Press and release the **right grip button** again when your arms are fully extended sideways.
+
+> [!Note]
+> The sweep must take at least 2 seconds. If you release the grip too quickly the calibrator will warn you and wait for another attempt.
+
+### Reading the result
+
+The calibrator prints a summary to the console:
+
+```
+=== RESULTS ===
+  Human arm reach used   : 0.9150 m
+  Robot arm reach        : 1.2926 m
+
+  Recommended scale = 1.2926 / 0.9150 = 1.4126
+
+Update config/sobit_home/quest.yaml:
+    scale: 1.4126   # (both right and left)
+```
+
+Copy the `scale` value into your robot's `quest.yaml`:
+
+```yaml
+right:
+  scale: 1.4126
+left:
+  scale: 1.4126
+```
+
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 <!-- MILESTONE -->

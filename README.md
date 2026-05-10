@@ -25,6 +25,7 @@
       <ul>
         <li><a href="#configファイル作成">configファイル作成</a></li>
         <li><a href="#テレオペノード実行">テレオペノード実行</a></li>
+        <li><a href="#アームスケールキャリブレーション">アームスケールキャリブレーション（Meta Quest）</a></li>
       </ul>
     </li>
     <li><a href="#マイルストーン">マイルストーン</a></li>
@@ -230,6 +231,96 @@ declare_device_cmd = DeclareLaunchArgument(
 5. その後、**sobits_teleop.launch.py**を起動し、yamlファイルで設定した操作方法を参考にロボットを操作する．
 
 </details>
+
+<p align="right">(<a href="#readme-top">上に戻る</a>)</p>
+
+---
+
+## アームスケールキャリブレーション（Meta Quest）
+
+Meta Questコントローラでアームのテレオペを行う場合、`quest.yaml`の`scale`パラメータがオペレータのアームリーチとロボットのアームリーチを対応付ける．`arm_scale_calibrator`ツールを使うと、自分のアームリーチを実測し、適切な`scale`値を自動的に計算できる．
+
+### 実行タイミング
+
+オペレータごとに一度実行する（ロボットのURDFのアームリーチが変わった場合も再実行）．結果として得られた値を`config/{ロボット名}/quest.yaml`の`right.scale`と`left.scale`に設定する．
+
+### 設定ファイル
+
+各ロボットのキャリブレーション設定は`config/{ロボット名}/arm_scale_calibrator.yaml`にある：
+
+```yaml
+# 肩からEEまでのフルキネマティックチェーン（メートル）— ロボットURDFより
+robot_arm_reach_m: 1.2926
+
+# コントローラ位置のルックアップに使用するTFフレーム．
+# 片腕ロボットの場合、使用しないアームのフレームを "" に設定して無効化できる．
+right_frame:  "right_controller_odom"
+left_frame:   "left_controller_odom"
+parent_frame: "base_footprint"
+
+# Joyメッセージにおける右グリップの軸インデックス
+grip_axis: 7
+```
+
+**片腕ロボット**の場合、使用しない側のフレームを空文字列に設定する：
+
+```yaml
+right_frame: "right_controller_odom"
+left_frame:  ""   # 無効化 — 右アームのみ計測する
+```
+
+### 起動方法
+
+Questが接続されTFをパブリッシュしている状態で実行する：
+
+```sh
+ros2 run sobits_teleop arm_scale_calibrator --ros-args \
+  --params-file install/sobits_teleop/share/sobits_teleop/config/{ロボット名}/arm_scale_calibrator.yaml \
+  -p joy_topic:=/{ロボット名}/joy
+```
+
+> [!Note]
+> `{ロボット名}`は使用するロボット名に置き換える（例：`sobit_home`）．
+
+### 手順
+
+**右グリップボタン**を使って2ステップで計測する：
+
+**ステップ1 — 開始位置の設定**
+1. 両コントローラーを持ち、自然な立ち姿勢をとる．
+2. **両腕をまっすぐ前方に伸ばす**（ロボットの方向を向くように）．
+3. **右グリップボタン**を押して離し、開始位置を記録する．
+
+**ステップ2 — T字ポーズへのスウィープ**
+1. 両腕をゆっくりと**左右真横に開いていく**（肘を伸ばしたまま）．
+2. T字ポーズで完全に腕が伸びたら、**右グリップボタン**を押して離す．
+
+> [!Note]
+> スウィープは2秒以上かける必要がある．短すぎる場合は警告が表示され、再度試みることができる．
+
+### 結果の確認
+
+計測終了後、以下のような結果がコンソールに表示される：
+
+```
+=== RESULTS ===
+  Human arm reach used   : 0.9150 m
+  Robot arm reach        : 1.2926 m
+
+  Recommended scale = 1.2926 / 0.9150 = 1.4126
+
+Update config/sobit_home/quest.yaml:
+    scale: 1.4126   # (both right and left)
+```
+
+表示された`scale`値を使用するロボットの`quest.yaml`に設定する：
+
+```yaml
+right:
+  scale: 1.4126
+left:
+  scale: 1.4126
+```
 
 <p align="right">(<a href="#readme-top">上に戻る</a>)</p>
 
