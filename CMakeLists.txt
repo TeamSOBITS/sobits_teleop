@@ -24,6 +24,10 @@ find_package(tf2_msgs REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
 find_package(sobits_interfaces REQUIRED)
 find_package(urdf REQUIRED)
+find_package(control_msgs REQUIRED)
+find_package(moveit_ros_planning_interface REQUIRED)
+find_package(moveit_core REQUIRED)
+find_package(moveit_msgs REQUIRED)
 
 # uncomment the following section in order to fill in
 # further dependencies manually.
@@ -54,6 +58,27 @@ rclcpp_components_register_node(sobits_teleop_components
   EXECUTABLE sobits_teleop
 )
 
+add_library(moveit_arm_controller_components SHARED src/moveit_arm_controller.cpp)
+ament_target_dependencies(
+  moveit_arm_controller_components
+  rclcpp
+  rclcpp_action
+  rclcpp_components
+  std_msgs
+  trajectory_msgs
+  geometry_msgs
+  tf2_ros
+  tf2_geometry_msgs
+  control_msgs
+  moveit_ros_planning_interface
+  moveit_core
+  moveit_msgs
+)
+rclcpp_components_register_node(moveit_arm_controller_components
+  PLUGIN "sobits_teleop::MoveitArmController"
+  EXECUTABLE moveit_arm_controller
+)
+
 add_library(arm_scale_calibrator_components SHARED src/arm_scale_calibrator.cpp)
 ament_target_dependencies(
   arm_scale_calibrator_components
@@ -71,6 +96,7 @@ rclcpp_components_register_node(arm_scale_calibrator_components
 
 install(TARGETS
   sobits_teleop_components
+  moveit_arm_controller_components
   arm_scale_calibrator_components
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
@@ -78,6 +104,7 @@ install(TARGETS
 
 install(TARGETS
   sobits_teleop
+  moveit_arm_controller
   arm_scale_calibrator
   DESTINATION lib/${PROJECT_NAME})
   
