@@ -41,6 +41,12 @@ sudo apt install bluez -y
 sudo sed -i 's/SafeConfigParser/ConfigParser/g' /usr/local/lib/python3.12/dist-packages/ds4drv/config.py
 sudo pip install evdev==1.8.0 --break-system-packages
 
+# Install udev rules for ds4drv (/dev/uinput write access)
+sudo curl -fsSL https://raw.githubusercontent.com/chrippa/ds4drv/master/udev/50-ds4drv.rules \
+    -o /etc/udev/rules.d/50-ds4drv.rules
+sudo udevadm control --reload-rules
+sudo udevadm trigger
+
 
 # Go back to previous directory
 cd ${DIR}
