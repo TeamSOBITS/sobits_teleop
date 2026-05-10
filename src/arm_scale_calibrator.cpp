@@ -79,14 +79,18 @@ void ArmScaleCalibrator::joy_cb(const sensor_msgs::msg::Joy::SharedPtr msg)
 
   if (state_ == State::WAITING_FOR_START && falling_edge) {
     try {
-      auto ts_r = tf_buffer_.lookupTransform(parent_frame_, right_frame_, tf2::TimePointZero);
-      auto ts_l = tf_buffer_.lookupTransform(parent_frame_, left_frame_,  tf2::TimePointZero);
-      right_start_ = {ts_r.transform.translation.x,
-                      ts_r.transform.translation.y,
-                      ts_r.transform.translation.z};
-      left_start_  = {ts_l.transform.translation.x,
-                      ts_l.transform.translation.y,
-                      ts_l.transform.translation.z};
+      if (!right_frame_.empty()) {
+        auto ts_r = tf_buffer_.lookupTransform(parent_frame_, right_frame_, tf2::TimePointZero);
+        right_start_ = {ts_r.transform.translation.x,
+                        ts_r.transform.translation.y,
+                        ts_r.transform.translation.z};
+      }
+      if (!left_frame_.empty()) {
+        auto ts_l = tf_buffer_.lookupTransform(parent_frame_, left_frame_,  tf2::TimePointZero);
+        left_start_  = {ts_l.transform.translation.x,
+                        ts_l.transform.translation.y,
+                        ts_l.transform.translation.z};
+      }
     } catch (const tf2::TransformException & e) {
       RCLCPP_WARN(this->get_logger(), "TF not ready: %s — try again", e.what());
       return;
@@ -126,27 +130,36 @@ void ArmScaleCalibrator::sample_cb()
   if (state_ != State::RECORDING) return;
 
   try {
-    auto ts_r = tf_buffer_.lookupTransform(parent_frame_, right_frame_, tf2::TimePointZero);
-    auto ts_l = tf_buffer_.lookupTransform(parent_frame_, left_frame_,  tf2::TimePointZero);
-    right_samples_.push_back({ts_r.transform.translation.x,
-                              ts_r.transform.translation.y,
-                              ts_r.transform.translation.z});
-    left_samples_.push_back({ts_l.transform.translation.x,
-                             ts_l.transform.translation.y,
-                             ts_l.transform.translation.z});
+    if (!right_frame_.empty()) {
+      auto ts_r = tf_buffer_.lookupTransform(parent_frame_, right_frame_, tf2::TimePointZero);
+      right_samples_.push_back({ts_r.transform.translation.x,
+                                ts_r.transform.translation.y,
+                                ts_r.transform.translation.z});
+    }
+    if (!left_frame_.empty()) {
+      auto ts_l = tf_buffer_.lookupTransform(parent_frame_, left_frame_,  tf2::TimePointZero);
+      left_samples_.push_back({ts_l.transform.translation.x,
+                               ts_l.transform.translation.y,
+                               ts_l.transform.translation.z});
+    }
   } catch (const tf2::TransformException &) {}
 }
 
 void ArmScaleCalibrator::compute_and_print()
 {
-  if (right_samples_.empty() || left_samples_.empty()) {
+  const bool has_right = !right_frame_.empty() && !right_samples_.empty();
+  const bool has_left  = !left_frame_.empty()  && !left_samples_.empty();
+
+  if (!has_right && !has_left) {
     RCLCPP_ERROR(this->get_logger(), "No samples collected — did the sweep happen?");
     return;
   }
 
   double right_max = 0.0, left_max = 0.0;
-  for (const auto & s : right_samples_) right_max = std::max(right_max, dist3(s, right_start_));
-  for (const auto & s : left_samples_)  left_max  = std::max(left_max,  dist3(s, left_start_));
+  if (has_right)
+    for (const auto & s : right_samples_) right_max = std::max(right_max, dist3(s, right_start_));
+  if (has_left)
+    for (const auto & s : left_samples_)  left_max  = std::max(left_max,  dist3(s, left_start_));
 
   double human_reach = std::max(right_max, left_max);
 
