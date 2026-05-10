@@ -11,6 +11,7 @@
 // Robot arm reach (shoulder to EE): 1.2926 m  (from sobit_home URDF)
 
 #include <rclcpp/rclcpp.hpp>
+#include <rclcpp_components/register_node_macro.hpp>
 #include <sensor_msgs/msg/joy.hpp>
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_listener.h>
@@ -21,7 +22,6 @@
 #include <vector>
 #include <string>
 #include <mutex>
-#include <thread>
 
 // Full kinematic chain shoulder→EE from sobit_home URDF (metres)
 static constexpr double ROBOT_ARM_REACH_M = 1.2926;
@@ -42,11 +42,14 @@ static double dist3(const Sample & a, const Sample & b)
 
 enum class State { WAITING_FOR_START, RECORDING, DONE };
 
+namespace sobits_teleop
+{
+
 class ArmScaleCalibrator : public rclcpp::Node
 {
 public:
-  ArmScaleCalibrator()
-  : Node("arm_scale_calibrator"),
+  explicit ArmScaleCalibrator(const rclcpp::NodeOptions & options = rclcpp::NodeOptions())
+  : Node("arm_scale_calibrator", options),
     tf_buffer_(this->get_clock(), tf2::Duration(std::chrono::seconds(10))),
     tf_listener_(tf_buffer_),
     state_(State::WAITING_FOR_START),
@@ -73,8 +76,6 @@ public:
       "        Press and release RIGHT GRIP to start recording.",
       ROBOT_ARM_REACH_M);
   }
-
-  bool is_done() const { return state_ == State::DONE; }
 
 private:
   void joy_cb(const sensor_msgs::msg::Joy::SharedPtr msg)
@@ -197,6 +198,8 @@ private:
       ROBOT_ARM_REACH_M,
       ROBOT_ARM_REACH_M, human_reach, scale,
       scale);
+
+    rclcpp::shutdown();
   }
 
   tf2_ros::Buffer                                    tf_buffer_;
@@ -213,16 +216,6 @@ private:
   std::vector<Sample> right_samples_, left_samples_;
 };
 
-int main(int argc, char ** argv)
-{
-  rclcpp::init(argc, argv);
-  auto node = std::make_shared<ArmScaleCalibrator>();
-  while (rclcpp::ok() && !node->is_done()) {
-    rclcpp::spin_some(node);
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
-  }
-  // spin once more to flush the final log
-  rclcpp::spin_some(node);
-  rclcpp::shutdown();
-  return 0;
-}
+}  // namespace sobits_teleop
+
+RCLCPP_COMPONENTS_REGISTER_NODE(sobits_teleop::ArmScaleCalibrator)
