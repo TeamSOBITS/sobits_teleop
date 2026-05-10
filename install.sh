@@ -32,13 +32,17 @@ for ((i = 0; i < ${#ros_packages[@]}; i++)) {
 sudo apt-get update
 sudo apt-get install -y \
     jstest-gtk \
-    ros-$ROS_DISTRO-joy-linux
+    ros-$ROS_DISTRO-joy-linux \
+    ros-$ROS_DISTRO-rclcpp-components \
+    ros-$ROS_DISTRO-control-msgs \
+    ros-$ROS_DISTRO-moveit
 
 # Download ds4drv for dualshock 4
 sudo apt update
 sudo pip install ds4drv --break-system-packages
 sudo apt install bluez -y
-sudo sed -i 's/SafeConfigParser/ConfigParser/g' /usr/local/lib/python3.12/dist-packages/ds4drv/config.py
+PYTHON_VER=$(python3 -c "import sys; print(f'python{sys.version_info.major}.{sys.version_info.minor}')")
+sudo sed -i 's/SafeConfigParser/ConfigParser/g' /usr/local/lib/${PYTHON_VER}/dist-packages/ds4drv/config.py
 sudo pip install evdev==1.8.0 --break-system-packages
 
 # Install udev rules for ds4drv (/dev/uinput write access)
