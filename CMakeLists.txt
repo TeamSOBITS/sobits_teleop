@@ -14,6 +14,7 @@ endif()
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_action REQUIRED)
+find_package(rclcpp_components REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(trajectory_msgs REQUIRED)
@@ -32,11 +33,12 @@ include_directories(
   include
 )
 
-add_executable(sobits_teleop src/sobits_teleop.cpp)
+add_library(sobits_teleop_components SHARED src/sobits_teleop.cpp)
 ament_target_dependencies(
-  sobits_teleop
+  sobits_teleop_components
   rclcpp
   rclcpp_action
+  rclcpp_components
   std_msgs
   sensor_msgs
   trajectory_msgs
@@ -46,6 +48,10 @@ ament_target_dependencies(
   tf2_geometry_msgs
   sobits_interfaces
   urdf
+)
+rclcpp_components_register_node(sobits_teleop_components
+  PLUGIN "sobits_teleop::SOBITSTeleop"
+  EXECUTABLE sobits_teleop
 )
 
 add_executable(arm_scale_calibrator src/arm_scale_calibrator.cpp)
@@ -57,6 +63,11 @@ ament_target_dependencies(
   tf2_ros
   tf2_geometry_msgs
 )
+
+install(TARGETS sobits_teleop_components
+  ARCHIVE DESTINATION lib
+  LIBRARY DESTINATION lib
+  RUNTIME DESTINATION bin)
 
 install(TARGETS
   sobits_teleop

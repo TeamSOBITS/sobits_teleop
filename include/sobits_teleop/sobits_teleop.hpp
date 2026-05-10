@@ -1,5 +1,6 @@
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
+#include <rclcpp_components/register_node_macro.hpp>
 #include <sensor_msgs/msg/joy.hpp>
 #include <sensor_msgs/msg/joint_state.hpp>
 #include <trajectory_msgs/msg/joint_trajectory.hpp>
@@ -20,6 +21,9 @@
 #include <tf2_ros/transform_listener.h>
 #include <tf2_ros/transform_broadcaster.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
+
+namespace sobits_teleop
+{
 
 struct Limit {
   double lower;
@@ -120,7 +124,7 @@ struct QuestControllerMap {
 
 class SOBITSTeleop : public rclcpp::Node {
 public:
-  SOBITSTeleop();
+  explicit SOBITSTeleop(const rclcpp::NodeOptions & options = rclcpp::NodeOptions());
 
 private:
   bool parse_urdf_limits(const std::string & urdf_xml);
@@ -241,3 +245,5 @@ private:
   QuestControllerMap qcm;
   QuestHeadMap qhm;
 };
+
+}  // namespace sobits_teleop

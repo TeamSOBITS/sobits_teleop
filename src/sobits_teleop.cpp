@@ -1,9 +1,12 @@
 #include "sobits_teleop/sobits_teleop.hpp"
 
-SOBITSTeleop::SOBITSTeleop()
+namespace sobits_teleop
+{
+
+SOBITSTeleop::SOBITSTeleop(const rclcpp::NodeOptions & options)
   : Node(
       "sobits_teleop",
-      rclcpp::NodeOptions()
+      rclcpp::NodeOptions(options)
         .allow_undeclared_parameters(true)
         .automatically_declare_parameters_from_overrides(true)),
   wall_clock_(std::make_shared<rclcpp::Clock>(RCL_SYSTEM_TIME)),
@@ -1012,9 +1015,6 @@ void SOBITSTeleop::teleop()
 
 }
 
-int main(int argc, char **argv) {
-  rclcpp::init(argc, argv);
-  rclcpp::spin(std::make_shared<SOBITSTeleop>());
-  rclcpp::shutdown();
-  return 0;
-}
+}  // namespace sobits_teleop
+
+RCLCPP_COMPONENTS_REGISTER_NODE(sobits_teleop::SOBITSTeleop)
