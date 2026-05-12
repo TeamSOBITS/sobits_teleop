@@ -1,7 +1,7 @@
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, ExecuteProcess
 from launch.conditions import IfCondition
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, EqualsSubstitution, AndSubstitution
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, EqualsSubstitution, AndSubstitution, OrSubstitution
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
 import os
@@ -97,7 +97,7 @@ def generate_launch_description():
     ds4drv_cmd = ExecuteProcess(
         cmd=['ds4drv'],
         output='screen',
-        condition=IfCondition(EqualsSubstitution(LaunchConfiguration('device'), 'ps4') and EqualsSubstitution(LaunchConfiguration('use_ds4drv'), 'True'))
+        condition=IfCondition(AndSubstitution(EqualsSubstitution(LaunchConfiguration('device'), 'ps4'), EqualsSubstitution(LaunchConfiguration('use_ds4drv'), 'True')))
     )
 
     # joy_linux node for joy controllers (ps4, ps5)
@@ -114,7 +114,7 @@ def generate_launch_description():
             {'use_sim_time': LaunchConfiguration('use_sim_time')},
         ],
         arguments=['--ros-args', '--log-level', 'fatal'],
-        condition=IfCondition(EqualsSubstitution(LaunchConfiguration('device'), 'ps4') or EqualsSubstitution(LaunchConfiguration('device'), 'ps5'))
+        condition=IfCondition(OrSubstitution(EqualsSubstitution(LaunchConfiguration('device'), 'ps4'), EqualsSubstitution(LaunchConfiguration('device'), 'ps5')))
     )
 
     # quest node for meta quest controllers
