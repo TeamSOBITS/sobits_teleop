@@ -38,12 +38,20 @@ sudo apt-get install -y \
     ros-$ROS_DISTRO-moveit
 
 # Download ds4drv for dualshock 4
-sudo apt update
 sudo pip install ds4drv --break-system-packages
+sudo apt update
 sudo apt install bluez -y
 PYTHON_VER=$(python3 -c "import sys; print(f'python{sys.version_info.major}.{sys.version_info.minor}')")
 sudo sed -i 's/SafeConfigParser/ConfigParser/g' /usr/local/lib/${PYTHON_VER}/dist-packages/ds4drv/config.py
 sudo pip install evdev==1.8.0 --break-system-packages
+
+
+# Download adb for android controller support
+sudo apt install adb -y
+sudo usermod -aG plugdev $USERNAME
+echo "SUBSYSTEM==\"usb\", ATTR{idVendor}==\"2833\", ATTR{idProduct}==\"5013\", MODE=\"0660\", GROUP=\"plugdev\", SYMLINK+=\"oculus%n\"" | sudo tee /etc/udev/rules.d/50-oculus.rules
+sudo udevadm control --reload-rules
+sudo udevadm trigger
 
 # Install udev rules for ds4drv (/dev/uinput write access)
 sudo curl -fsSL https://raw.githubusercontent.com/chrippa/ds4drv/master/udev/50-ds4drv.rules \
