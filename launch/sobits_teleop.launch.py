@@ -1,7 +1,7 @@
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, ExecuteProcess
 from launch.conditions import IfCondition
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, EqualsSubstitution
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, EqualsSubstitution, AndSubstitution, OrSubstitution
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
 import os
@@ -34,7 +34,7 @@ def generate_launch_description():
     )
     declare_ros_ip_cmd = DeclareLaunchArgument(
         'ros_ip',
-        default_value='0.0.0.0',
+        default_value='127.0.0.1',
         description='ROS IP address for ros_tcp_endpoint (Meta Quest controllers)'
     )
     declare_use_ds4drv_cmd = DeclareLaunchArgument(
@@ -46,6 +46,11 @@ def generate_launch_description():
         'use_sim_time',
         default_value='false',
         description='Use simulation (Gazebo) clock — set true when running with gz_minimal'
+    )
+    declare_use_moveit_cmd = DeclareLaunchArgument(
+        'use_moveit',
+        default_value='false',
+        description='Launch MoveIt arm controller for Quest arm teleoperation'
     )
 
     # LaunchConfiguration handles runtime values
@@ -62,10 +67,17 @@ def generate_launch_description():
     ])
 
     controller_config = PathJoinSubstitution([
-        get_package_share_directory(pkg_name), 
+        get_package_share_directory(pkg_name),
         'config',
         robot_name,
-        device 
+        device
+    ])
+
+    moveit_arm_config = PathJoinSubstitution([
+        get_package_share_directory(pkg_name),
+        'config',
+        robot_name,
+        'moveit_arm_controller'
     ])
 
     # Main teleop node (loads parameters from YAML)
@@ -85,7 +97,7 @@ def generate_launch_description():
     ds4drv_cmd = ExecuteProcess(
         cmd=['ds4drv'],
         output='screen',
-        condition=IfCondition(EqualsSubstitution(LaunchConfiguration('device'), 'ps4') and EqualsSubstitution(LaunchConfiguration('use_ds4drv'), 'True'))
+        condition=IfCondition(AndSubstitution(EqualsSubstitution(LaunchConfiguration('device'), 'ps4'), EqualsSubstitution(LaunchConfiguration('use_ds4drv'), 'True')))
     )
 
     # joy_linux node for joy controllers (ps4, ps5)
@@ -98,10 +110,11 @@ def generate_launch_description():
         parameters=[
             {'dev': joystick_device},
             {'deadzone': 0.05},
-            {'autorepeat_rate': 20.0}
+            {'autorepeat_rate': 20.0},
+            {'use_sim_time': LaunchConfiguration('use_sim_time')},
         ],
         arguments=['--ros-args', '--log-level', 'fatal'],
-        condition=IfCondition(EqualsSubstitution(LaunchConfiguration('device'), 'ps4') or EqualsSubstitution(LaunchConfiguration('device'), 'ps5'))
+        condition=IfCondition(OrSubstitution(EqualsSubstitution(LaunchConfiguration('device'), 'ps4'), EqualsSubstitution(LaunchConfiguration('device'), 'ps5')))
     )
 
     # quest node for meta quest controllers
@@ -125,7 +138,35 @@ def generate_launch_description():
         name='keyboard_node',
         output='screen',
         namespace=robot_name,
+        parameters=[
+            {'use_sim_time': LaunchConfiguration('use_sim_time')},
+        ],
         condition=IfCondition(EqualsSubstitution(LaunchConfiguration('device'), 'keyboard'))
+    )
+
+    # MoveIt arm controller — only launched when device=quest AND use_moveit=true
+    moveit_arm_controller_node = Node(
+        package=pkg_name,
+        executable='moveit_arm_controller',
+        name='moveit_arm_controller',
+        output='screen',
+        namespace=robot_name,
+        parameters=[
+            [moveit_arm_config, '.yaml'],
+            {'use_sim_time': LaunchConfiguration('use_sim_time')},
+        ],
+        condition=IfCondition(AndSubstitution(
+            EqualsSubstitution(LaunchConfiguration('device'), 'quest'),
+            LaunchConfiguration('use_moveit')
+        ))
+    )
+
+    # Launch quest usb network setup script (only needed on Linux, and only if using Quest controllers)
+    # User needs to allow debugging access on the Quest and connect it via USB for this to work
+    usb_network_setup_cmd = ExecuteProcess(
+        cmd=['bash', '-c', 'sudo adb reverse tcp:10000 tcp:10000'],
+        output='screen',
+        condition=IfCondition(EqualsSubstitution(LaunchConfiguration('device'), 'quest'))
     )
 
     # Kill any process still holding port 10000 (stale quest_node from a previous launch)
@@ -142,10 +183,13 @@ def generate_launch_description():
         declare_ros_ip_cmd,
         declare_use_ds4drv_cmd,
         declare_use_sim_time_cmd,
+        declare_use_moveit_cmd,
         kill_stale_quest,
         sobits_teleop_node,
+        moveit_arm_controller_node,
         ds4drv_cmd,
         joystick_node,
         quest_node,
         keyboard_node,
+        usb_network_setup_cmd
     ])

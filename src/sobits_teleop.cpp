@@ -1,9 +1,12 @@
 #include "sobits_teleop/sobits_teleop.hpp"
 
-SOBITSTeleop::SOBITSTeleop()
+namespace sobits_teleop
+{
+
+SOBITSTeleop::SOBITSTeleop(const rclcpp::NodeOptions & options)
   : Node(
       "sobits_teleop",
-      rclcpp::NodeOptions()
+      rclcpp::NodeOptions(options)
         .allow_undeclared_parameters(true)
         .automatically_declare_parameters_from_overrides(true)),
   wall_clock_(std::make_shared<rclcpp::Clock>(RCL_SYSTEM_TIME)),
@@ -32,7 +35,8 @@ SOBITSTeleop::SOBITSTeleop()
     rclcpp::QoS(100).transient_local().reliable(),
     std::bind(&SOBITSTeleop::robot_tf_static_callback, this, std::placeholders::_1));
 
-  async_param_client = std::make_shared<rclcpp::AsyncParametersClient>(this, "robot_state_publisher");
+  robot_description_source_node = "robot_state_publisher";
+  async_param_client = std::make_shared<rclcpp::AsyncParametersClient>(this, robot_description_source_node);
 
   urdf_timer = this->create_wall_timer(
     std::chrono::milliseconds(200),
@@ -1012,9 +1016,6 @@ void SOBITSTeleop::teleop()
 
 }
 
-int main(int argc, char **argv) {
-  rclcpp::init(argc, argv);
-  rclcpp::spin(std::make_shared<SOBITSTeleop>());
-  rclcpp::shutdown();
-  return 0;
-}
+}  // namespace sobits_teleop
+
+RCLCPP_COMPONENTS_REGISTER_NODE(sobits_teleop::SOBITSTeleop)
