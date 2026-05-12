@@ -34,7 +34,7 @@ def generate_launch_description():
     )
     declare_ros_ip_cmd = DeclareLaunchArgument(
         'ros_ip',
-        default_value='0.0.0.0',
+        default_value='127.0.0.1',
         description='ROS IP address for ros_tcp_endpoint (Meta Quest controllers)'
     )
     declare_use_ds4drv_cmd = DeclareLaunchArgument(
@@ -161,6 +161,14 @@ def generate_launch_description():
         ))
     )
 
+    # Launch quest usb network setup script (only needed on Linux, and only if using Quest controllers)
+    # User needs to allow debugging access on the Quest and connect it via USB for this to work
+    usb_network_setup_cmd = ExecuteProcess(
+        cmd=['bash', '-c', 'sudo adb reverse tcp:10000 tcp:10000'],
+        output='screen',
+        condition=IfCondition(EqualsSubstitution(LaunchConfiguration('device'), 'quest'))
+    )
+
     # Kill any process still holding port 10000 (stale quest_node from a previous launch)
     kill_stale_quest = ExecuteProcess(
         cmd=['bash', '-c', 'fuser -k 10000/tcp 2>/dev/null || true'],
@@ -183,4 +191,5 @@ def generate_launch_description():
         joystick_node,
         quest_node,
         keyboard_node,
+        usb_network_setup_cmd
     ])
