@@ -1,4 +1,4 @@
-#!/bin/bash
+# !/bin/bash
 
 echo "╔══╣ Setup: SOBITS TELEOP (STARTING) ╠══╗"
 
@@ -49,7 +49,12 @@ sudo pip install evdev==1.8.0 --break-system-packages
 # Download adb for android controller support
 sudo apt install adb -y
 sudo usermod -aG plugdev $USERNAME
-echo "SUBSYSTEM==\"usb\", ATTR{idVendor}==\"2833\", ATTR{idProduct}==\"5013\", MODE=\"0660\", GROUP=\"plugdev\", SYMLINK+=\"oculus%n\"" | sudo tee /etc/udev/rules.d/50-oculus.rules
+cat <<'EOF' | sudo tee /etc/udev/rules.d/50-oculus.rules
+SUBSYSTEM=="usb", ATTR{idVendor}=="2833", ATTR{idProduct}=="5013", MODE="0666", GROUP="plugdev", SYMLINK+="oculus%n"
+SUBSYSTEM=="usb", ATTR{idVendor}=="2833", ATTR{idProduct}=="5012", MODE="0666", GROUP="plugdev", SYMLINK+="oculus%n"
+SUBSYSTEM=="usb", ATTR{idVendor}=="2833", ATTR{idProduct}=="5011", MODE="0666", GROUP="plugdev", SYMLINK+="oculus%n"
+SUBSYSTEM=="usb", ATTR{idVendor}=="2833", ATTR{idProduct}=="5010", MODE="0666", GROUP="plugdev", SYMLINK+="oculus%n"
+EOF
 sudo udevadm control --reload-rules
 sudo udevadm trigger
 
