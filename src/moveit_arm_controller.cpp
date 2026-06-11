@@ -284,8 +284,9 @@ void MoveitArmController::init_move_groups()
         arm_data->vel_limits   = std::move(vel_limits);
         arm_data->accel_limits = std::move(accel_limits);
         RCLCPP_INFO(get_logger(),
-          "Arm '%s': cached TOTG limits for %zu joints",
-          arm_name.c_str(), arm_data->vel_limits.size());
+          "Arm '%s': %zu active joints, cached vel_limits for %zu, accel_limits for %zu",
+          arm_name.c_str(), jmg->getActiveJointModels().size(),
+          arm_data->vel_limits.size(), arm_data->accel_limits.size());
       }
 
     } catch (const std::exception & e) {
@@ -447,13 +448,16 @@ void MoveitArmController::tracking_loop(const std::string & arm_name)
 
     // ── 2. Get current EE pose ────────────────────────────────────────────
     geometry_msgs::msg::Pose current_pose;
-    try {
+    {
+      moveit::core::RobotStatePtr state = mgi->getCurrentState();
+      if (!state) {
+        RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
+          "Arm '%s': current state unavailable — skipping cycle", arm_name.c_str());
+        rate.sleep();
+        continue;
+      }
+      (void)state;
       current_pose = mgi->getCurrentPose().pose;
-    } catch (const std::exception & e) {
-      RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
-        "getCurrentPose failed for '%s': %s", arm_name.c_str(), e.what());
-      rate.sleep();
-      continue;
     }
 
     // ── 3. Distance to target ─────────────────────────────────────────────
@@ -506,6 +510,8 @@ void MoveitArmController::tracking_loop(const std::string & arm_name)
     }
 
     // ── 7. Compute Cartesian path ─────────────────────────────────────────
+    std::unique_lock<std::mutex> plan_lock(planning_mutex_);
+
     mgi->setStartStateToCurrentState();
     std::vector<geometry_msgs::msg::Pose> waypoints = {step_target};
     moveit_msgs::msg::RobotTrajectory traj_msg;
@@ -545,6 +551,7 @@ void MoveitArmController::tracking_loop(const std::string & arm_name)
       auto ompl_result = mgi->plan(ompl_plan);
 
       if (ompl_result != moveit::core::MoveItErrorCode::SUCCESS) {
+        plan_lock.unlock();
         RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
           "OMPL plan failed for arm '%s' (code %d) — target xyz=[%.3f, %.3f, %.3f]",
           arm_name.c_str(), ompl_result.val,
@@ -555,6 +562,7 @@ void MoveitArmController::tracking_loop(const std::string & arm_name)
 
       trajectory_msgs::msg::JointTrajectory jtraj_ompl =
         ompl_plan.trajectory.joint_trajectory;
+      plan_lock.unlock();
       jtraj_ompl.header.stamp = this->now() + lookahead;
       send_trajectory(arm, jtraj_ompl);
 
@@ -565,25 +573,56 @@ void MoveitArmController::tracking_loop(const std::string & arm_name)
     }
 
     // ── 8. Time-parameterise ──────────────────────────────────────────────
+    moveit::core::RobotStatePtr current_state = mgi->getCurrentState();
+    if (!current_state) {
+      plan_lock.unlock();
+      RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000,
+        "Arm '%s': current state unavailable — skipping cycle", arm_name.c_str());
+      rate.sleep();
+      continue;
+    }
     auto robot_traj = std::make_shared<robot_trajectory::RobotTrajectory>(
       mgi->getRobotModel(), cfg.planning_group);
-    robot_traj->setRobotTrajectoryMsg(*mgi->getCurrentState(), traj_msg);
+    robot_traj->setRobotTrajectoryMsg(*current_state, traj_msg);
 
-    trajectory_processing::TimeOptimalTrajectoryGeneration totg;
-    bool totg_ok = false;
-    if (!arm.vel_limits.empty() && !arm.accel_limits.empty()) {
-      totg_ok = totg.computeTimeStamps(*robot_traj, arm.vel_limits, arm.accel_limits);
-    } else {
-      totg_ok = totg.computeTimeStamps(*robot_traj, velocity_scaling_, acceleration_scaling_);
+    constexpr double kMinWaypointSeparation = 0.01;  // rad (L1 over the group)
+    const moveit::core::JointModelGroup * jmg =
+      mgi->getRobotModel()->getJointModelGroup(cfg.planning_group);
+    {
+      auto deduped = std::make_shared<robot_trajectory::RobotTrajectory>(
+        mgi->getRobotModel(), cfg.planning_group);
+      for (size_t i = 0; i < robot_traj->getWayPointCount(); ++i) {
+        const moveit::core::RobotState & wp = robot_traj->getWayPoint(i);
+        if (deduped->getWayPointCount() == 0 ||
+            deduped->getLastWayPoint().distance(wp, jmg) > kMinWaypointSeparation) {
+          deduped->addSuffixWayPoint(wp, 0.0);
+        }
+      }
+      if (deduped->getWayPointCount() < 2) {
+        plan_lock.unlock();
+        RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 1000,
+          "Arm '%s': degenerate trajectory (%zu distinct waypoints) — skipping",
+          arm_name.c_str(), deduped->getWayPointCount());
+        rate.sleep();
+        continue;
+      }
+      robot_traj = deduped;
     }
 
+    // Use the scaling-factor overload velocity/acceleration limit vectors
+    trajectory_processing::TimeOptimalTrajectoryGeneration totg;
+    bool totg_ok =
+      totg.computeTimeStamps(*robot_traj, velocity_scaling_, acceleration_scaling_);
+
     if (!totg_ok) {
+      plan_lock.unlock();
       RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000,
         "TOTG failed for arm '%s'", arm_name.c_str());
       rate.sleep();
       continue;
     }
     robot_traj->getRobotTrajectoryMsg(traj_msg);
+    plan_lock.unlock();
 
     // ── 9. Send via action client ─────────────────────────────────────────
     trajectory_msgs::msg::JointTrajectory jtraj = traj_msg.joint_trajectory;

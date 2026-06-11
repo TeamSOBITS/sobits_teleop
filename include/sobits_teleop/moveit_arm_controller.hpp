@@ -88,6 +88,13 @@ private:
   std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
   std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
 
+  // The two arms share a single MoveIt RobotModel (one model is loaded for the
+  // whole node). MoveGroupInterface / computeCartesianPath / OMPL plan() / TOTG
+  // are NOT thread-safe across that shared model, so the per-arm tracking
+  // threads must not run their planning sections concurrently. Held only around
+  // the compute section, released before the action-server send.
+  std::mutex planning_mutex_;
+
   double update_rate_hz_;
   double max_cartesian_step_m_;
   double min_cartesian_fraction_;
