@@ -80,6 +80,10 @@ private:
     const geometry_msgs::msg::Pose & a,
     const geometry_msgs::msg::Pose & b);
 
+  static double pose_angle(
+    const geometry_msgs::msg::Pose & a,
+    const geometry_msgs::msg::Pose & b);
+
   std::thread init_thread_;
 
   std::unordered_map<std::string, std::unique_ptr<ArmData>> arms_;
@@ -106,6 +110,11 @@ private:
   int    traj_lookahead_ms_;
   double ompl_planning_timeout_s_;
   double preempt_threshold_m_;
+  double arrival_threshold_rad_;
+  double replan_threshold_rad_;
+  double preempt_threshold_rad_;
+  bool   avoid_collisions_;
+  int    preempt_settle_ms_;
 
   double last_heartbeat_sec_{0.0};
   static constexpr double heartbeat_period_sec_ = 2.0;

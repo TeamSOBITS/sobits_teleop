@@ -44,6 +44,16 @@ MoveitArmController::MoveitArmController(const rclcpp::NodeOptions & options)
     this->declare_parameter("arm_teleop.ompl_planning_timeout_s", 0.5);
   if (!this->has_parameter("arm_teleop.preempt_threshold_m"))
     this->declare_parameter("arm_teleop.preempt_threshold_m", 0.15);
+  if (!this->has_parameter("arm_teleop.arrival_threshold_rad"))
+    this->declare_parameter("arm_teleop.arrival_threshold_rad", 0.05);   // ~3 deg
+  if (!this->has_parameter("arm_teleop.replan_threshold_rad"))
+    this->declare_parameter("arm_teleop.replan_threshold_rad", 0.05);    // ~3 deg
+  if (!this->has_parameter("arm_teleop.preempt_threshold_rad"))
+    this->declare_parameter("arm_teleop.preempt_threshold_rad", 0.26);   // ~15 deg
+  if (!this->has_parameter("arm_teleop.avoid_collisions"))
+    this->declare_parameter("arm_teleop.avoid_collisions", false);
+  if (!this->has_parameter("arm_teleop.preempt_settle_ms"))
+    this->declare_parameter("arm_teleop.preempt_settle_ms", 10);
 
   update_rate_hz_           = this->get_parameter("arm_teleop.update_rate_hz").as_double();
   max_cartesian_step_m_     = this->get_parameter("arm_teleop.max_cartesian_step_m").as_double();
@@ -56,6 +66,11 @@ MoveitArmController::MoveitArmController(const rclcpp::NodeOptions & options)
   traj_lookahead_ms_        = this->get_parameter("arm_teleop.traj_lookahead_ms").as_int();
   ompl_planning_timeout_s_  = this->get_parameter("arm_teleop.ompl_planning_timeout_s").as_double();
   preempt_threshold_m_      = this->get_parameter("arm_teleop.preempt_threshold_m").as_double();
+  arrival_threshold_rad_    = this->get_parameter("arm_teleop.arrival_threshold_rad").as_double();
+  replan_threshold_rad_     = this->get_parameter("arm_teleop.replan_threshold_rad").as_double();
+  preempt_threshold_rad_    = this->get_parameter("arm_teleop.preempt_threshold_rad").as_double();
+  avoid_collisions_         = this->get_parameter("arm_teleop.avoid_collisions").as_bool();
+  preempt_settle_ms_        = this->get_parameter("arm_teleop.preempt_settle_ms").as_int();
 
   if (!this->has_parameter("arm_teleop.arms"))
     this->declare_parameter("arm_teleop.arms",
@@ -117,10 +132,11 @@ MoveitArmController::MoveitArmController(const rclcpp::NodeOptions & options)
   RCLCPP_INFO(get_logger(),
     "MoveitArmController: rate=%.1f Hz, max_step=%.3f m, eef_step=%.3f m, "
     "replan_thresh=%.3f m, preempt_thresh=%.3f m, vel_scale=%.2f, "
-    "lookahead=%d ms, ompl_timeout=%.2f s",
+    "lookahead=%d ms, ompl_timeout=%.2f s, avoid_collisions=%s, settle=%d ms",
     update_rate_hz_, max_cartesian_step_m_, eef_step_m_,
     replan_threshold_m_, preempt_threshold_m_, velocity_scaling_,
-    traj_lookahead_ms_, ompl_planning_timeout_s_);
+    traj_lookahead_ms_, ompl_planning_timeout_s_,
+    avoid_collisions_ ? "true" : "false", preempt_settle_ms_);
 
   init_thread_ = std::thread([this]() { init_move_groups(); });
 }
@@ -460,33 +476,41 @@ void MoveitArmController::tracking_loop(const std::string & arm_name)
       current_pose = mgi->getCurrentPose().pose;
     }
 
-    // ── 3. Distance to target ─────────────────────────────────────────────
+    // ── 3. Distance to target (position AND orientation) ──────────────────
+    // Both must be within threshold to count as "arrived"; otherwise a pure
+    // reorientation (target rotates in place) would be ignored, since position
+    // alone would read as already-there.
     double dist = pose_distance(current_pose, target_pose);
-    if (dist < arrival_threshold_m_) {
+    double ang  = pose_angle(current_pose, target_pose);
+    if (dist < arrival_threshold_m_ && ang < arrival_threshold_rad_) {
       rate.sleep();
       continue;
     }
 
     // ── 4. Execution / preemption logic ───────────────────────────────────
     if (arm.executing.load()) {
-      double target_moved = pose_distance(target_pose, last_submitted_target);
-      if (target_moved < preempt_threshold_m_) {
+      double target_moved   = pose_distance(target_pose, last_submitted_target);
+      double target_rotated = pose_angle(target_pose, last_submitted_target);
+      if (target_moved < preempt_threshold_m_ && target_rotated < preempt_threshold_rad_) {
         rate.sleep();
         continue;
       }
       RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 500,
-        "Arm '%s': target moved %.3f m — preempting trajectory",
-        arm_name.c_str(), target_moved);
+        "Arm '%s': target moved %.3f m / %.1f deg — preempting trajectory",
+        arm_name.c_str(), target_moved, target_rotated * 180.0 / M_PI);
       cancel_trajectory(arm);
-      std::this_thread::sleep_for(std::chrono::milliseconds(50));
+      std::this_thread::sleep_for(std::chrono::milliseconds(preempt_settle_ms_));
     }
 
     // ── 5. Replan decision (when not executing) ───────────────────────────
     if (!first_iter && !arm.executing.load()) {
       auto now_sec = this->now().seconds();
       bool heartbeat = (now_sec - last_heartbeat_sec_ >= heartbeat_period_sec_);
-      double target_moved = pose_distance(target_pose, last_submitted_target);
-      if (!heartbeat && target_moved < replan_threshold_m_) {
+      double target_moved   = pose_distance(target_pose, last_submitted_target);
+      double target_rotated = pose_angle(target_pose, last_submitted_target);
+      if (!heartbeat &&
+          target_moved < replan_threshold_m_ &&
+          target_rotated < replan_threshold_rad_) {
         rate.sleep();
         continue;
       }
@@ -518,7 +542,7 @@ void MoveitArmController::tracking_loop(const std::string & arm_name)
 
     auto t0 = std::chrono::steady_clock::now();
     double fraction = mgi->computeCartesianPath(
-      waypoints, eef_step_m_, traj_msg, true);
+      waypoints, eef_step_m_, traj_msg, avoid_collisions_);
     auto plan_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
       std::chrono::steady_clock::now() - t0).count();
 
@@ -653,6 +677,19 @@ double MoveitArmController::pose_distance(
   double dy = a.position.y - b.position.y;
   double dz = a.position.z - b.position.z;
   return std::sqrt(dx * dx + dy * dy + dz * dz);
+}
+
+double MoveitArmController::pose_angle(
+  const geometry_msgs::msg::Pose & a,
+  const geometry_msgs::msg::Pose & b)
+{
+  // Angle [rad] between the two orientations: 2*acos(|<qa, qb>|).
+  double dot = a.orientation.x * b.orientation.x +
+               a.orientation.y * b.orientation.y +
+               a.orientation.z * b.orientation.z +
+               a.orientation.w * b.orientation.w;
+  dot = std::min(1.0, std::max(-1.0, std::abs(dot)));
+  return 2.0 * std::acos(dot);
 }
 
 }  // namespace sobits_teleop
