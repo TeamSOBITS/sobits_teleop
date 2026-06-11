@@ -25,13 +25,16 @@
       # ── Global tuning parameters ──────────────────────────────────────────
 
       # Tracking loop frequency [Hz].
-      # 25 Hz gives ~40ms cycle budget — enough for Cartesian planning on 6-DOF arms.
-      update_rate_hz: 25.0
+      # 30 Hz gives ~33ms cycle budget — easily met now that planning is ~2ms
+      # (avoid_collisions=false). Higher rate = more frequent goal updates = lower lag.
+      update_rate_hz: 30.0
 
       # Maximum Cartesian step attempted per control cycle [m].
-      # Set large enough to cover gaps when the target moves far (Quest scale > 1.0).
-      # The step is clamped to this value; if the target is closer it goes straight there.
-      max_cartesian_step_m: 0.5
+      # Each cycle plans a hop toward the target, executes it to completion, then
+      # plans the next (the arm briefly settles between hops). Larger hops = fewer
+      # settle pauses but coarser following; smaller = tighter but more move-stop
+      # feel. 0.15 m tracks real hand motion to a few cm.
+      max_cartesian_step_m: 0.15
 
       # Cartesian path interpolation resolution [m].
       # 3 cm = ~3x fewer IK calls vs the old 1 cm default, cutting plan time significantly.
@@ -43,23 +46,36 @@
       min_cartesian_fraction: 0.2
 
       # Replan whenever the target moves more than this from the last submitted goal [m].
-      # 2 cm = tight tracking; arm follows the target in near-real-time.
-      replan_threshold_m: 0.02
+      # 1 cm = tight tracking; arm follows the target in near-real-time.
+      replan_threshold_m: 0.01
 
       # Cancel a currently-executing trajectory and replan when the target has moved
       # more than this from the last submitted goal [m].
-      # Intentionally larger than replan_threshold_m: interrupting a running trajectory
-      # causes an abrupt stop, so preemption is only worth it when the hand has moved far
-      # enough that the original goal is clearly stale.
-      preempt_threshold_m: 0.15
+      # Larger than replan_threshold_m: interrupting a running trajectory causes an
+      # abrupt stop. Kept WELL ABOVE max_cartesian_step_m on purpose: with small
+      # streamed hops, a low preempt threshold cancels every hop before it finishes
+      # (the arm just churns in place and crawls). At 0.30 m, hops complete and chain
+      # smoothly; preemption only kicks in if the target teleports far (>30 cm).
+      preempt_threshold_m: 0.30
 
       # Do not replan when EE is already within this distance of target [m].
       arrival_threshold_m: 0.03
 
+      # Angular counterparts of the thresholds above [rad]. The tracker follows
+      # target ORIENTATION as well as position: arrival, replan and preempt each
+      # trigger if EITHER the position OR the orientation differs by more than its
+      # threshold. Without these a pure rotation of the target (hand twisting in
+      # place) would be ignored, since position alone reads as "already arrived".
+      arrival_threshold_rad: 0.05   # ~3 deg
+      replan_threshold_rad:  0.05   # ~3 deg
+      preempt_threshold_rad: 0.26   # ~15 deg
+
       # Velocity and acceleration scaling factors [0, 1] passed to TOTG.
-      # 0.6 = 60% of max — fast enough for responsive teleoperation.
-      velocity_scaling: 0.6
-      acceleration_scaling: 0.6
+      # 0.8 = 80% of max. Higher = less tracking lag (each hop completes sooner),
+      # at the cost of faster/jerkier joint motion. Drop toward 0.5 if the physical
+      # arm is too aggressive; raise toward 1.0 for tighter following in sim.
+      velocity_scaling: 0.8
+      acceleration_scaling: 0.8
 
       # Milliseconds added to the trajectory header stamp before publishing.
       # Gives the controller a head-start to pre-buffer the trajectory,
@@ -70,3 +86,15 @@
       # When computeCartesianPath fraction < min_cartesian_fraction, we fall back
       # to OMPL joint-space planning to cross singularities/out-of-workspace regions.
       ompl_planning_timeout_s: 0.5
+
+      # Collision-check the Cartesian path against the planning scene.
+      # false makes computeCartesianPath ~30x faster (pure IK interpolation, no
+      # scene checks) — essential for responsive teleop. Safe here because teleop
+      # is operator-driven; the arm will NOT auto-avoid obstacles or self-collision.
+      # Set true to restore collision avoidance at the cost of ~100 ms/plan latency.
+      avoid_collisions: false
+
+      # Settling delay after cancelling a running trajectory before sending the
+      # next one [ms]. Kept small so a moving target is followed without stalling
+      # a whole control cycle on every preemption.
+      preempt_settle_ms: 10
