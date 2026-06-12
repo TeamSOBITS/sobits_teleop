@@ -50,6 +50,7 @@ private:
     ArmTeleopConfig config;
     std::shared_ptr<moveit::planning_interface::MoveGroupInterface> mgi;
     rclcpp_action::Client<FollowJointTrajectory>::SharedPtr action_client;
+    rclcpp::Publisher<trajectory_msgs::msg::JointTrajectory>::SharedPtr traj_pub;
     std::shared_ptr<GoalHandleFJT> goal_handle;  // protected by goal_mutex
     std::mutex goal_mutex;
     std::atomic<bool> executing{false};
@@ -115,6 +116,7 @@ private:
   double preempt_threshold_rad_;
   bool   avoid_collisions_;
   int    preempt_settle_ms_;
+  bool   use_topic_;
 
   double last_heartbeat_sec_{0.0};
   static constexpr double heartbeat_period_sec_ = 2.0;
