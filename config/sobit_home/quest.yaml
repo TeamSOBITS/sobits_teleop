@@ -46,6 +46,7 @@
           speed: 0.6                # rad per 50 ms tick at full stick
           single_joint_axis: 5      # in adaptive mode: right stick up/down rotates single_joint_name
           single_joint_name: "hand_right_finger_l_mcp_joint"
+          single_joint_sign: -1     # flip stick direction
           adaptive_trigger_axis: 6  # right trigger holds adaptive mode
           adaptive_stick_axis: 4    # right stick left/right
           adaptive_close_sign: -1   # stick right = close
@@ -99,6 +100,7 @@
           speed: 0.6                # rad per 50 ms tick at full stick
           single_joint_axis: 1      # in adaptive mode: left stick up/down rotates single_joint_name
           single_joint_name: "hand_left_finger_l_mcp_joint"
+          single_joint_sign: -1     # flip stick direction
           adaptive_trigger_axis: 2  # left trigger holds adaptive mode
           adaptive_stick_axis: 0    # left stick left/right
           adaptive_close_sign: 1    # stick right = close

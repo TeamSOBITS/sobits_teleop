@@ -256,6 +256,8 @@ void SOBITSTeleop::load_parameters()
           if (this->has_parameter("quest_control." + controller_type + ".gripper.single_joint_axis")) {
             this->get_parameter("quest_control." + controller_type + ".gripper.single_joint_axis",     qcm.type_axis);
             this->get_parameter("quest_control." + controller_type + ".gripper.single_joint_name",    qcm.type_joint);
+            if (this->has_parameter("quest_control." + controller_type + ".gripper.single_joint_sign"))
+              this->get_parameter("quest_control." + controller_type + ".gripper.single_joint_sign",  qcm.type_sign);
           }
           if (this->has_parameter("quest_control." + controller_type + ".gripper.hand_pose_button")) {
             this->get_parameter("quest_control." + controller_type + ".gripper.hand_pose_button", qcm.hand_pose_button);
@@ -971,7 +973,7 @@ void SOBITSTeleop::teleop()
             const bool closing = (close_frac >= open_frac);
             // Config speeds are radians per legacy 50 ms tick — scale to the actual loop rate.
             float step = m.speed * deflection * static_cast<float>(jog_tick_scale_);
-            float vjog_step = m.speed * vjog_stick * static_cast<float>(jog_tick_scale_);
+            float vjog_step = m.speed * vjog_stick * static_cast<float>(m.type_sign) * static_cast<float>(jog_tick_scale_);
 
             auto clamp_to_limits = [&](const std::string & jname, float value) -> float {
               if (!joint_limits.count(jname)) return value;
