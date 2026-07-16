@@ -201,13 +201,13 @@ void SOBITSTeleop::load_parameters()
     RCLCPP_INFO(get_logger(), "Loaded control_velocity parameters from rosparam");
   }
   // Load quest parameters
-  if (this->has_parameter("quest_control.controller")) {
-    this->get_parameter("quest_control.controller", controller_types);
+  if (this->has_parameter("quest_control.controllers")) {
+    this->get_parameter("quest_control.controllers", controller_types);
     for (const auto& controller_type : controller_types) {
       if (controller_type == "head") {
         this->get_parameter("quest_control." + controller_type + ".vertical",             qhm.vertical);
         this->get_parameter("quest_control." + controller_type + ".horizontal",           qhm.horizontal);
-        this->get_parameter("quest_control." + controller_type + ".head_mode",            qhm.head_mode);
+        this->get_parameter("quest_control." + controller_type + ".head_enable_axis",            qhm.head_mode);
         this->get_parameter("quest_control." + controller_type + ".vertical_sign",        qhm.vertical_sign);
         this->get_parameter("quest_control." + controller_type + ".horizontal_sign",      qhm.horizontal_sign);
         this->get_parameter("quest_control." + controller_type + ".scale",                qhm.scale);
@@ -230,7 +230,7 @@ void SOBITSTeleop::load_parameters()
           this->get_parameter("quest_control." + controller_type + ".end_effector_frame_name", qcm.end_effector_frame_name);
           this->get_parameter("quest_control." + controller_type + ".target_frame_name",       qcm.target_frame_name);
           this->get_parameter("quest_control." + controller_type + ".scale",                   qcm.scale);
-          this->get_parameter("quest_control." + controller_type + ".arm_mode",                qcm.arm_mode);
+          this->get_parameter("quest_control." + controller_type + ".arm_enable_axis",                qcm.arm_mode);
           this->get_parameter("robot_topic_name.joint_trajectory_topic." + qcm.arm,            qcm.arm_joint_trajectory_topic);
           // Optional proximity thresholds — defaults are set in the struct
           if (this->has_parameter("quest_control." + controller_type + ".arm_proximity_threshold")) {
@@ -248,14 +248,14 @@ void SOBITSTeleop::load_parameters()
         if (this->has_parameter("quest_control." + controller_type + ".gripper.hand")) {
           this->get_parameter("quest_control." + controller_type + ".gripper.hand",            qcm.hand);
           this->get_parameter("quest_control." + controller_type + ".gripper.names",           qcm.names);
-          this->get_parameter("quest_control." + controller_type + ".gripper.gripper_mode",    qcm.gripper_mode);
+          this->get_parameter("quest_control." + controller_type + ".gripper.legacy_gripper_axis",    qcm.gripper_mode);
           this->get_parameter("quest_control." + controller_type + ".gripper.axis",            qcm.axis);
           this->get_parameter("quest_control." + controller_type + ".gripper.axis_sign",       qcm.axis_sign);
           this->get_parameter("quest_control." + controller_type + ".gripper.speed",           qcm.speed);
           this->get_parameter("robot_topic_name.joint_trajectory_topic." + qcm.hand,           qcm.hand_joint_trajectory_topic);
-          if (this->has_parameter("quest_control." + controller_type + ".gripper.type_axis")) {
-            this->get_parameter("quest_control." + controller_type + ".gripper.type_axis",     qcm.type_axis);
-            this->get_parameter("quest_control." + controller_type + ".gripper.type_joint",    qcm.type_joint);
+          if (this->has_parameter("quest_control." + controller_type + ".gripper.single_joint_axis")) {
+            this->get_parameter("quest_control." + controller_type + ".gripper.single_joint_axis",     qcm.type_axis);
+            this->get_parameter("quest_control." + controller_type + ".gripper.single_joint_name",    qcm.type_joint);
           }
           if (this->has_parameter("quest_control." + controller_type + ".gripper.hand_pose_button")) {
             this->get_parameter("quest_control." + controller_type + ".gripper.hand_pose_button", qcm.hand_pose_button);
@@ -552,7 +552,7 @@ void SOBITSTeleop::teleop()
     }
   };
 
-  if (this->has_parameter("quest_control.controller")) {
+  if (this->has_parameter("quest_control.controllers")) {
     // Head / HMD — also used as body reference for arm target scaling
     bool head_tf_ok = false;
     if (base_odom_ok) {
