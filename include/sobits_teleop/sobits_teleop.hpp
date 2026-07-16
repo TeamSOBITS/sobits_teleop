@@ -118,7 +118,7 @@ struct QuestControllerMap {
   int axis;
   int axis_sign;
   float speed;
-  int type_axis;
+  int type_axis = -1;   // single_joint_axis: -1 = feature off
   // Proximity thresholds: arm only latches when controller is within these
   // distances of the robot end-effector. Set to <=0 to disable the check.
   double arm_proximity_threshold = 0.15;       // metres (position)

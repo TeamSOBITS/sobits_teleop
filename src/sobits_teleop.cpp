@@ -959,10 +959,26 @@ void SOBITSTeleop::teleop()
           float open_frac  = std::clamp(-raw_stick * m.adaptive_close_sign, 0.0f, 1.0f);
           float deflection = std::max(close_frac, open_frac);
 
-          if (deflection >= 0.1f) {
+          // Vertical stick (single_joint_axis) rotates single_joint_name — the
+          // grip-configuration knuckle — while the adaptive trigger is held.
+          float vjog_stick = 0.0f;
+          if (m.type_axis >= 0 && m.type_axis < static_cast<int>(latest_axes.size()) &&
+              std::abs(latest_axes[m.type_axis]) > 0.5f) {
+            vjog_stick = latest_axes[m.type_axis];
+          }
+
+          if (deflection >= 0.1f || vjog_stick != 0.0f) {
             const bool closing = (close_frac >= open_frac);
             // Config speeds are radians per legacy 50 ms tick — scale to the actual loop rate.
             float step = m.speed * deflection * static_cast<float>(jog_tick_scale_);
+            float vjog_step = m.speed * vjog_stick * static_cast<float>(jog_tick_scale_);
+
+            auto clamp_to_limits = [&](const std::string & jname, float value) -> float {
+              if (!joint_limits.count(jname)) return value;
+              return std::clamp(value,
+                static_cast<float>(std::min(joint_limits.at(jname).lower, joint_limits.at(jname).upper)),
+                static_cast<float>(std::max(joint_limits.at(jname).lower, joint_limits.at(jname).upper)));
+            };
 
             auto step_toward = [&](const std::string & jname, float target) -> float {
               if (joint_pos.find(jname) == joint_pos.end()) return target;
@@ -970,22 +986,28 @@ void SOBITSTeleop::teleop()
               float dir = (target > cur) ? 1.0f : -1.0f;
               float next = cur + dir * step;
               if ((dir > 0 && next > target) || (dir < 0 && next < target)) next = target;
-              if (joint_limits.count(jname)) {
-                next = std::clamp(next,
-                  static_cast<float>(std::min(joint_limits.at(jname).lower, joint_limits.at(jname).upper)),
-                  static_cast<float>(std::max(joint_limits.at(jname).lower, joint_limits.at(jname).upper)));
-              }
-              return next;
+              return clamp_to_limits(jname, next);
             };
 
             auto goal = sobits_interfaces::action::MoveJoint::Goal();
             for (const auto & ajt : m.adaptive_joints) {
               goal.target_joint_names.push_back(ajt.name);
+              float cur = joint_pos.count(ajt.name)
+                ? static_cast<float>(joint_pos.at(ajt.name)) : ajt.close_pos;
               if (ajt.fixed) {
-                goal.target_joint_rad.push_back(ajt.close_pos);
-              } else {
+                // Fixed joints HOLD their current position (the pose buttons set
+                // the base grip configuration) — except the grip-type knuckle,
+                // which the vertical stick rotates freely.
+                float tgt = cur;
+                if (ajt.name == m.type_joint && vjog_stick != 0.0f) {
+                  tgt = clamp_to_limits(ajt.name, cur + vjog_step);
+                }
+                goal.target_joint_rad.push_back(tgt);
+              } else if (deflection >= 0.1f) {
                 float tgt = closing ? ajt.close_pos : ajt.open_pos;
                 goal.target_joint_rad.push_back(step_toward(ajt.name, tgt));
+              } else {
+                goal.target_joint_rad.push_back(cur);  // vertical-only: hold curl
               }
             }
             goal.time_allowance.nanosec = static_cast<uint32_t>(100'000'000u);  // 100 ms
