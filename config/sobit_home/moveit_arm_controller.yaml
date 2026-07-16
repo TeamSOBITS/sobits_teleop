@@ -1,26 +1,10 @@
 /**:
   ros__parameters:
     arm_teleop:
-      # List of arms to initialise (must match planning group names in SRDF)
-      arms:
-        - arm_left
-        - arm_right
-
-      # ── Per-arm configuration ─────────────────────────────────────────────
-      arm_left:
-        planning_group: "arm_left"
-        # TF frame broadcast by sobits_teleop when Quest left controller is active
-        target_frame: "left_target_link"
-        # Reference frame used for all TF lookups and plan_to_pose calls
-        base_frame: "base_footprint"
-        # Direct-publish topic for the arm joint trajectory controller
-        trajectory_topic: "arm_left_position_controller/joint_trajectory"
-
-      arm_right:
-        planning_group: "arm_right"
-        target_frame: "right_target_link"
-        base_frame: "base_footprint"
-        trajectory_topic: "arm_right_position_controller/joint_trajectory"
+      # (The arm list, planning groups, target frames and controller topics are
+      # injected by sobits_teleop.launch.py from quest.yaml / robot.yaml — those
+      # files are the single source of arm identity, shared with the servo
+      # backend. This file carries tuning only.)
 
       # ── Global tuning parameters ──────────────────────────────────────────
 

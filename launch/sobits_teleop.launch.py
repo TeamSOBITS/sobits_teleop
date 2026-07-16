@@ -153,16 +153,50 @@ def generate_launch_description():
 
     # MoveIt arm controller — only launched when device=quest AND use_moveit=true
     # AND use_servo=false, so exactly one arm-tracking backend runs at a time.
-    moveit_arm_controller_node = Node(
-        package=pkg_name,
-        executable='moveit_arm_controller',
-        name='moveit_arm_controller',
-        output='screen',
-        namespace=robot_name,
-        parameters=[
-            [moveit_arm_config, '.yaml'],
-            {'use_sim_time': LaunchConfiguration('use_sim_time')},
-        ],
+    # The arm identity (arms, planning groups, target frames, controller topics)
+    # is declared once in quest.yaml / robot.yaml and injected here, exactly
+    # like servo_arms.launch.py does for the servo backend — the controller's
+    # own yaml carries tuning only.
+    def _make_moveit_arm_controller(context, *args, **kwargs):
+        import yaml as pyyaml
+        rn = LaunchConfiguration('robot_name').perform(context)
+        cfg_dir = os.path.join(get_package_share_directory(pkg_name), 'config', rn)
+        with open(os.path.join(cfg_dir, 'quest.yaml')) as f:
+            quest_params = pyyaml.safe_load(f)['/**']['ros__parameters']
+        with open(os.path.join(cfg_dir, 'robot.yaml')) as f:
+            robot_params = pyyaml.safe_load(f)['/**']['ros__parameters']
+        traj_topics = robot_params['robot_topic_name']['joint_trajectory_topic']
+
+        quest_control = quest_params['quest_control']
+        arm_params = {}
+        arms = []
+        for ctrl_name in quest_control.get('controller', []):
+            block = quest_control.get(ctrl_name, {})
+            if isinstance(block, dict) and 'arm' in block:
+                arm = block['arm']
+                arms.append(arm)
+                arm_params[f'arm_teleop.{arm}.planning_group'] = arm
+                arm_params[f'arm_teleop.{arm}.target_frame'] = block['target_frame_name']
+                arm_params[f'arm_teleop.{arm}.base_frame'] = 'base_footprint'
+                arm_params[f'arm_teleop.{arm}.trajectory_topic'] = traj_topics[arm]
+        arm_params['arm_teleop.arms'] = arms
+
+        return [Node(
+            package=pkg_name,
+            executable='moveit_arm_controller',
+            name='moveit_arm_controller',
+            output='screen',
+            namespace=rn,
+            parameters=[
+                os.path.join(cfg_dir, 'moveit_arm_controller.yaml'),
+                arm_params,
+                {'use_sim_time': LaunchConfiguration('use_sim_time')},
+            ],
+        )]
+
+    from launch.actions import OpaqueFunction
+    moveit_arm_controller_node = OpaqueFunction(
+        function=_make_moveit_arm_controller,
         condition=IfCondition(AndSubstitution(AndSubstitution(
             EqualsSubstitution(LaunchConfiguration('device'), 'quest'),
             LaunchConfiguration('use_moveit')
