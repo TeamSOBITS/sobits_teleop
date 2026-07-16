@@ -11,10 +11,8 @@
 #include <tf2_ros/transform_listener.h>
 #include <tf2_ros/buffer.h>
 #include <tf2/exceptions.h>
-#include <tf2/LinearMath/Transform.h>
 #include <geometry_msgs/msg/transform_stamped.hpp>
 
-#include <optional>
 
 #include <atomic>
 #include <memory>
@@ -30,16 +28,6 @@ struct ServoBridgeArmConfig {
   std::string base_frame;
   std::string servo_node;
   std::string enable_topic;
-  // The link the target pose represents (the group's end-effector link) and the
-  // link Servo actually drives (the planning group's kinematic-chain tip). In
-  // Jazzy servo 2.12 the commanded pose is the chain tip's pose, but the target
-  // TF describes the desired EE pose — these differ by the fixed EE->tip offset
-  // (e.g. hand_*_end_effector_link is ~0.13 m distal to arm_*_wrist_roll_link).
-  // The bridge pre-multiplies the target by T(ee_frame->tip_frame) so the EE,
-  // not the wrist, lands on the target. If ee_frame == tip_frame the offset is
-  // identity and behavior is unchanged.
-  std::string ee_frame;
-  std::string tip_frame;
   // Reach clamp: targets are clamped to a sphere of radius max_reach around
   // reach_origin_frame before being sent to servo. Chasing an out-of-reach hand
   // target otherwise drives the arm to full extension — a true elbow
@@ -86,12 +74,6 @@ private:
     std::atomic<bool> enabled{false};
     std::atomic<bool> command_type_set{false};
     std::atomic<bool> initial_pause_set{false};
-
-    // Cached fixed transform T(ee_frame -> tip_frame). Both links are rigidly
-    // attached to the same body (no joint between the EE link and the chain tip
-    // it hangs off), so this is constant; looked up lazily on the first tick and
-    // reused thereafter. nullopt until the first successful lookup.
-    std::optional<tf2::Transform> ee_to_tip;
   };
 
   void enable_callback(const std::string & arm_name, const std_msgs::msg::Bool::SharedPtr msg);

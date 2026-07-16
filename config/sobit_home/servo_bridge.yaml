@@ -12,12 +12,12 @@
       pose_rate_hz: 100.0
 
       # ── Per-arm configuration ─────────────────────────────────────────────
-      # ee_frame / tip_frame: optional fixed-offset correction. If Servo drove
-      # the kinematic-chain tip, the bridge would pre-multiply the target by
-      # T(ee_frame -> tip_frame). VERIFIED IN SIM 2026-07-15: servo 2.12.4
-      # commands hand_*_end_effector_link (the group's last link) DIRECTLY, so
-      # no offset is needed — leave both empty (identity). Setting them shifts
-      # the EE off-target by exactly the offset.
+      # NOTE on the commanded frame: servo 2.12.4 drives the planning group's
+      # LAST LINK from the SRDF (hand_*_end_effector_link here, NOT the chain
+      # tip), which is exactly the link *_target_link represents — verified in
+      # sim 2026-07-15, so the bridge forwards target poses unmodified. If the
+      # SRDF group ever changes what servo drives, a fixed-offset correction
+      # has to be reintroduced (see git history: ee_frame/tip_frame).
       # reach_origin_frame / max_reach: targets farther than max_reach from the
       # shoulder are pulled back onto that sphere before reaching servo.
       # Chasing an out-of-reach hand otherwise straightens the elbow — a true
@@ -29,8 +29,6 @@
         base_frame: base_footprint
         servo_node: servo_arm_right
         enable_topic: arm_right/moveit_track_enabled
-        ee_frame: ""
-        tip_frame: ""
         reach_origin_frame: arm_right_shoulder_tilt_link
         max_reach: 1.10
 
@@ -39,7 +37,5 @@
         base_frame: base_footprint
         servo_node: servo_arm_left
         enable_topic: arm_left/moveit_track_enabled
-        ee_frame: ""
-        tip_frame: ""
         reach_origin_frame: arm_left_shoulder_tilt_link
         max_reach: 1.10

@@ -34,8 +34,6 @@ ServoTargetBridge::ServoTargetBridge(const rclcpp::NodeOptions & options)
     auto bf_key   = "servo_bridge." + arm_name + ".base_frame";
     auto sn_key   = "servo_bridge." + arm_name + ".servo_node";
     auto en_key   = "servo_bridge." + arm_name + ".enable_topic";
-    auto ee_key   = "servo_bridge." + arm_name + ".ee_frame";
-    auto tip_key  = "servo_bridge." + arm_name + ".tip_frame";
     auto ro_key   = "servo_bridge." + arm_name + ".reach_origin_frame";
     auto mr_key   = "servo_bridge." + arm_name + ".max_reach";
 
@@ -47,12 +45,6 @@ ServoTargetBridge::ServoTargetBridge(const rclcpp::NodeOptions & options)
       this->declare_parameter(sn_key, std::string("servo_") + arm_name);
     if (!this->has_parameter(en_key))
       this->declare_parameter(en_key, arm_name + "/moveit_track_enabled");
-    // ee_frame/tip_frame default empty -> no offset (identity); the launch YAML
-    // supplies the real links per arm.
-    if (!this->has_parameter(ee_key))
-      this->declare_parameter(ee_key, std::string(""));
-    if (!this->has_parameter(tip_key))
-      this->declare_parameter(tip_key, std::string(""));
     // reach_origin_frame/max_reach default disabled; the launch YAML supplies them.
     if (!this->has_parameter(ro_key))
       this->declare_parameter(ro_key, std::string(""));
@@ -64,8 +56,6 @@ ServoTargetBridge::ServoTargetBridge(const rclcpp::NodeOptions & options)
     cfg.base_frame     = this->get_parameter(bf_key).as_string();
     cfg.servo_node     = this->get_parameter(sn_key).as_string();
     cfg.enable_topic   = this->get_parameter(en_key).as_string();
-    cfg.ee_frame       = this->get_parameter(ee_key).as_string();
-    cfg.tip_frame      = this->get_parameter(tip_key).as_string();
     cfg.reach_origin_frame = this->get_parameter(ro_key).as_string();
     cfg.max_reach      = this->get_parameter(mr_key).as_double();
 
@@ -100,10 +90,9 @@ ServoTargetBridge::ServoTargetBridge(const rclcpp::NodeOptions & options)
 
     RCLCPP_INFO(get_logger(),
       "Arm '%s': servo_node='%s', target_frame='%s', base_frame='%s', enable_topic='%s', "
-      "ee_frame='%s', tip_frame='%s', reach_origin_frame='%s', max_reach=%.3f",
+      "reach_origin_frame='%s', max_reach=%.3f",
       arm_name.c_str(), cfg.servo_node.c_str(), cfg.target_frame.c_str(),
       cfg.base_frame.c_str(), cfg.enable_topic.c_str(),
-      cfg.ee_frame.c_str(), cfg.tip_frame.c_str(),
       cfg.reach_origin_frame.c_str(), cfg.max_reach);
 
     // Startup sequence — switch_command_type(POSE) once per arm and
@@ -358,51 +347,13 @@ void ServoTargetBridge::pose_timer_callback()
       }
     }
 
-    // Servo commands the chain TIP, not the EE link. Convert the desired EE pose
-    // to the corresponding TIP pose: T(base->tip) = T(base->ee) * T(ee->tip).
-    // T(ee->tip) is fixed (same rigid body) — cache it on first success. When
-    // ee_frame/tip_frame are unset or equal, the offset is identity.
-    tf2::Transform base_to_tip = base_to_target;
-    const bool needs_offset =
-      !arm.config.ee_frame.empty() && !arm.config.tip_frame.empty() &&
-      arm.config.ee_frame != arm.config.tip_frame;
-
-    if (needs_offset) {
-      if (!arm.ee_to_tip.has_value()) {
-        try {
-          auto ee_tip = tf_buffer_->lookupTransform(
-            arm.config.ee_frame, arm.config.tip_frame, tf2::TimePointZero);
-          arm.ee_to_tip = tf2::Transform(
-            tf2::Quaternion(
-              ee_tip.transform.rotation.x, ee_tip.transform.rotation.y,
-              ee_tip.transform.rotation.z, ee_tip.transform.rotation.w),
-            tf2::Vector3(
-              ee_tip.transform.translation.x, ee_tip.transform.translation.y,
-              ee_tip.transform.translation.z));
-          RCLCPP_INFO(get_logger(),
-            "Arm '%s': cached EE->tip offset '%s'->'%s' = [%.3f %.3f %.3f]",
-            arm_name.c_str(), arm.config.ee_frame.c_str(), arm.config.tip_frame.c_str(),
-            arm.ee_to_tip->getOrigin().x(), arm.ee_to_tip->getOrigin().y(),
-            arm.ee_to_tip->getOrigin().z());
-        } catch (const tf2::TransformException & e) {
-          RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
-            "Arm '%s': EE->tip TF '%s'->'%s' not yet available: %s — commanding "
-            "raw target this tick", arm_name.c_str(), arm.config.ee_frame.c_str(),
-            arm.config.tip_frame.c_str(), e.what());
-        }
-      }
-      if (arm.ee_to_tip.has_value()) {
-        base_to_tip = base_to_target * arm.ee_to_tip.value();
-      }
-    }
-
     geometry_msgs::msg::PoseStamped pose_msg;
     pose_msg.header.frame_id = arm.config.base_frame;
     pose_msg.header.stamp    = this->now();
-    pose_msg.pose.position.x = base_to_tip.getOrigin().x();
-    pose_msg.pose.position.y = base_to_tip.getOrigin().y();
-    pose_msg.pose.position.z = base_to_tip.getOrigin().z();
-    pose_msg.pose.orientation = tf2::toMsg(base_to_tip.getRotation());
+    pose_msg.pose.position.x = base_to_target.getOrigin().x();
+    pose_msg.pose.position.y = base_to_target.getOrigin().y();
+    pose_msg.pose.position.z = base_to_target.getOrigin().z();
+    pose_msg.pose.orientation = tf2::toMsg(base_to_target.getRotation());
 
     arm.pose_pub->publish(pose_msg);
   }
