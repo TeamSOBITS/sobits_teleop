@@ -1,0 +1,178 @@
+## Consolidated MoveIt Servo backend configuration (one file, three nodes).
+## Sections are matched by node name (wildcard namespace): the two servo_node
+## instances and the servo_target_bridge each read only their own section.
+##
+## Servo parameter names verified against the installed servo 2.12.4 schema
+## (/opt/ros/jazzy/share/moveit_servo/config/servo_parameters.yaml); servo_node
+## constructs its ParamListener with prefix "moveit_servo", hence that
+## namespace is required, not flat. The right/left blocks are identical except
+## move_group_name and command_out_topic.
+
+/**/servo_arm_right:
+  ros__parameters:
+    moveit_servo:
+      publish_period: 0.02                 # 50 Hz command output
+      max_expected_latency: 0.1
+      move_group_name: arm_right
+      command_in_type: "speed_units"
+      scale:
+        linear: 1.5                        # max EE m/s — 0.6 felt sluggish in quest teleop (hand scale 2.0 demands fast target chases); URDF joint velocity limits still cap output
+        rotational: 3.0                    # max EE rad/s
+        joint: 1.0
+      incoming_command_timeout: 0.5        # bridge streams at 100 Hz; halt if it stops
+
+      pose_tracking:
+        linear_tolerance: 0.001            # 1 mm
+        angular_tolerance: 0.01            # ~0.6 deg
+
+      command_out_type: trajectory_msgs/JointTrajectory
+      command_out_topic: arm_right_position_controller/joint_trajectory   # relative -> /sobit_home ns
+      publish_joint_positions: true
+      # MUST be false: Servo emits a single-point JointTrajectory; with velocities
+      # published, that point carries a nonzero terminal velocity, and this
+      # robot's JointTrajectoryController (allow_nonzero_velocity_at_trajectory_end
+      # = false) silently REJECTS any trajectory whose last point has nonzero
+      # velocity — the arm never moves. Position-only points execute correctly.
+      publish_joint_velocities: false
+      publish_joint_accelerations: false
+
+      joint_topic: joint_states            # relative -> /sobit_home/joint_states
+
+      is_primary_planning_scene_monitor: false   # move_group owns the scene
+      monitored_planning_scene_topic: /sobit_home/monitored_planning_scene
+
+      check_collisions: true
+      collision_check_rate: 10.0
+      self_collision_proximity_threshold: 0.004   # 0.01 kept right arm in permanent decel-crawl whenever hand near torso in quest teleop
+      scene_collision_proximity_threshold: 0.008
+      check_octomap_collisions: false
+
+      # ButterworthFilterPlugin (not AccelerationLimited) because
+      # robot_description_planning acceleration limits may be incomplete on this
+      # robot; Butterworth needs none.
+      use_smoothing: true
+      smoothing_filter_plugin_name: "online_signal_smoothing::ButterworthFilterPlugin"
+
+      # Home pose is a wrist singularity (wrist_tilt=0 aligns the roll axes), so
+      # with the default-ish 10/30 thresholds servo spent the whole tracking run
+      # in "decelerating" (139 warns/run, p50 error 5 cm, final 45 mm). Raised so
+      # deceleration only kicks in when genuinely close to singular.
+      lower_singularity_threshold: 50.0
+      hard_stop_singularity_threshold: 200.0   # 1000 (=disabled) let servo push THROUGH wrist singularities: joint velocities exploded and wound all 7 joints to their bounds. 200 + the bridge reach-clamp is the balance: clamp prevents the unreachable-target freeze, hard stop prevents windup.
+      # The arm's HOME config rests exactly on two URDF limits
+      # (upper_roll at lower=-1.5708, upper_flex at upper=0). A 0.1 rad margin
+      # puts those joints permanently inside the forbidden band, and the servo
+      # default halt_all_joints_in_joint_limit=true then froze the WHOLE arm on
+      # every tick that nudged either joint limit-ward (measured: p50 6 cm,
+      # final 45 mm). Small margin + per-joint halt keeps the rest tracking.
+      joint_limit_margins: [0.02]
+      halt_all_joints_in_joint_limit: false
+
+/**/servo_arm_left:
+  ros__parameters:
+    moveit_servo:
+      publish_period: 0.02                 # 50 Hz command output
+      max_expected_latency: 0.1
+      move_group_name: arm_left
+      command_in_type: "speed_units"
+      scale:
+        linear: 1.5                        # max EE m/s — 0.6 felt sluggish in quest teleop (hand scale 2.0 demands fast target chases); URDF joint velocity limits still cap output
+        rotational: 3.0                    # max EE rad/s
+        joint: 1.0
+      incoming_command_timeout: 0.5        # bridge streams at 100 Hz; halt if it stops
+
+      pose_tracking:
+        linear_tolerance: 0.001            # 1 mm
+        angular_tolerance: 0.01            # ~0.6 deg
+
+      command_out_type: trajectory_msgs/JointTrajectory
+      command_out_topic: arm_left_position_controller/joint_trajectory   # relative -> /sobit_home ns
+      publish_joint_positions: true
+      # MUST be false: Servo emits a single-point JointTrajectory; with velocities
+      # published, that point carries a nonzero terminal velocity, and this
+      # robot's JointTrajectoryController (allow_nonzero_velocity_at_trajectory_end
+      # = false) silently REJECTS any trajectory whose last point has nonzero
+      # velocity — the arm never moves. Position-only points execute correctly.
+      publish_joint_velocities: false
+      publish_joint_accelerations: false
+
+      joint_topic: joint_states            # relative -> /sobit_home/joint_states
+
+      is_primary_planning_scene_monitor: false   # move_group owns the scene
+      monitored_planning_scene_topic: /sobit_home/monitored_planning_scene
+
+      check_collisions: true
+      collision_check_rate: 10.0
+      self_collision_proximity_threshold: 0.004   # 0.01 kept the arm in permanent decel-crawl whenever hand near torso in quest teleop
+      scene_collision_proximity_threshold: 0.008
+      check_octomap_collisions: false
+
+      # ButterworthFilterPlugin (not AccelerationLimited) because
+      # robot_description_planning acceleration limits may be incomplete on this
+      # robot; Butterworth needs none.
+      use_smoothing: true
+      smoothing_filter_plugin_name: "online_signal_smoothing::ButterworthFilterPlugin"
+
+      # Home pose is a wrist singularity (wrist_tilt=0 aligns the roll axes), so
+      # with the default-ish 10/30 thresholds servo spent the whole tracking run
+      # in "decelerating" (139 warns/run, p50 error 5 cm, final 45 mm). Raised so
+      # deceleration only kicks in when genuinely close to singular.
+      lower_singularity_threshold: 50.0
+      hard_stop_singularity_threshold: 200.0   # 1000 (=disabled) let servo push THROUGH wrist singularities: joint velocities exploded and wound all 7 joints to their bounds. 200 + the bridge reach-clamp is the balance: clamp prevents the unreachable-target freeze, hard stop prevents windup.
+      # The arm's HOME config rests exactly on two URDF limits
+      # (upper_roll at lower=-1.5708, upper_flex at upper=0). A 0.1 rad margin
+      # puts those joints permanently inside the forbidden band, and the servo
+      # default halt_all_joints_in_joint_limit=true then froze the WHOLE arm on
+      # every tick that nudged either joint limit-ward (measured: p50 6 cm,
+      # final 45 mm). Small margin + per-joint halt keeps the rest tracking.
+      joint_limit_margins: [0.02]
+      halt_all_joints_in_joint_limit: false
+
+/**/servo_target_bridge:
+  ros__parameters:
+    servo_bridge:
+      # List of arms this bridge instance manages.
+      arms:
+        - arm_right
+        - arm_left
+
+      # Rate of the single shared pose-publish timer [Hz]. Servo's
+      # incoming_command_timeout (servo_arm_*.yaml) is 0.5 s, so this must stay
+      # comfortably above 2 Hz; 100 Hz matches the plan's bridge streaming rate.
+      pose_rate_hz: 100.0
+
+      # ── Per-arm configuration ─────────────────────────────────────────────
+      # Frame keys use the same vocabulary as quest.yaml's quest_control blocks.
+      # end_effector_frame_name: the robot link that FOLLOWS the target (same
+      #   meaning as in quest.yaml). servo 2.12.4 drives the planning group's
+      #   last SRDF link — hand_*_end_effector_link here — so with this value
+      #   no correction is applied (verified in sim 2026-07-15, 0.0 mm).
+      # servo_ee_frame: only set if servo drives a DIFFERENT link than
+      #   end_effector_frame_name (e.g. the SRDF group changes); the bridge
+      #   then re-expresses each target for the servo frame per tick. Empty =
+      #   servo drives end_effector_frame_name itself.
+      # reach_origin_frame / max_reach: targets farther than max_reach from the
+      # shoulder are pulled back onto that sphere before reaching servo.
+      # Chasing an out-of-reach hand otherwise straightens the elbow — a true
+      # singularity where servo latches an emergency stop that only an external
+      # joint move can clear (observed in quest teleop 2026-07-16). Measured
+      # full reach shoulder->EE at near-straight elbow: 1.11 m.
+      arm_right:
+        target_frame_name: right_target_link
+        base_frame_name: base_footprint
+        end_effector_frame_name: hand_right_end_effector_link
+        servo_ee_frame: ""
+        servo_node: servo_arm_right
+        enable_topic: arm_right/moveit_track_enabled
+        reach_origin_frame: arm_right_shoulder_tilt_link
+        max_reach: 1.10
+
+      arm_left:
+        target_frame_name: left_target_link
+        base_frame_name: base_footprint
+        end_effector_frame_name: hand_left_end_effector_link
+        servo_ee_frame: ""
+        servo_node: servo_arm_left
+        enable_topic: arm_left/moveit_track_enabled
+        reach_origin_frame: arm_left_shoulder_tilt_link
+        max_reach: 1.10

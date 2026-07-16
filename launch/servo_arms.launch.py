@@ -225,9 +225,8 @@ def _fetch_move_group_params(context, *args, **kwargs):
         **kinematics_params,
     }
 
-    servo_arm_right_yaml = f'{pkg_share}/config/{robot_name}/servo_arm_right.yaml'
-    servo_arm_left_yaml = f'{pkg_share}/config/{robot_name}/servo_arm_left.yaml'
-    servo_bridge_yaml = f'{pkg_share}/config/{robot_name}/servo_bridge.yaml'
+    # One consolidated file; each node reads only its own /**/<node_name> section.
+    servo_yaml = f'{pkg_share}/config/{robot_name}/servo.yaml'
 
     servo_arm_right_node = Node(
         package='moveit_servo',
@@ -236,7 +235,7 @@ def _fetch_move_group_params(context, *args, **kwargs):
         namespace=robot_name,
         output='screen',
         parameters=[
-            servo_arm_right_yaml,
+            servo_yaml,
             common_model_params,
             {'use_sim_time': use_sim_time},
         ],
@@ -249,7 +248,7 @@ def _fetch_move_group_params(context, *args, **kwargs):
         namespace=robot_name,
         output='screen',
         parameters=[
-            servo_arm_left_yaml,
+            servo_yaml,
             common_model_params,
             {'use_sim_time': use_sim_time},
         ],
@@ -262,7 +261,7 @@ def _fetch_move_group_params(context, *args, **kwargs):
         namespace=robot_name,
         output='screen',
         parameters=[
-            servo_bridge_yaml,
+            servo_yaml,
             {'use_sim_time': use_sim_time},
         ],
     )
