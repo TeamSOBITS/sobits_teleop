@@ -113,8 +113,13 @@ void SOBITSTeleop::load_parameters()
   cmd_vel_pub = this->create_publisher<geometry_msgs::msg::Twist>(
     cvm.topic, 10);
 
-  // Load joint parameters
-  if (this->has_parameter("control_joints")) {
+  // Load joint parameters.
+  // NOTE: guard on a real leaf param ("...groups"), not the bare "control_joints"
+  // prefix. has_parameter() only matches declared leaf parameters, so on some
+  // rclcpp builds has_parameter("control_joints") is false even when the nested
+  // params exist -> the whole block was silently skipped and no publishers were
+  // created (Publisher count 0, nothing moved).
+  if (this->has_parameter("control_joints.groups")) {
     // Optional teleop tuning (safe defaults kept if absent).
     this->get_parameter("control_joints.command_duration", joint_cmd_duration);
     this->get_parameter("control_joints.max_lead",         joint_max_lead);
@@ -143,8 +148,8 @@ void SOBITSTeleop::load_parameters()
     RCLCPP_INFO(get_logger(), "Loaded %zu joint parameters from rosparam", joint_mappings.size());
   }
 
-  // Load pose parameters
-  if (this->has_parameter("control_poses")) {
+  // Load pose parameters (guard on a real leaf param, see note above).
+  if (this->has_parameter("control_poses.pose_list")) {
     this->get_parameter("control_poses.pose_list", pose_list);
     for (const auto& pose_name : pose_list) {
       pm.pose_name = pose_name;
