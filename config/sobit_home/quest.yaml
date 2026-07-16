@@ -39,20 +39,10 @@
         arm_proximity_angle_threshold: 0.0  # rad; 0 = latch immediately on enable
         gripper:
           hand: "hand_right"
-          names:
-          - hand_right_finger_l_pip_joint
-          - hand_right_finger_l_dip_joint
-          - hand_right_finger_c_mcp_joint
-          - hand_right_finger_c_ip_joint
-          - hand_right_finger_r_pip_joint
-          - hand_right_finger_r_dip_joint
-          legacy_gripper_axis: -1   # disabled: conflicts with adaptive mode (same trigger)
           hand_pose_button: 6       # B button: toggle open/grasp pose
           hand_pose_open: "two_fingers_open_pose"
           hand_pose_close: "two_fingers_grasp_pose"
           hand_pose_action: "move_right_hand_to_pose"
-          axis: 4                   # right stick left/right (legacy mode)
-          axis_sign: -1
           speed: 0.6                # rad per 50 ms tick at full stick
           single_joint_axis: 5      # in adaptive mode: right stick up/down rotates single_joint_name
           single_joint_name: "hand_right_finger_l_mcp_joint"
@@ -102,20 +92,10 @@
         arm_proximity_angle_threshold: 0.0  # rad; 0 = latch immediately on enable
         gripper:
           hand: "hand_left"
-          names:
-            - hand_left_finger_l_pip_joint
-            - hand_left_finger_l_dip_joint
-            - hand_left_finger_c_mcp_joint
-            - hand_left_finger_c_ip_joint
-            - hand_left_finger_r_pip_joint
-            - hand_left_finger_r_dip_joint
-          legacy_gripper_axis: -1   # disabled: conflicts with adaptive mode (same trigger)
           hand_pose_button: 2       # X button: toggle open/grasp pose
           hand_pose_open: "two_fingers_open_pose"
           hand_pose_close: "two_fingers_grasp_pose"
           hand_pose_action: "move_left_hand_to_pose"
-          axis: 0                   # left stick left/right (legacy mode)
-          axis_sign: 1
           speed: 0.6                # rad per 50 ms tick at full stick
           single_joint_axis: 1      # in adaptive mode: left stick up/down rotates single_joint_name
           single_joint_name: "hand_left_finger_l_mcp_joint"
@@ -124,13 +104,13 @@
           adaptive_close_sign: 1    # stick right = close
           adaptive_joints:
             names:
-              - hand_left_finger_l_pip_joint
-              - hand_left_finger_l_dip_joint
-              - hand_left_finger_r_pip_joint
-              - hand_left_finger_r_dip_joint
-              - hand_left_finger_c_mcp_joint
-              - hand_left_finger_c_ip_joint
-              - hand_left_finger_l_mcp_joint
+            - hand_left_finger_l_pip_joint
+            - hand_left_finger_l_dip_joint
+            - hand_left_finger_r_pip_joint
+            - hand_left_finger_r_dip_joint
+            - hand_left_finger_c_mcp_joint
+            - hand_left_finger_c_ip_joint
+            - hand_left_finger_l_mcp_joint
             hand_left_finger_l_pip_joint:
               close_pos: -0.5
               open_pos: 1.571

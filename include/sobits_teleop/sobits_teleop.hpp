@@ -106,7 +106,7 @@ struct QuestControllerMap {
   std::vector<std::string> names;
   int arm_mode;
   float scale;
-  int gripper_mode;
+  int gripper_mode = -1;        // legacy_gripper_axis: -1 = legacy continuous mode off
   int hand_pose_button = -1;    // button to toggle open/close hand pose
   std::string hand_pose_open;   // pose name sent when toggling open
   std::string hand_pose_close;  // pose name sent when toggling close
@@ -115,9 +115,9 @@ struct QuestControllerMap {
   int adaptive_stick_axis   = -1;   // stick axis that controls open/close
   int adaptive_close_sign   = 1;    // +1: positive stick = close, -1: negative stick = close
   std::vector<AdaptiveJointTarget> adaptive_joints;  // per-joint targets for adaptive grip
-  int axis;
-  int axis_sign;
-  float speed;
+  int axis = -1;                // legacy continuous mode stick axis (mode off by default)
+  int axis_sign = 1;
+  float speed = 0.2f;
   int type_axis = -1;   // single_joint_axis: -1 = feature off
   // Proximity thresholds: arm only latches when controller is within these
   // distances of the robot end-effector. Set to <=0 to disable the check.
