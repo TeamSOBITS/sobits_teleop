@@ -1,12 +1,8 @@
 /**:
   ros__parameters:
     arm_teleop:
-      # (The arm list, planning groups, target frames and controller topics are
-      # injected by sobits_teleop.launch.py from quest.yaml / robot.yaml — those
-      # files are the single source of arm identity, shared with the servo
-      # backend. This file carries tuning only.)
-
-      # ── Global tuning parameters ──────────────────────────────────────────
+      # Plan-and-replace arm-tracking backend — tuning only. Arm identity comes
+      # from quest.yaml/robot.yaml via arm_backend_plan.launch.py.
 
       # Tracking loop frequency [Hz].
       # 50 Hz gives ~20ms cycle budget — comfortably met now that planning is ~2ms

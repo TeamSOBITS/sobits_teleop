@@ -102,7 +102,7 @@ def _fetch_move_group_params(context, *args, **kwargs):
         if not list_params_client.wait_for_service(timeout_sec=MOVE_GROUP_WAIT_TIMEOUT_S) or \
            not get_params_client.wait_for_service(timeout_sec=MOVE_GROUP_WAIT_TIMEOUT_S):
             raise RuntimeError(
-                f"servo_arms.launch.py: '{move_group_node_name}' parameter services "
+                f"arm_backend_servo.launch.py: '{move_group_node_name}' parameter services "
                 f"were not available within {MOVE_GROUP_WAIT_TIMEOUT_S:.0f} s — is "
                 f"move_group running under namespace '/{robot_name}'? Aborting launch.")
 
@@ -111,7 +111,7 @@ def _fetch_move_group_params(context, *args, **kwargs):
             executor.spin_until_future_complete(future, timeout_sec=MOVE_GROUP_WAIT_TIMEOUT_S)
             if not future.done() or future.result() is None:
                 raise RuntimeError(
-                    f"servo_arms.launch.py: {what} call to '{move_group_node_name}' "
+                    f"arm_backend_servo.launch.py: {what} call to '{move_group_node_name}' "
                     f"timed out or failed. Aborting launch.")
             return future.result()
 
@@ -146,7 +146,7 @@ def _fetch_move_group_params(context, *args, **kwargs):
 
         if len(base_resp.values) < 1 or not base_resp.values[0].string_value:
             raise RuntimeError(
-                "servo_arms.launch.py: robot_description is empty on move_group — "
+                "arm_backend_servo.launch.py: robot_description is empty on move_group — "
                 "aborting launch.")
 
         robot_description_value = base_resp.values[0].string_value
@@ -225,11 +225,11 @@ def _fetch_move_group_params(context, *args, **kwargs):
         **kinematics_params,
     }
 
-    # servo.yaml carries only the tuning shared by all nodes. The per-arm
+    # arm_backend_servo.yaml carries only the tuning shared by all nodes. The per-arm
     # identity (which arms exist, their planning groups, target/EE frames and
     # controller topics) is declared ONCE in quest.yaml / robot.yaml and
     # injected here, so adding or renaming an arm never touches servo config.
-    servo_yaml = f'{pkg_share}/config/{robot_name}/servo.yaml'
+    servo_yaml = f'{pkg_share}/config/{robot_name}/arm_backend_servo.yaml'
 
     import yaml as pyyaml
     with open(f'{pkg_share}/config/{robot_name}/quest.yaml') as f:
@@ -240,13 +240,13 @@ def _fetch_move_group_params(context, *args, **kwargs):
 
     quest_control = quest_params['quest_control']
     arm_entries = []  # (planning_group, quest controller block)
-    for ctrl_name in quest_control.get('controller', []):
+    for ctrl_name in quest_control.get('controllers', quest_control.get('controller', [])):
         block = quest_control.get(ctrl_name, {})
         if isinstance(block, dict) and 'arm' in block:
             arm_entries.append((block['arm'], block))
     if not arm_entries:
         raise RuntimeError(
-            "servo_arms.launch.py: no quest_control entries with an 'arm' key "
+            "arm_backend_servo.launch.py: no quest_control entries with an 'arm' key "
             f"found in quest.yaml for robot '{robot_name}' — nothing to servo.")
 
     servo_nodes = []

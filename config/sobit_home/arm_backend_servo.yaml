@@ -1,0 +1,61 @@
+## Servo arm-tracking backend — tuning only. Arm identity (arms, groups,
+## topics, frames) comes from quest.yaml/robot.yaml via arm_backend_servo.launch.py.
+## Param names per moveit_servo 2.12.4 schema; "moveit_servo" prefix required.
+
+/**:
+  ros__parameters:
+    # ── Shared moveit_servo tuning (both arm instances) ─────────────────────
+    moveit_servo:
+      publish_period: 0.02                 # 50 Hz command output
+      max_expected_latency: 0.1
+      command_in_type: "speed_units"
+      scale:
+        linear: 1.5                        # max EE m/s — 0.6 felt sluggish in quest teleop (hand scale amplifies target speed); URDF joint velocity limits still cap output
+        rotational: 3.0                    # max EE rad/s
+        joint: 1.0
+      incoming_command_timeout: 0.5        # bridge streams at 100 Hz; halt if it stops
+
+      pose_tracking:
+        linear_tolerance: 0.001            # 1 mm
+        angular_tolerance: 0.01            # ~0.6 deg
+
+      command_out_type: trajectory_msgs/JointTrajectory
+      publish_joint_positions: true
+      # must stay false: the arm JTC rejects trajectories ending with nonzero velocity
+      publish_joint_velocities: false
+      publish_joint_accelerations: false
+
+      joint_topic: joint_states            # relative -> /sobit_home/joint_states
+
+      is_primary_planning_scene_monitor: false   # move_group owns the scene
+      monitored_planning_scene_topic: /sobit_home/monitored_planning_scene
+
+      check_collisions: true
+      collision_check_rate: 10.0
+      self_collision_proximity_threshold: 0.004   # 0.01 kept the arm in permanent decel-crawl whenever hand near torso in quest teleop
+      scene_collision_proximity_threshold: 0.008
+      check_octomap_collisions: false
+
+      use_smoothing: true
+      smoothing_filter_plugin_name: "online_signal_smoothing::ButterworthFilterPlugin"
+
+      # raised: home pose sits near a wrist singularity (10/30 = constant decel)
+      lower_singularity_threshold: 50.0
+      # do NOT disable: without a hard stop servo winds all joints to their bounds
+      hard_stop_singularity_threshold: 200.0
+      # small margin + per-joint halt: home pose rests ON two URDF limits
+      joint_limit_margins: [0.02]
+      halt_all_joints_in_joint_limit: false
+
+    # ── Target bridge ───────────────────────────────────────────────────────
+    servo_bridge:
+      pose_rate_hz: 100.0   # keep well above 1/incoming_command_timeout
+
+      # Reach clamp [m]: targets beyond this from the shoulder are pulled onto
+      # the sphere (out-of-reach chase = elbow singularity = latched e-stop).
+      # Physical reach at near-straight elbow: 1.11 m.
+      max_reach: 1.10
+
+      # Per-arm keys (target_frame_name, base_frame_name, end_effector_frame_name,
+      # servo_ee_frame, servo_node, enable_topic, reach_origin_frame, max_reach)
+      # default by convention from the arm name; set here only to override.
