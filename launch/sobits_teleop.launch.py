@@ -42,9 +42,17 @@ def generate_launch_description():
         default_value='True',
         description='Whether to launch ds4drv for PS4 controller support'
     )
+    declare_namespace_cmd = DeclareLaunchArgument(
+        'namespace',
+        default_value=LaunchConfiguration('robot_name'),
+        description='ROS namespace for the teleop nodes. Defaults to robot_name. '
+                    'Set to "" (empty) when robot_state_publisher and the controllers '
+                    'run in the global namespace, e.g. OpenManipulator-X (robot_name:=omx_f).'
+    )
 
     # LaunchConfiguration handles runtime values
     robot_name = LaunchConfiguration('robot_name')
+    namespace = LaunchConfiguration('namespace')
     device = LaunchConfiguration('device')
     joystick_device = LaunchConfiguration('joystick_device')
     ros_ip = LaunchConfiguration('ros_ip')
@@ -69,7 +77,7 @@ def generate_launch_description():
         executable='sobits_teleop',
         name='sobits_teleop',
         output='screen',
-        namespace=robot_name,
+        namespace=namespace,
         parameters=[[robot_config, '.yaml'],
                     [controller_config, '.yaml']],
     )
@@ -86,7 +94,7 @@ def generate_launch_description():
         executable='joy_linux_node',
         name='joystick_node',
         output='screen',
-        namespace=robot_name,
+        namespace=namespace,
         parameters=[
             {'dev': joystick_device},
             {'deadzone': 0.05},
@@ -102,7 +110,7 @@ def generate_launch_description():
         executable='default_server_endpoint',
         name='quest_node',
         output='screen',
-        namespace=robot_name,
+        namespace=namespace,
         parameters=[{'ROS_IP': ros_ip}],
         condition=IfCondition(EqualsSubstitution(LaunchConfiguration('device'), 'quest'))
     )
@@ -113,7 +121,7 @@ def generate_launch_description():
         executable='joy_node',
         name='keyboard_node',
         output='screen',
-        namespace=robot_name,
+        namespace=namespace,
         condition=IfCondition(EqualsSubstitution(LaunchConfiguration('device'), 'keyboard'))
     )
 
@@ -123,6 +131,7 @@ def generate_launch_description():
         declare_joystick_device_cmd,
         declare_ros_ip_cmd,
         declare_use_ds4drv_cmd,
+        declare_namespace_cmd,
         sobits_teleop_node,
         ds4drv_cmd,
         joystick_node,
