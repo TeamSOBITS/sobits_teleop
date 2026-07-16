@@ -925,7 +925,10 @@ void SOBITSTeleop::teleop()
             if (client->wait_for_action_server(std::chrono::milliseconds(200))) {
               auto goal = sobits_interfaces::action::MoveToPose::Goal();
               goal.pose_name = pose_name;
-              goal.time_allowance.sec = 5;
+              // joint_action_server uses time_allowance as the trajectory's
+              // time_from_start, so this IS the open/close motion duration —
+              // 5 s made the gripper crawl. 1 s is ample for the hand joints.
+              goal.time_allowance.sec = 1;
               auto opts = rclcpp_action::Client<sobits_interfaces::action::MoveToPose>::SendGoalOptions();
               opts.result_callback = [this, pose_name](const auto & result) {
                 if (result.code == rclcpp_action::ResultCode::SUCCEEDED)
