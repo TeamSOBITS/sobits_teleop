@@ -115,6 +115,10 @@ void SOBITSTeleop::load_parameters()
 
   // Load joint parameters
   if (this->has_parameter("control_joints")) {
+    // Optional teleop tuning (safe defaults kept if absent).
+    this->get_parameter("control_joints.command_duration", joint_cmd_duration);
+    this->get_parameter("control_joints.max_lead",         joint_max_lead);
+
     this->get_parameter("control_joints.groups", joint_groups);
 
     for (const auto& joint_group : joint_groups) {
@@ -166,6 +170,7 @@ void SOBITSTeleop::load_parameters()
     this->get_parameter("control_velocity.angular_scale",      cvm.angular_scale);
     this->get_parameter("control_velocity.fast_linear_scale",  cvm.fast_linear_scale);
     this->get_parameter("control_velocity.fast_angular_scale", cvm.fast_angular_scale);
+    cmd_vel_loaded = true;
     RCLCPP_INFO(get_logger(), "Loaded control_velocity parameters from rosparam");
   }
   // Load quest parameters
@@ -221,6 +226,7 @@ void SOBITSTeleop::load_parameters()
         quest_controller_mappings[controller_type] = qcm;
       }
     }
+    quest_loaded = !quest_controller_mappings.empty() || !controller_types.empty();
     RCLCPP_INFO(get_logger(), "Loaded %zu quest controller parameters from rosparam", quest_controller_mappings.size());
   }
 }
@@ -251,25 +257,51 @@ void SOBITSTeleop::teleop()
 
   for (auto &[name, m] : joint_mappings) {
 
-    if (latest_buttons[m.button] == 0) continue;
+    // Latest measured position for this joint (from /joint_states). Fall back to
+    // the current command if we have not seen it yet.
+    auto meas_it = joint_pos.find(m.joint_name);
+    double measured = (meas_it != joint_pos.end()) ? meas_it->second : cmd_pos[m.joint_name];
 
-    float axis_val = latest_axes[m.axis];
-    if (std::abs(axis_val) < 1e-3) continue;
+    // Bounds-check every index against what the device actually reports.
+    // Different drivers (joy_linux, ds4drv, keyboard_joy) expose different
+    // axis/button counts; an out-of-range index would otherwise read garbage
+    // and cause phantom motion or a crash.
+    const bool button_ok = m.button >= 0 && m.button < static_cast<int>(latest_buttons.size());
+    const bool axis_ok   = m.axis   >= 0 && m.axis   < static_cast<int>(latest_axes.size());
+    const bool fast_ok   = m.fast_button >= 0 && m.fast_button < static_cast<int>(latest_buttons.size());
 
-    double delta_pos = axis_val * m.axis_sign * (latest_buttons[m.fast_button] == 1 ? m.fast_speed : m.speed);
-    joint_pos[m.joint_name] += delta_pos;
-    auto [actual_min, actual_max] = std::minmax({joint_limits[m.joint_name].lower, joint_limits[m.joint_name].upper});
-    joint_pos[m.joint_name] = std::clamp(joint_pos[m.joint_name], actual_min, actual_max);
+    const bool active = button_ok && axis_ok &&
+                        latest_buttons[m.button] != 0 &&
+                        std::abs(latest_axes[m.axis]) > 1e-2;
+
+    // When this joint is idle, keep the command synced to reality so it never
+    // drifts and never snaps when re-engaged.
+    if (!active) { cmd_pos[m.joint_name] = measured; continue; }
+
+    const double step_speed = (fast_ok && latest_buttons[m.fast_button] == 1) ? m.fast_speed : m.speed;
+    double target = cmd_pos[m.joint_name] + latest_axes[m.axis] * m.axis_sign * step_speed;
+
+    // Anti-windup: the command may never lead the measured position by more
+    // than joint_max_lead. This is what bounds how far the arm can still travel
+    // after the stick is released.
+    target = std::clamp(target, measured - joint_max_lead, measured + joint_max_lead);
+
+    auto lim_it = joint_limits.find(m.joint_name);
+    if (lim_it != joint_limits.end()) {
+      auto [actual_min, actual_max] = std::minmax({lim_it->second.lower, lim_it->second.upper});
+      target = std::clamp(target, actual_min, actual_max);
+    }
+    cmd_pos[m.joint_name] = target;
 
     auto &traj = trajs[m.joint_trajectory_topic];
     traj.joint_names.push_back(m.joint_name);
     if (traj.points.empty()) {
       trajectory_msgs::msg::JointTrajectoryPoint p;
-      p.positions = {joint_pos[m.joint_name]};
-      p.time_from_start = rclcpp::Duration::from_seconds(dt);
+      p.positions = {target};
+      p.time_from_start = rclcpp::Duration::from_seconds(joint_cmd_duration);
       traj.points.push_back(p);
     }
-    else traj.points[0].positions.push_back(joint_pos[m.joint_name]);
+    else traj.points[0].positions.push_back(target);
   }
 
   for (auto &tj : trajs) {
@@ -318,13 +350,14 @@ void SOBITSTeleop::teleop()
     RCLCPP_INFO(get_logger(), "Sending pose: %s", pose_map.pose_name.c_str());
   }
 
+  if (cmd_vel_loaded) {
   geometry_msgs::msg::Twist twist;
   geometry_msgs::msg::Twist stop;
-  
+
   bool cmd_vel_enabled = false;
   bool fast_mode = false;
-  
-  if (cvm.button >= 0 && 
+
+  if (cvm.button >= 0 &&
       cvm.button < static_cast<int>(latest_buttons.size())) {
     cmd_vel_enabled = (latest_buttons[cvm.button] == 1);
     if (cvm.fast_button >= 0 && 
@@ -352,8 +385,14 @@ void SOBITSTeleop::teleop()
     cmd_vel_pub->publish(twist);
   }
   else cmd_vel_pub->publish(stop);
+  } // cmd_vel_loaded
 
-    
+  // The Meta Quest head/arm tracking below relies on TF frames (hmd_odom,
+  // *_controller_odom) that only exist with the Quest bridge running. Skip the
+  // whole block for ps4/ps5/keyboard so it does not spam "TF lookup failed" at
+  // the control rate and early-return every tick.
+  if (!quest_loaded) return;
+
   // Head
   try {
       tf_msg = tf_buffer->lookupTransform(

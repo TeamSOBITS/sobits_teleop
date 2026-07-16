@@ -1,0 +1,66 @@
+/**:
+  ros__parameters:
+
+    # Keyboard control via the keyboard_joy node.
+    # keyboard_joy axis map:  w/s -> axis1,  a/d -> axis0,  Up/Down -> axis4,  Left/Right -> axis3
+    # keyboard_joy button map: number keys '0'..'9' -> button index 0..9
+    #
+    # Usage: hold the joint's number key AND press the movement key.
+    #   joint1: hold [1] + a / d
+    #   joint2: hold [2] + w / s
+    #   joint3: hold [3] + w / s
+    #   joint4: hold [4] + a / d
+    #   joint5: hold [5] + w / s
+    #   hold [9] as well for fast_speed
+
+    control_joints:
+      groups:
+      - arm
+
+      arm:
+        names:
+        - joint1
+        - joint2
+        - joint3
+        - joint4
+        - joint5
+
+        joint1:
+          button: 1           # key '1'
+          fast_button: 9      # key '9'
+          axis: 0             # a / d
+          axis_sign: 1
+          speed: 0.02
+          fast_speed: 0.05
+
+        joint2:
+          button: 2           # key '2'
+          fast_button: 9      # key '9'
+          axis: 1             # w / s
+          axis_sign: -1
+          speed: 0.02
+          fast_speed: 0.05
+
+        joint3:
+          button: 3           # key '3'
+          fast_button: 9      # key '9'
+          axis: 1             # w / s
+          axis_sign: -1
+          speed: 0.02
+          fast_speed: 0.05
+
+        joint4:
+          button: 4           # key '4'
+          fast_button: 9      # key '9'
+          axis: 0             # a / d
+          axis_sign: 1
+          speed: 0.02
+          fast_speed: 0.05
+
+        joint5:
+          button: 5           # key '5'
+          fast_button: 9      # key '9'
+          axis: 1             # w / s
+          axis_sign: -1
+          speed: 0.02
+          fast_speed: 0.05
