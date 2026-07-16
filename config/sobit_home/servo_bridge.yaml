@@ -18,7 +18,7 @@
       # commands hand_*_end_effector_link (the group's last link) DIRECTLY, so
       # no offset is needed — leave both empty (identity). Setting them shifts
       # the EE off-target by exactly the offset.
-      # shoulder_frame / max_reach: targets farther than max_reach from the
+      # reach_origin_frame / max_reach: targets farther than max_reach from the
       # shoulder are pulled back onto that sphere before reaching servo.
       # Chasing an out-of-reach hand otherwise straightens the elbow — a true
       # singularity where servo latches an emergency stop that only an external
@@ -31,7 +31,7 @@
         enable_topic: arm_right/moveit_track_enabled
         ee_frame: ""
         tip_frame: ""
-        shoulder_frame: arm_right_shoulder_tilt_link
+        reach_origin_frame: arm_right_shoulder_tilt_link
         max_reach: 1.10
 
       arm_left:
@@ -41,5 +41,5 @@
         enable_topic: arm_left/moveit_track_enabled
         ee_frame: ""
         tip_frame: ""
-        shoulder_frame: arm_left_shoulder_tilt_link
+        reach_origin_frame: arm_left_shoulder_tilt_link
         max_reach: 1.10

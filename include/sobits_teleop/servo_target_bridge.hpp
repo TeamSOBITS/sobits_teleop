@@ -41,11 +41,11 @@ struct ServoBridgeArmConfig {
   std::string ee_frame;
   std::string tip_frame;
   // Reach clamp: targets are clamped to a sphere of radius max_reach around
-  // shoulder_frame before being sent to servo. Chasing an out-of-reach hand
+  // reach_origin_frame before being sent to servo. Chasing an out-of-reach hand
   // target otherwise drives the arm to full extension — a true elbow
   // singularity where servo 2.12 latches an emergency stop that only an
   // external joint-space move can clear. max_reach <= 0 disables the clamp.
-  std::string shoulder_frame;
+  std::string reach_origin_frame;
   double max_reach{0.0};
 };
 

@@ -36,7 +36,7 @@ ServoTargetBridge::ServoTargetBridge(const rclcpp::NodeOptions & options)
     auto en_key   = "servo_bridge." + arm_name + ".enable_topic";
     auto ee_key   = "servo_bridge." + arm_name + ".ee_frame";
     auto tip_key  = "servo_bridge." + arm_name + ".tip_frame";
-    auto sh_key   = "servo_bridge." + arm_name + ".shoulder_frame";
+    auto ro_key   = "servo_bridge." + arm_name + ".reach_origin_frame";
     auto mr_key   = "servo_bridge." + arm_name + ".max_reach";
 
     if (!this->has_parameter(tf_key))
@@ -53,9 +53,9 @@ ServoTargetBridge::ServoTargetBridge(const rclcpp::NodeOptions & options)
       this->declare_parameter(ee_key, std::string(""));
     if (!this->has_parameter(tip_key))
       this->declare_parameter(tip_key, std::string(""));
-    // shoulder_frame/max_reach default disabled; the launch YAML supplies them.
-    if (!this->has_parameter(sh_key))
-      this->declare_parameter(sh_key, std::string(""));
+    // reach_origin_frame/max_reach default disabled; the launch YAML supplies them.
+    if (!this->has_parameter(ro_key))
+      this->declare_parameter(ro_key, std::string(""));
     if (!this->has_parameter(mr_key))
       this->declare_parameter(mr_key, 0.0);
 
@@ -66,7 +66,7 @@ ServoTargetBridge::ServoTargetBridge(const rclcpp::NodeOptions & options)
     cfg.enable_topic   = this->get_parameter(en_key).as_string();
     cfg.ee_frame       = this->get_parameter(ee_key).as_string();
     cfg.tip_frame      = this->get_parameter(tip_key).as_string();
-    cfg.shoulder_frame = this->get_parameter(sh_key).as_string();
+    cfg.reach_origin_frame = this->get_parameter(ro_key).as_string();
     cfg.max_reach      = this->get_parameter(mr_key).as_double();
 
     auto arm_data = std::make_unique<ArmBridgeData>();
@@ -100,11 +100,11 @@ ServoTargetBridge::ServoTargetBridge(const rclcpp::NodeOptions & options)
 
     RCLCPP_INFO(get_logger(),
       "Arm '%s': servo_node='%s', target_frame='%s', base_frame='%s', enable_topic='%s', "
-      "ee_frame='%s', tip_frame='%s', shoulder_frame='%s', max_reach=%.3f",
+      "ee_frame='%s', tip_frame='%s', reach_origin_frame='%s', max_reach=%.3f",
       arm_name.c_str(), cfg.servo_node.c_str(), cfg.target_frame.c_str(),
       cfg.base_frame.c_str(), cfg.enable_topic.c_str(),
       cfg.ee_frame.c_str(), cfg.tip_frame.c_str(),
-      cfg.shoulder_frame.c_str(), cfg.max_reach);
+      cfg.reach_origin_frame.c_str(), cfg.max_reach);
 
     // Startup sequence — switch_command_type(POSE) once per arm and
     // pause_servo(true) so arms don't move until first enable. Both are async
@@ -335,10 +335,10 @@ void ServoTargetBridge::pose_timer_callback()
     // Reach clamp: pull an out-of-reach target back onto the max_reach sphere
     // around the shoulder. Prevents the arm from chasing an unreachable hand
     // target into full extension (elbow singularity -> latched servo e-stop).
-    if (arm.config.max_reach > 0.0 && !arm.config.shoulder_frame.empty()) {
+    if (arm.config.max_reach > 0.0 && !arm.config.reach_origin_frame.empty()) {
       try {
         auto sh = tf_buffer_->lookupTransform(
-          arm.config.base_frame, arm.config.shoulder_frame, tf2::TimePointZero);
+          arm.config.base_frame, arm.config.reach_origin_frame, tf2::TimePointZero);
         tf2::Vector3 shoulder(
           sh.transform.translation.x, sh.transform.translation.y,
           sh.transform.translation.z);
@@ -354,7 +354,7 @@ void ServoTargetBridge::pose_timer_callback()
       } catch (const tf2::TransformException & e) {
         RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
           "Arm '%s': shoulder TF '%s' unavailable (%s) — reach clamp skipped",
-          arm_name.c_str(), arm.config.shoulder_frame.c_str(), e.what());
+          arm_name.c_str(), arm.config.reach_origin_frame.c_str(), e.what());
       }
     }
 
