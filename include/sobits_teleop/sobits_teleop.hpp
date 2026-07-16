@@ -185,6 +185,11 @@ private:
   std::map<std::string, QuestControllerMap> quest_controller_mappings;
   std::map<std::string, double> joint_pos;
   const double dt = 0.1;
+  double teleop_rate_hz = 100.0;
+  // Config speed values are defined as position delta per legacy 50 ms tick
+  // (the timer period when they were tuned). This scales those per-tick deltas
+  // to the actual loop period so jog speed is independent of teleop_rate_hz.
+  double jog_tick_scale_ = 1.0;
 
   std::vector<std::string> pose_list;
   std::vector<PoseMap> pose_mappings;

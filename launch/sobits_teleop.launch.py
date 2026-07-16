@@ -1,7 +1,8 @@
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, ExecuteProcess
+from launch.actions import DeclareLaunchArgument, ExecuteProcess, IncludeLaunchDescription
 from launch.conditions import IfCondition
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, EqualsSubstitution, AndSubstitution, OrSubstitution
+from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, EqualsSubstitution, AndSubstitution, OrSubstitution, NotSubstitution
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
 import os
@@ -51,6 +52,12 @@ def generate_launch_description():
         'use_moveit',
         default_value='false',
         description='Launch MoveIt arm controller for Quest arm teleoperation'
+    )
+    declare_use_servo_cmd = DeclareLaunchArgument(
+        'use_servo',
+        default_value='false',
+        description='Use MoveIt Servo pose tracking instead of the plan-and-replace '
+                    'moveit_arm_controller backend (device=quest && use_moveit must also be true)'
     )
 
     # LaunchConfiguration handles runtime values
@@ -110,7 +117,7 @@ def generate_launch_description():
         parameters=[
             {'dev': joystick_device},
             {'deadzone': 0.05},
-            {'autorepeat_rate': 20.0},
+            {'autorepeat_rate': 100.0},
             {'use_sim_time': LaunchConfiguration('use_sim_time')},
         ],
         arguments=['--ros-args', '--log-level', 'fatal'],
@@ -145,6 +152,7 @@ def generate_launch_description():
     )
 
     # MoveIt arm controller — only launched when device=quest AND use_moveit=true
+    # AND use_servo=false, so exactly one arm-tracking backend runs at a time.
     moveit_arm_controller_node = Node(
         package=pkg_name,
         executable='moveit_arm_controller',
@@ -155,10 +163,26 @@ def generate_launch_description():
             [moveit_arm_config, '.yaml'],
             {'use_sim_time': LaunchConfiguration('use_sim_time')},
         ],
-        condition=IfCondition(AndSubstitution(
+        condition=IfCondition(AndSubstitution(AndSubstitution(
             EqualsSubstitution(LaunchConfiguration('device'), 'quest'),
             LaunchConfiguration('use_moveit')
-        ))
+        ), NotSubstitution(LaunchConfiguration('use_servo'))))
+    )
+
+    # MoveIt Servo pose-tracking stack (servo_arm_right/left + servo_target_bridge)
+    # — only launched when device=quest AND use_moveit=true AND use_servo=true.
+    servo_arms_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(get_package_share_directory(pkg_name), 'launch', 'servo_arms.launch.py')
+        ),
+        launch_arguments={
+            'robot_name': robot_name,
+            'use_sim_time': LaunchConfiguration('use_sim_time'),
+        }.items(),
+        condition=IfCondition(AndSubstitution(AndSubstitution(
+            EqualsSubstitution(LaunchConfiguration('device'), 'quest'),
+            LaunchConfiguration('use_moveit')
+        ), LaunchConfiguration('use_servo')))
     )
 
     # Launch quest usb network setup script (only needed on Linux, and only if using Quest controllers)
@@ -184,9 +208,11 @@ def generate_launch_description():
         declare_use_ds4drv_cmd,
         declare_use_sim_time_cmd,
         declare_use_moveit_cmd,
+        declare_use_servo_cmd,
         kill_stale_quest,
         sobits_teleop_node,
         moveit_arm_controller_node,
+        servo_arms_launch,
         ds4drv_cmd,
         joystick_node,
         quest_node,
