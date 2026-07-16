@@ -7,6 +7,7 @@
       joint_trajectory_topic:
         arm: /arm_controller/joint_trajectory
         all: /arm_controller/joint_trajectory
+        gripper: /gripper_controller/joint_trajectory
 
       # OMX has no mobile base. This topic is unused (no control_velocity block
       # in the device config), but the node always creates the publisher, so it

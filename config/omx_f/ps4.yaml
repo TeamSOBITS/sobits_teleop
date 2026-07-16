@@ -2,8 +2,15 @@
   ros__parameters:
 
     control_joints:
+      # command_duration: trajectory horizon per point (s). max_lead: how far the
+      # command may lead the real joint (rad). Raise max_lead (e.g. 100) to feel the
+      # old coasting behaviour; keep it small for a clean stop on release.
+      command_duration: 0.08
+      max_lead: 0.10
+
       groups:
       - arm
+      - gripper
 
       arm:
         names:
@@ -52,3 +59,15 @@
           axis_sign: -1
           speed: 0.02
           fast_speed: 0.05
+
+      gripper:
+        names:
+        - gripper_joint_1
+
+        gripper_joint_1:
+          button: 7           # R2 (hold to open/close)
+          fast_button: 4      # L1
+          axis: 1             # left stick up/down
+          axis_sign: 1
+          speed: 0.01
+          fast_speed: 0.02

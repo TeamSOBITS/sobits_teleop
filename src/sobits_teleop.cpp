@@ -113,12 +113,9 @@ void SOBITSTeleop::load_parameters()
   cmd_vel_pub = this->create_publisher<geometry_msgs::msg::Twist>(
     cvm.topic, 10);
 
-  // Load joint parameters.
-  // NOTE: guard on a real leaf param ("...groups"), not the bare "control_joints"
-  // prefix. has_parameter() only matches declared leaf parameters, so on some
-  // rclcpp builds has_parameter("control_joints") is false even when the nested
-  // params exist -> the whole block was silently skipped and no publishers were
-  // created (Publisher count 0, nothing moved).
+  // Guard on a leaf param, not the "control_joints" prefix: has_parameter() only
+  // matches declared leaves, so the prefix form is false on some rclcpp builds and
+  // the whole block gets skipped (no publishers, nothing moves).
   if (this->has_parameter("control_joints.groups")) {
     // Optional teleop tuning (safe defaults kept if absent).
     this->get_parameter("control_joints.command_duration", joint_cmd_duration);
@@ -262,15 +259,11 @@ void SOBITSTeleop::teleop()
 
   for (auto &[name, m] : joint_mappings) {
 
-    // Latest measured position for this joint (from /joint_states). Fall back to
-    // the current command if we have not seen it yet.
     auto meas_it = joint_pos.find(m.joint_name);
     double measured = (meas_it != joint_pos.end()) ? meas_it->second : cmd_pos[m.joint_name];
 
-    // Bounds-check every index against what the device actually reports.
-    // Different drivers (joy_linux, ds4drv, keyboard_joy) expose different
-    // axis/button counts; an out-of-range index would otherwise read garbage
-    // and cause phantom motion or a crash.
+    // Different joy drivers report different axis/button counts, so range-check
+    // before indexing.
     const bool button_ok = m.button >= 0 && m.button < static_cast<int>(latest_buttons.size());
     const bool axis_ok   = m.axis   >= 0 && m.axis   < static_cast<int>(latest_axes.size());
     const bool fast_ok   = m.fast_button >= 0 && m.fast_button < static_cast<int>(latest_buttons.size());
@@ -279,16 +272,14 @@ void SOBITSTeleop::teleop()
                         latest_buttons[m.button] != 0 &&
                         std::abs(latest_axes[m.axis]) > 1e-2;
 
-    // When this joint is idle, keep the command synced to reality so it never
-    // drifts and never snaps when re-engaged.
+    // Idle: re-sync to the real position so it doesn't drift or jump on re-grab.
     if (!active) { cmd_pos[m.joint_name] = measured; continue; }
 
     const double step_speed = (fast_ok && latest_buttons[m.fast_button] == 1) ? m.fast_speed : m.speed;
     double target = cmd_pos[m.joint_name] + latest_axes[m.axis] * m.axis_sign * step_speed;
 
-    // Anti-windup: the command may never lead the measured position by more
-    // than joint_max_lead. This is what bounds how far the arm can still travel
-    // after the stick is released.
+    // Don't let the command run more than joint_max_lead ahead of the real joint,
+    // so it stops promptly on release instead of coasting.
     target = std::clamp(target, measured - joint_max_lead, measured + joint_max_lead);
 
     auto lim_it = joint_limits.find(m.joint_name);
@@ -392,10 +383,8 @@ void SOBITSTeleop::teleop()
   else cmd_vel_pub->publish(stop);
   } // cmd_vel_loaded
 
-  // The Meta Quest head/arm tracking below relies on TF frames (hmd_odom,
-  // *_controller_odom) that only exist with the Quest bridge running. Skip the
-  // whole block for ps4/ps5/keyboard so it does not spam "TF lookup failed" at
-  // the control rate and early-return every tick.
+  // Quest head/arm tracking needs TF frames that only exist with the Quest bridge.
+  // Skip it for ps4/ps5/keyboard, otherwise it spams "TF lookup failed" every tick.
   if (!quest_loaded) return;
 
   // Head

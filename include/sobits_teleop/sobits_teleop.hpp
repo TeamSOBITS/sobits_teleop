@@ -45,9 +45,7 @@ struct PoseMap {
 
 struct CmdVelMap {
   std::string topic;
-  // Defaults are "disabled/invalid" so that when a device config omits the
-  // control_velocity block these indices never dereference latest_axes/buttons
-  // out of bounds.
+  // -1 = disabled, so an omitted control_velocity block can't index out of bounds.
   int button = -1;
   int fast_button = -1;
   int axis = -1;
@@ -139,22 +137,17 @@ private:
   std::vector<std::string> joint_names;
   std::map<std::string, JointMap> joint_mappings;
   std::map<std::string, QuestControllerMap> quest_controller_mappings;
-  std::map<std::string, double> joint_pos;   // latest measured position (from /joint_states)
-  std::map<std::string, double> cmd_pos;     // internal command target we integrate
+  std::map<std::string, double> joint_pos;   // measured, from /joint_states
+  std::map<std::string, double> cmd_pos;     // integrated command target
   const double dt = 0.1;
 
-  // Only run each control block when its parameters were actually loaded.
+  // Set once the matching param block is present; gates the control code below.
   bool cmd_vel_loaded = false;
   bool quest_loaded = false;
 
-  // Joint teleop tuning (overridable via control_joints.* rosparams).
-  // joint_cmd_duration: time_from_start of each published trajectory point.
-  //   Kept close to the 20 Hz control period so the controller does not keep
-  //   gliding toward a far-future target after the stick is released.
-  // joint_max_lead: hard cap on how far the command may lead the measured
-  //   position (anti-windup). This bounds residual motion after release.
-  double joint_cmd_duration = 0.08;
-  double joint_max_lead = 0.15;
+  // Overridable via control_joints.command_duration / .max_lead.
+  double joint_cmd_duration = 0.08;  // time_from_start per trajectory point (s)
+  double joint_max_lead = 0.15;      // max command lead over the real joint (rad)
 
   std::vector<std::string> pose_list;
   std::vector<PoseMap> pose_mappings;
