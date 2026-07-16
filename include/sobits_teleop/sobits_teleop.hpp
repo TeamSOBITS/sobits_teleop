@@ -139,6 +139,7 @@ private:
   std::map<std::string, QuestControllerMap> quest_controller_mappings;
   std::map<std::string, double> joint_pos;   // measured, from /joint_states
   std::map<std::string, double> cmd_pos;     // integrated command target
+  std::map<std::string, bool> joint_active_prev;  // was the joint driven last tick
   const double dt = 0.1;
 
   // Set once the matching param block is present; gates the control code below.

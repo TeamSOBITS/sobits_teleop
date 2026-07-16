@@ -272,32 +272,42 @@ void SOBITSTeleop::teleop()
                         latest_buttons[m.button] != 0 &&
                         std::abs(latest_axes[m.axis]) > 1e-2;
 
-    // Idle: re-sync to the real position so it doesn't drift or jump on re-grab.
-    if (!active) { cmd_pos[m.joint_name] = measured; continue; }
+    double out_pos;
+    if (!active) {
+      cmd_pos[m.joint_name] = measured;
+      // On the release edge, command the current position once so the joint halts
+      // where it is instead of finishing the last (lead) step. Otherwise stay quiet
+      // and let the controller hold.
+      if (!joint_active_prev[m.joint_name]) continue;
+      joint_active_prev[m.joint_name] = false;
+      out_pos = measured;
+    } else {
+      joint_active_prev[m.joint_name] = true;
+      const double step_speed = (fast_ok && latest_buttons[m.fast_button] == 1) ? m.fast_speed : m.speed;
+      double target = cmd_pos[m.joint_name] + latest_axes[m.axis] * m.axis_sign * step_speed;
 
-    const double step_speed = (fast_ok && latest_buttons[m.fast_button] == 1) ? m.fast_speed : m.speed;
-    double target = cmd_pos[m.joint_name] + latest_axes[m.axis] * m.axis_sign * step_speed;
+      // Keep the command within joint_max_lead of the real joint so it can't run
+      // far ahead; the release halt above is what actually stops it.
+      target = std::clamp(target, measured - joint_max_lead, measured + joint_max_lead);
 
-    // Don't let the command run more than joint_max_lead ahead of the real joint,
-    // so it stops promptly on release instead of coasting.
-    target = std::clamp(target, measured - joint_max_lead, measured + joint_max_lead);
-
-    auto lim_it = joint_limits.find(m.joint_name);
-    if (lim_it != joint_limits.end()) {
-      auto [actual_min, actual_max] = std::minmax({lim_it->second.lower, lim_it->second.upper});
-      target = std::clamp(target, actual_min, actual_max);
+      auto lim_it = joint_limits.find(m.joint_name);
+      if (lim_it != joint_limits.end()) {
+        auto [actual_min, actual_max] = std::minmax({lim_it->second.lower, lim_it->second.upper});
+        target = std::clamp(target, actual_min, actual_max);
+      }
+      cmd_pos[m.joint_name] = target;
+      out_pos = target;
     }
-    cmd_pos[m.joint_name] = target;
 
     auto &traj = trajs[m.joint_trajectory_topic];
     traj.joint_names.push_back(m.joint_name);
     if (traj.points.empty()) {
       trajectory_msgs::msg::JointTrajectoryPoint p;
-      p.positions = {target};
+      p.positions = {out_pos};
       p.time_from_start = rclcpp::Duration::from_seconds(joint_cmd_duration);
       traj.points.push_back(p);
     }
-    else traj.points[0].positions.push_back(target);
+    else traj.points[0].positions.push_back(out_pos);
   }
 
   for (auto &tj : trajs) {

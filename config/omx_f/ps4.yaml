@@ -6,7 +6,7 @@
       # command may lead the real joint (rad). Raise max_lead (e.g. 100) to feel the
       # old coasting behaviour; keep it small for a clean stop on release.
       command_duration: 0.08
-      max_lead: 0.10
+      max_lead: 0.15
 
       groups:
       - arm
