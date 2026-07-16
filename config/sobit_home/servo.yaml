@@ -1,10 +1,9 @@
 ## MoveIt Servo backend configuration — one file, three nodes
 ## (servo_arm_right, servo_arm_left, servo_target_bridge).
 ##
-## Structured like moveit_arm_controller.yaml: the shared /**: section holds
-## the tuning common to both servo instances plus the bridge config; the tiny
-## per-node sections at the bottom hold ONLY what differs per arm (rcl merges
-## wildcard and node-specific sections; the specific entries win).
+## Holds ONLY tuning. Everything identity-shaped (which arms, planning
+## groups, controller topics, target/EE frames) lives in quest.yaml and
+## robot.yaml and is injected per node by servo_arms.launch.py.
 ##
 ## Servo parameter names verified against the installed servo 2.12.4 schema
 ## (/opt/ros/jazzy/share/moveit_servo/config/servo_parameters.yaml); servo_node
@@ -72,10 +71,9 @@
 
     # ── Target bridge ───────────────────────────────────────────────────────
     servo_bridge:
-      # List of arms the bridge manages.
-      arms:
-        - arm_right
-        - arm_left
+      # (The arm list, planning groups, controller topics and target/EE frames
+      # are injected by servo_arms.launch.py from quest.yaml / robot.yaml —
+      # those files are the single source of arm identity.)
 
       # Rate of the single shared pose-publish timer [Hz]. Must stay comfortably
       # above 1/incoming_command_timeout; 100 Hz matches the migration plan.
@@ -100,16 +98,3 @@
       #   servo_node, enable_topic, reach_origin_frame, max_reach.
       # servo 2.12.4 drives the planning group's last SRDF link
       # (hand_*_end_effector_link here) — verified in sim 2026-07-15, 0.0 mm.
-
-# ── Per-arm differences only ──────────────────────────────────────────────
-/**/servo_arm_right:
-  ros__parameters:
-    moveit_servo:
-      move_group_name: arm_right
-      command_out_topic: arm_right_position_controller/joint_trajectory   # relative -> /sobit_home ns
-
-/**/servo_arm_left:
-  ros__parameters:
-    moveit_servo:
-      move_group_name: arm_left
-      command_out_topic: arm_left_position_controller/joint_trajectory   # relative -> /sobit_home ns

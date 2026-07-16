@@ -225,34 +225,56 @@ def _fetch_move_group_params(context, *args, **kwargs):
         **kinematics_params,
     }
 
-    # One consolidated file; each node reads only its own /**/<node_name> section.
+    # servo.yaml carries only the tuning shared by all nodes. The per-arm
+    # identity (which arms exist, their planning groups, target/EE frames and
+    # controller topics) is declared ONCE in quest.yaml / robot.yaml and
+    # injected here, so adding or renaming an arm never touches servo config.
     servo_yaml = f'{pkg_share}/config/{robot_name}/servo.yaml'
 
-    servo_arm_right_node = Node(
-        package='moveit_servo',
-        executable='servo_node',
-        name='servo_arm_right',
-        namespace=robot_name,
-        output='screen',
-        parameters=[
-            servo_yaml,
-            common_model_params,
-            {'use_sim_time': use_sim_time},
-        ],
-    )
+    import yaml as pyyaml
+    with open(f'{pkg_share}/config/{robot_name}/quest.yaml') as f:
+        quest_params = pyyaml.safe_load(f)['/**']['ros__parameters']
+    with open(f'{pkg_share}/config/{robot_name}/robot.yaml') as f:
+        robot_params = pyyaml.safe_load(f)['/**']['ros__parameters']
+    traj_topics = robot_params['robot_topic_name']['joint_trajectory_topic']
 
-    servo_arm_left_node = Node(
-        package='moveit_servo',
-        executable='servo_node',
-        name='servo_arm_left',
-        namespace=robot_name,
-        output='screen',
-        parameters=[
-            servo_yaml,
-            common_model_params,
-            {'use_sim_time': use_sim_time},
-        ],
-    )
+    quest_control = quest_params['quest_control']
+    arm_entries = []  # (planning_group, quest controller block)
+    for ctrl_name in quest_control.get('controller', []):
+        block = quest_control.get(ctrl_name, {})
+        if isinstance(block, dict) and 'arm' in block:
+            arm_entries.append((block['arm'], block))
+    if not arm_entries:
+        raise RuntimeError(
+            "servo_arms.launch.py: no quest_control entries with an 'arm' key "
+            f"found in quest.yaml for robot '{robot_name}' — nothing to servo.")
+
+    servo_nodes = []
+    bridge_arm_params = {'servo_bridge.arms': [a for a, _ in arm_entries]}
+    for arm, block in arm_entries:
+        servo_nodes.append(Node(
+            package='moveit_servo',
+            executable='servo_node',
+            name=f'servo_{arm}',
+            namespace=robot_name,
+            output='screen',
+            parameters=[
+                servo_yaml,
+                common_model_params,
+                {
+                    'moveit_servo.move_group_name': arm,
+                    'moveit_servo.command_out_topic': traj_topics[arm],
+                    'use_sim_time': use_sim_time,
+                },
+            ],
+        ))
+        # quest.yaml is also the authority for what the target TF means.
+        if 'target_frame_name' in block:
+            bridge_arm_params[f'servo_bridge.{arm}.target_frame_name'] = \
+                block['target_frame_name']
+        if 'end_effector_frame_name' in block:
+            bridge_arm_params[f'servo_bridge.{arm}.end_effector_frame_name'] = \
+                block['end_effector_frame_name']
 
     servo_target_bridge_node = Node(
         package='sobits_teleop',
@@ -262,11 +284,12 @@ def _fetch_move_group_params(context, *args, **kwargs):
         output='screen',
         parameters=[
             servo_yaml,
+            bridge_arm_params,
             {'use_sim_time': use_sim_time},
         ],
     )
 
-    return [servo_arm_right_node, servo_arm_left_node, servo_target_bridge_node]
+    return servo_nodes + [servo_target_bridge_node]
 
 
 def generate_launch_description():
