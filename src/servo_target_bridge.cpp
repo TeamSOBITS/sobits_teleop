@@ -30,8 +30,11 @@ ServoTargetBridge::ServoTargetBridge(const rclcpp::NodeOptions & options)
   auto arm_names = this->get_parameter("servo_bridge.arms").as_string_array();
 
   for (const auto & arm_name : arm_names) {
-    auto tf_key   = "servo_bridge." + arm_name + ".target_frame";
-    auto bf_key   = "servo_bridge." + arm_name + ".base_frame";
+    // Frame keys use the same vocabulary as quest.yaml's quest_control blocks.
+    auto tf_key   = "servo_bridge." + arm_name + ".target_frame_name";
+    auto bf_key   = "servo_bridge." + arm_name + ".base_frame_name";
+    auto ee_key   = "servo_bridge." + arm_name + ".end_effector_frame_name";
+    auto se_key   = "servo_bridge." + arm_name + ".servo_ee_frame";
     auto sn_key   = "servo_bridge." + arm_name + ".servo_node";
     auto en_key   = "servo_bridge." + arm_name + ".enable_topic";
     auto ro_key   = "servo_bridge." + arm_name + ".reach_origin_frame";
@@ -41,6 +44,10 @@ ServoTargetBridge::ServoTargetBridge(const rclcpp::NodeOptions & options)
       this->declare_parameter(tf_key, arm_name + "_target_link");
     if (!this->has_parameter(bf_key))
       this->declare_parameter(bf_key, "base_footprint");
+    if (!this->has_parameter(ee_key))
+      this->declare_parameter(ee_key, std::string(""));
+    if (!this->has_parameter(se_key))
+      this->declare_parameter(se_key, std::string(""));
     if (!this->has_parameter(sn_key))
       this->declare_parameter(sn_key, std::string("servo_") + arm_name);
     if (!this->has_parameter(en_key))
@@ -52,12 +59,14 @@ ServoTargetBridge::ServoTargetBridge(const rclcpp::NodeOptions & options)
       this->declare_parameter(mr_key, 0.0);
 
     ServoBridgeArmConfig cfg;
-    cfg.target_frame   = this->get_parameter(tf_key).as_string();
-    cfg.base_frame     = this->get_parameter(bf_key).as_string();
-    cfg.servo_node     = this->get_parameter(sn_key).as_string();
-    cfg.enable_topic   = this->get_parameter(en_key).as_string();
+    cfg.target_frame       = this->get_parameter(tf_key).as_string();
+    cfg.base_frame         = this->get_parameter(bf_key).as_string();
+    cfg.end_effector_frame = this->get_parameter(ee_key).as_string();
+    cfg.servo_ee_frame     = this->get_parameter(se_key).as_string();
+    cfg.servo_node         = this->get_parameter(sn_key).as_string();
+    cfg.enable_topic       = this->get_parameter(en_key).as_string();
     cfg.reach_origin_frame = this->get_parameter(ro_key).as_string();
-    cfg.max_reach      = this->get_parameter(mr_key).as_double();
+    cfg.max_reach          = this->get_parameter(mr_key).as_double();
 
     auto arm_data = std::make_unique<ArmBridgeData>();
     arm_data->config = cfg;
@@ -89,10 +98,12 @@ ServoTargetBridge::ServoTargetBridge(const rclcpp::NodeOptions & options)
     arms_[arm_name] = std::move(arm_data);
 
     RCLCPP_INFO(get_logger(),
-      "Arm '%s': servo_node='%s', target_frame='%s', base_frame='%s', enable_topic='%s', "
+      "Arm '%s': servo_node='%s', target_frame_name='%s', base_frame_name='%s', "
+      "end_effector_frame_name='%s', servo_ee_frame='%s', enable_topic='%s', "
       "reach_origin_frame='%s', max_reach=%.3f",
       arm_name.c_str(), cfg.servo_node.c_str(), cfg.target_frame.c_str(),
-      cfg.base_frame.c_str(), cfg.enable_topic.c_str(),
+      cfg.base_frame.c_str(), cfg.end_effector_frame.c_str(),
+      cfg.servo_ee_frame.c_str(), cfg.enable_topic.c_str(),
       cfg.reach_origin_frame.c_str(), cfg.max_reach);
 
     // Startup sequence — switch_command_type(POSE) once per arm and
@@ -347,13 +358,44 @@ void ServoTargetBridge::pose_timer_callback()
       }
     }
 
+    // The target describes the desired pose of end_effector_frame_name, but
+    // servo drives servo_ee_frame. When those differ, re-express the target
+    // for the servo frame: T(base->cmd) = T(base->target) * T(ee->servo_ee).
+    // Looked up per tick (NOT cached) so end_effector_frame_name may be a
+    // link that moves relative to the hand (e.g. a grasp midpoint between
+    // fingers). Empty servo_ee_frame = servo drives the EE link itself.
+    tf2::Transform base_to_cmd = base_to_target;
+    if (!arm.config.servo_ee_frame.empty() &&
+        !arm.config.end_effector_frame.empty() &&
+        arm.config.servo_ee_frame != arm.config.end_effector_frame)
+    {
+      try {
+        auto ee_se = tf_buffer_->lookupTransform(
+          arm.config.end_effector_frame, arm.config.servo_ee_frame,
+          tf2::TimePointZero);
+        base_to_cmd = base_to_target * tf2::Transform(
+          tf2::Quaternion(
+            ee_se.transform.rotation.x, ee_se.transform.rotation.y,
+            ee_se.transform.rotation.z, ee_se.transform.rotation.w),
+          tf2::Vector3(
+            ee_se.transform.translation.x, ee_se.transform.translation.y,
+            ee_se.transform.translation.z));
+      } catch (const tf2::TransformException & e) {
+        RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
+          "Arm '%s': EE->servo_ee TF '%s'->'%s' unavailable (%s) — skipping tick",
+          arm_name.c_str(), arm.config.end_effector_frame.c_str(),
+          arm.config.servo_ee_frame.c_str(), e.what());
+        continue;
+      }
+    }
+
     geometry_msgs::msg::PoseStamped pose_msg;
     pose_msg.header.frame_id = arm.config.base_frame;
     pose_msg.header.stamp    = this->now();
-    pose_msg.pose.position.x = base_to_target.getOrigin().x();
-    pose_msg.pose.position.y = base_to_target.getOrigin().y();
-    pose_msg.pose.position.z = base_to_target.getOrigin().z();
-    pose_msg.pose.orientation = tf2::toMsg(base_to_target.getRotation());
+    pose_msg.pose.position.x = base_to_cmd.getOrigin().x();
+    pose_msg.pose.position.y = base_to_cmd.getOrigin().y();
+    pose_msg.pose.position.z = base_to_cmd.getOrigin().z();
+    pose_msg.pose.orientation = tf2::toMsg(base_to_cmd.getRotation());
 
     arm.pose_pub->publish(pose_msg);
   }

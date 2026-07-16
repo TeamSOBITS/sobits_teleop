@@ -24,10 +24,20 @@ namespace sobits_teleop
 {
 
 struct ServoBridgeArmConfig {
+  // Same frame vocabulary as the quest_control blocks in quest.yaml:
+  // target_frame_name / base_frame_name / end_effector_frame_name.
   std::string target_frame;
   std::string base_frame;
   std::string servo_node;
   std::string enable_topic;
+  // end_effector_frame is the robot link that should FOLLOW the target
+  // (matches quest.yaml's end_effector_frame_name). servo_ee_frame is the link
+  // servo actually drives (the planning group's last SRDF link); EMPTY means
+  // "servo drives end_effector_frame itself" — no correction. When they
+  // differ, the bridge re-expresses the target for the servo frame each tick:
+  //   T(base->cmd) = T(base->target) * T(end_effector_frame->servo_ee_frame)
+  std::string end_effector_frame;
+  std::string servo_ee_frame;
   // Reach clamp: targets are clamped to a sphere of radius max_reach around
   // reach_origin_frame before being sent to servo. Chasing an out-of-reach hand
   // target otherwise drives the arm to full extension — a true elbow
