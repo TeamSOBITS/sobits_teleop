@@ -135,6 +135,8 @@ void SOBITSTeleop::load_parameters()
         this->get_parameter("control_joints." + joint_group + "." + joint_name + ".axis_sign",   jm.axis_sign);
         this->get_parameter("control_joints." + joint_group + "." + joint_name + ".speed",       jm.speed);
         this->get_parameter("control_joints." + joint_group + "." + joint_name + ".fast_speed",  jm.fast_speed);
+        jm.max_lead = joint_max_lead;  // default; per-joint override below
+        this->get_parameter("control_joints." + joint_group + "." + joint_name + ".max_lead",    jm.max_lead);
         this->get_parameter("robot_topic_name.joint_trajectory_topic." + joint_group,            jm.joint_trajectory_topic);
 
         joint_mappings[joint_name] = jm;
@@ -286,9 +288,9 @@ void SOBITSTeleop::teleop()
       const double step_speed = (fast_ok && latest_buttons[m.fast_button] == 1) ? m.fast_speed : m.speed;
       double target = cmd_pos[m.joint_name] + latest_axes[m.axis] * m.axis_sign * step_speed;
 
-      // Keep the command within joint_max_lead of the real joint so it can't run
-      // far ahead; the release halt above is what actually stops it.
-      target = std::clamp(target, measured - joint_max_lead, measured + joint_max_lead);
+      // Keep the command within max_lead of the real joint so it can't run far
+      // ahead; the release halt above is what actually stops it.
+      target = std::clamp(target, measured - m.max_lead, measured + m.max_lead);
 
       auto lim_it = joint_limits.find(m.joint_name);
       if (lim_it != joint_limits.end()) {

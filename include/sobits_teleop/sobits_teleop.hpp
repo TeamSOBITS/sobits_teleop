@@ -33,6 +33,7 @@ struct JointMap {
   int axis_sign;
   float speed;
   float fast_speed;
+  double max_lead;      // per-joint override; defaults to control_joints.max_lead
   double min_pos;
   double max_pos;
 };

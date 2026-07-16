@@ -51,6 +51,7 @@
           axis_sign: 1
           speed: 0.02
           fast_speed: 0.05
+          max_lead: 0.30      # wrist: extra lead to push against gravity going up
 
         joint5:
           button: 5           # R1
