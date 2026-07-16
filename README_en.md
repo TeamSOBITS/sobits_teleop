@@ -22,7 +22,8 @@
         <li><a href="#create-config-files">Create Config Files</a></li>
         <li><a href="#launch-arguments">Launch Arguments</a></li>
         <li><a href="#run-teleop-node">Run Teleop Node</a></li>
-        <li><a href="#moveit-arm-controller-meta-quest">MoveIt Arm Controller (Meta Quest)</a></li>
+        <li><a href="#arm-tracking-backends-meta-quest">Arm-Tracking Backends (Meta Quest)</a></li>
+        <li><a href="#porting-to-a-new-robot">Porting to a New Robot</a></li>
         <li><a href="#arm-scale-calibration-meta-quest">Arm Scale Calibration (Meta Quest)</a></li>
         <li><a href="#simulation-mode">Simulation Mode</a></li>
       </ul>
@@ -36,10 +37,16 @@
 <!-- INTRODUCTION -->
 ## Introduction
 
-A package for teleoperating SOBITS robots using a joystick (PS4, PS5), Meta Quest, or a keyboard.\
+A package for teleoperating robots using a joystick (PS4, PS5), Meta Quest, or a keyboard.\
 For Meta Quest setup instructions, please refer to [this repository](https://github.com/TeamSOBITS/meta_quest_teleoperation).
 
-Supported robots: `sobit_home`, `sobit_pro`, `sobit_edu`, `sobit_mini`, `sobit_light`\
+The package is **robot-agnostic**: everything robot-specific lives in one
+config directory (`config/{robot_name}/`), selected at launch with
+`robot_name:=<name>`. Ready-made configs are provided for the SOBITS robots
+(`sobit_home`, `sobit_pro`, `sobit_edu`, `sobit_mini`, `sobit_light`); porting
+to a new robot means writing that directory — no code or launch changes
+(see [Porting to a New Robot](#porting-to-a-new-robot)).
+
 Supported input devices: `ps4`, `ps5`, `quest`, `keyboard`
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
@@ -113,14 +120,23 @@ Basic workflow:
 
 ### Create Config Files
 
-Each robot has its own directory under `config/{robot_name}/`:
+Each robot has its own directory under `config/{robot_name}/` — this directory
+is the only robot-specific part of the package:
 
 | File | Purpose |
 |---|---|
 | `robot.yaml` | ROS topic names for joint controllers and cmd_vel |
 | `{device}.yaml` | Button/axis mappings for the selected input device |
-| `moveit_arm_controller.yaml` | MoveIt arm tracking parameters (Quest only) |
+| `arm_backend_plan.yaml` | Plan-and-replace arm-tracking backend tuning (Quest only) |
+| `arm_backend_servo.yaml` | MoveIt Servo arm-tracking backend tuning (Quest only) |
 | `arm_scale_calibrator.yaml` | Arm reach calibration parameters (Quest only) |
+
+The **arm identity** — which arms exist, their planning groups, target/EE
+frames and controller topics — is declared once, in `{device}.yaml`
+(the per-arm `arm:` blocks) and `robot.yaml` (the trajectory-topic map).
+The launchers inject it into whichever arm-tracking backend runs, so the
+two `arm_backend_*.yaml` files contain tuning only and are largely
+robot-independent.
 
 <details>
 <summary>robot.yaml (example)</summary>
@@ -201,7 +217,8 @@ All options are passed as CLI arguments — no need to edit the launch file.
 | `joystick_device` | `/dev/input/js0` | Joystick device path (PS4/PS5 only) |
 | `ros_ip` | `0.0.0.0` | PC IP address for Quest TCP connection |
 | `use_ds4drv` | `True` | Launch `ds4drv` alongside (PS4 only) |
-| `use_moveit` | `false` | Launch MoveIt arm controller (Quest only) |
+| `use_moveit` | `false` | Launch an arm-tracking backend (Quest only) |
+| `use_servo` | `false` | Pick the MoveIt Servo backend instead of plan-and-replace (requires `use_moveit:=true`) |
 | `use_sim_time` | `false` | Use simulation clock (Gazebo) |
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
@@ -254,46 +271,107 @@ ros2 launch sobits_teleop sobits_teleop.launch.py \
 
 ---
 
-### MoveIt Arm Controller (Meta Quest)
+### Arm-Tracking Backends (Meta Quest)
 
-When using the Quest for arm teleoperation, the `moveit_arm_controller` node uses MoveIt2 to follow the controller's TF pose in real time via Cartesian path planning.
+Two interchangeable backends follow the hand-controller TF pose in real time.
+Both consume the same interface — the `{side}_target_link` TF plus the
+`/{robot_name}/{arm_name}/moveit_track_enabled` (`std_msgs/Bool`) topic, which
+the grip button toggles automatically — so they can be swapped with one launch
+argument.
 
-Enable it alongside the Quest device with `use_moveit:=true`:
+| Backend | Selected by | How it tracks |
+|---|---|---|
+| Plan-and-replace (`moveit_arm_controller`) | `use_moveit:=true` | Streams short Cartesian plans via MoveIt2; falls back to OMPL near singularities |
+| MoveIt Servo (`servo_node` + `servo_target_bridge`) | `use_moveit:=true use_servo:=true` | One `moveit_servo` instance per arm does differential IK at 50 Hz |
 
 ```sh
 ros2 launch sobits_teleop sobits_teleop.launch.py \
-  robot_name:=sobit_home \
+  robot_name:=<robot_name> \
   device:=quest \
   ros_ip:=<YOUR_PC_IP> \
-  use_moveit:=true
+  use_moveit:=true \
+  use_servo:=true        # omit for the plan-and-replace backend
 ```
 
-The node is configured via `config/{robot_name}/moveit_arm_controller.yaml`:
+Both launchers live in `launch/include/` and inject the arm identity from
+`quest.yaml` / `robot.yaml`, so the backend configs are tuning-only.
+
+#### Plan-and-replace tuning — `config/{robot_name}/arm_backend_plan.yaml`
 
 ```yaml
 arm_teleop:
-  arms: [arm_left, arm_right]   # must match SRDF planning group names
-
-  arm_left:
-    planning_group:    "arm_left"
-    target_frame:      "left_target_link"   # TF broadcast by sobits_teleop
-    base_frame:        "base_footprint"
-    trajectory_topic:  "arm_left_position_controller/joint_trajectory"
-
-  update_rate_hz:          25.0   # tracking loop frequency
-  max_cartesian_step_m:     0.5   # max step per cycle
-  eef_step_m:              0.03   # Cartesian interpolation resolution
+  update_rate_hz:          50.0   # tracking loop frequency
+  max_cartesian_step_m:    0.10   # max step per cycle
+  eef_step_m:              0.02   # Cartesian interpolation resolution
   min_cartesian_fraction:   0.2   # fall back to OMPL below this fraction
-  replan_threshold_m:      0.02   # replan when target drifts this far (idle)
-  preempt_threshold_m:     0.15   # cancel in-flight trajectory when target moves this far
-  arrival_threshold_m:     0.03   # skip planning when EE is this close to target
-  velocity_scaling:         0.6
-  acceleration_scaling:     0.6
-  traj_lookahead_ms:         40
-  ompl_planning_timeout_s:  0.5
+  replan_threshold_m:      0.03   # replan when target drifts this far
+  preempt_threshold_m:     0.30   # cancel in-flight trajectory beyond this
+  arrival_threshold_m:     0.03   # skip planning when EE is this close
+  velocity_scaling:        0.90
+  acceleration_scaling:    0.80
+  publish_mode: topic             # stream trajectories (best for teleop)
 ```
 
-Each arm is enabled/disabled at runtime by publishing to `/{robot_name}/{arm_name}/moveit_track_enabled` (`std_msgs/Bool`). The Quest controller's grip button in `sobits_teleop` publishes to this topic automatically.
+#### Servo tuning — `config/{robot_name}/arm_backend_servo.yaml`
+
+One file for all servo-stack nodes; the shared `/**:` section holds the tuning.
+Robot-dependent points worth checking when porting:
+
+```yaml
+moveit_servo:
+  scale: {linear: 1.5, rotational: 3.0}  # EE speed caps [m/s, rad/s]
+  publish_joint_velocities: false  # keep false if the arm JTC rejects
+                                   # trajectories ending with nonzero velocity
+  lower_singularity_threshold: 50.0
+  hard_stop_singularity_threshold: 200.0  # do NOT disable (joint windup)
+  joint_limit_margins: [0.02]
+
+servo_bridge:
+  pose_rate_hz: 100.0
+  max_reach: 1.10   # reach-clamp sphere radius around each arm's shoulder [m]
+                    # — set to ~90-95% of YOUR robot's shoulder→EE chain length
+```
+
+The bridge clamps targets to the `max_reach` sphere so an out-of-reach hand
+cannot drag the arm into its full-extension singularity. Per-arm frames and
+topics default by convention from the arm name (`arm_right` →
+`right_target_link`, `hand_right_end_effector_link`,
+`arm_right_shoulder_tilt_link`, ...); override any key under
+`servo_bridge.{arm_name}.*` if your robot names differ.
+
+The servo backend requires `ros-$ROS_DISTRO-moveit-servo` (installed by
+`install.sh`) and a running `move_group` under `/{robot_name}` — the launcher
+fetches the robot model from it at startup.
+
+#### Gripper controls (Quest, both backends)
+
+| Input | Action |
+|---|---|
+| Grip button (`arm_enable_axis`) | Hold to track the arm |
+| Pose button (`hand_pose_button`) | Toggle `hand_pose_open` / `hand_pose_close` |
+| Trigger + stick left/right | Adaptive open/close curl |
+| Trigger + stick up/down | Rotate the grip-type joint (`single_joint_name`) |
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+---
+
+### Porting to a New Robot
+
+1. Create `config/{robot_name}/` with `robot.yaml` (controller topics) and one
+   `{device}.yaml` per input device you use.
+2. For Quest arm teleop, add per-arm blocks to `quest.yaml` (`arm:`,
+   `target_frame_name:`, `end_effector_frame_name:`, gripper mapping) — this is
+   the single source of arm identity for both backends.
+3. Copy `arm_backend_plan.yaml` / `arm_backend_servo.yaml` from an existing
+   robot and adjust the tuning (`max_reach` to your arm length; speed caps;
+   thresholds).
+4. Launch with `robot_name:={robot_name}` — nothing else changes.
+
+Assumptions: arms driven by `joint_trajectory_controller` topic interfaces
+(see `robot.yaml`), a MoveIt config with one planning group per arm whose last
+SRDF link is the end-effector, and `move_group` running under
+`/{robot_name}`.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
