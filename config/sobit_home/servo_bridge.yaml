@@ -1,0 +1,45 @@
+/**:
+  ros__parameters:
+    servo_bridge:
+      # List of arms this bridge instance manages.
+      arms:
+        - arm_right
+        - arm_left
+
+      # Rate of the single shared pose-publish timer [Hz]. Servo's
+      # incoming_command_timeout (servo_arm_*.yaml) is 0.5 s, so this must stay
+      # comfortably above 2 Hz; 100 Hz matches the plan's bridge streaming rate.
+      pose_rate_hz: 100.0
+
+      # ── Per-arm configuration ─────────────────────────────────────────────
+      # ee_frame / tip_frame: optional fixed-offset correction. If Servo drove
+      # the kinematic-chain tip, the bridge would pre-multiply the target by
+      # T(ee_frame -> tip_frame). VERIFIED IN SIM 2026-07-15: servo 2.12.4
+      # commands hand_*_end_effector_link (the group's last link) DIRECTLY, so
+      # no offset is needed — leave both empty (identity). Setting them shifts
+      # the EE off-target by exactly the offset.
+      # shoulder_frame / max_reach: targets farther than max_reach from the
+      # shoulder are pulled back onto that sphere before reaching servo.
+      # Chasing an out-of-reach hand otherwise straightens the elbow — a true
+      # singularity where servo latches an emergency stop that only an external
+      # joint move can clear (observed in quest teleop 2026-07-16). Measured
+      # full reach shoulder->EE at near-straight elbow: 1.11 m; clamp at 90%.
+      arm_right:
+        target_frame: right_target_link
+        base_frame: base_footprint
+        servo_node: servo_arm_right
+        enable_topic: arm_right/moveit_track_enabled
+        ee_frame: ""
+        tip_frame: ""
+        shoulder_frame: arm_right_shoulder_tilt_link
+        max_reach: 1.10
+
+      arm_left:
+        target_frame: left_target_link
+        base_frame: base_footprint
+        servo_node: servo_arm_left
+        enable_topic: arm_left/moveit_track_enabled
+        ee_frame: ""
+        tip_frame: ""
+        shoulder_frame: arm_left_shoulder_tilt_link
+        max_reach: 1.10

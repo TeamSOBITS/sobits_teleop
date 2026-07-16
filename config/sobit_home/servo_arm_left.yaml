@@ -1,0 +1,56 @@
+## Servo parameters for the LEFT arm servo_node instance.
+## Identical to servo_arm_right.yaml except move_group_name / command_out_topic.
+## See servo_arm_right.yaml for the parameter-source verification note.
+/**:
+  ros__parameters:
+    moveit_servo:
+      publish_period: 0.02                 # 50 Hz command output
+      max_expected_latency: 0.1
+      move_group_name: arm_left
+      command_in_type: "speed_units"
+      scale:
+        linear: 1.5                        # max EE m/s — 0.6 felt sluggish in quest teleop (hand scale 2.0 demands fast target chases); URDF joint velocity limits still cap output
+        rotational: 3.0                    # max EE rad/s
+        joint: 1.0
+      incoming_command_timeout: 0.5        # bridge streams at 100 Hz; halt if it stops
+
+      pose_tracking:
+        linear_tolerance: 0.001            # 1 mm
+        angular_tolerance: 0.01            # ~0.6 deg
+
+      command_out_type: trajectory_msgs/JointTrajectory
+      command_out_topic: arm_left_position_controller/joint_trajectory   # relative -> /sobit_home ns
+      publish_joint_positions: true
+      # MUST be false: Servo emits a single-point JointTrajectory; with velocities
+      # published, that point carries a nonzero terminal velocity, and this
+      # robot's JointTrajectoryController (allow_nonzero_velocity_at_trajectory_end
+      # = false) silently REJECTS any trajectory whose last point has nonzero
+      # velocity — the arm never moves. Position-only points execute correctly.
+      publish_joint_velocities: false
+      publish_joint_accelerations: false
+
+      joint_topic: joint_states            # relative -> /sobit_home/joint_states
+
+      is_primary_planning_scene_monitor: false   # move_group owns the scene
+      monitored_planning_scene_topic: /sobit_home/monitored_planning_scene
+
+      check_collisions: true
+      collision_check_rate: 10.0
+      self_collision_proximity_threshold: 0.004   # 0.01 kept right arm in permanent decel-crawl whenever hand near torso in quest teleop
+      scene_collision_proximity_threshold: 0.008
+      check_octomap_collisions: false
+
+      # ButterworthFilterPlugin (not AccelerationLimited) because
+      # robot_description_planning acceleration limits may be incomplete on this
+      # robot; Butterworth needs none.
+      use_smoothing: true
+      smoothing_filter_plugin_name: "online_signal_smoothing::ButterworthFilterPlugin"
+
+      # See servo_arm_right.yaml: home pose is a wrist singularity; 10/30 kept
+      # servo permanently decelerating.
+      lower_singularity_threshold: 50.0
+      hard_stop_singularity_threshold: 200.0   # 1000 (=disabled) let servo push THROUGH wrist singularities: joint velocities exploded and wound all 7 joints to their bounds. 200 + the bridge reach-clamp is the balance: clamp prevents the unreachable-target freeze, hard stop prevents windup.
+      # See servo_arm_right.yaml: home config rests on two URDF limits; small
+      # margin + per-joint halt required or the whole arm freezes near home.
+      joint_limit_margins: [0.02]
+      halt_all_joints_in_joint_limit: false
