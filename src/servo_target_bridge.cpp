@@ -29,8 +29,20 @@ ServoTargetBridge::ServoTargetBridge(const rclcpp::NodeOptions & options)
 
   auto arm_names = this->get_parameter("servo_bridge.arms").as_string_array();
 
+  // Shared default for the per-arm reach clamp; per-arm max_reach overrides it.
+  if (!this->has_parameter("servo_bridge.max_reach"))
+    this->declare_parameter("servo_bridge.max_reach", 0.0);
+  const double shared_max_reach =
+    this->get_parameter("servo_bridge.max_reach").as_double();
+
   for (const auto & arm_name : arm_names) {
-    // Frame keys use the same vocabulary as quest.yaml's quest_control blocks.
+    // Convention over configuration: every frame/topic defaults from the arm
+    // name (arm_right -> side "right"), matching this package's naming used in
+    // quest.yaml and the SRDF. The YAML only carries values that break the
+    // convention. Keys use the same vocabulary as quest.yaml's blocks.
+    const std::string side =
+      arm_name.rfind("arm_", 0) == 0 ? arm_name.substr(4) : arm_name;
+
     auto tf_key   = "servo_bridge." + arm_name + ".target_frame_name";
     auto bf_key   = "servo_bridge." + arm_name + ".base_frame_name";
     auto ee_key   = "servo_bridge." + arm_name + ".end_effector_frame_name";
@@ -41,22 +53,21 @@ ServoTargetBridge::ServoTargetBridge(const rclcpp::NodeOptions & options)
     auto mr_key   = "servo_bridge." + arm_name + ".max_reach";
 
     if (!this->has_parameter(tf_key))
-      this->declare_parameter(tf_key, arm_name + "_target_link");
+      this->declare_parameter(tf_key, side + "_target_link");
     if (!this->has_parameter(bf_key))
       this->declare_parameter(bf_key, "base_footprint");
     if (!this->has_parameter(ee_key))
-      this->declare_parameter(ee_key, std::string(""));
+      this->declare_parameter(ee_key, "hand_" + side + "_end_effector_link");
     if (!this->has_parameter(se_key))
       this->declare_parameter(se_key, std::string(""));
     if (!this->has_parameter(sn_key))
       this->declare_parameter(sn_key, std::string("servo_") + arm_name);
     if (!this->has_parameter(en_key))
       this->declare_parameter(en_key, arm_name + "/moveit_track_enabled");
-    // reach_origin_frame/max_reach default disabled; the launch YAML supplies them.
     if (!this->has_parameter(ro_key))
-      this->declare_parameter(ro_key, std::string(""));
+      this->declare_parameter(ro_key, arm_name + "_shoulder_tilt_link");
     if (!this->has_parameter(mr_key))
-      this->declare_parameter(mr_key, 0.0);
+      this->declare_parameter(mr_key, shared_max_reach);
 
     ServoBridgeArmConfig cfg;
     cfg.target_frame       = this->get_parameter(tf_key).as_string();
