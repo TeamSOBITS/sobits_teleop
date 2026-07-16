@@ -25,9 +25,16 @@
       # ── Global tuning parameters ──────────────────────────────────────────
 
       # Tracking loop frequency [Hz].
-      # 30 Hz gives ~33ms cycle budget — easily met now that planning is ~2ms
+      # 50 Hz gives ~20ms cycle budget — comfortably met now that planning is ~2ms
       # (avoid_collisions=false). Higher rate = more frequent goal updates = lower lag.
-      update_rate_hz: 30.0
+      # Previously capped at 30 Hz because each replan restarted the streamed
+      # trajectory from zero velocity (TOTG-only), so replanning faster than the
+      # arm could accelerate just caused a crawl. The loop now plans from the
+      # commanded (not measured) state and re-times with Ruckig so the new
+      # trajectory starts at the arm's actual commanded velocity — it is
+      # velocity-continuous across replans, so higher replan rates no longer
+      # cause that crawl behavior.
+      update_rate_hz: 50.0
 
       # Maximum Cartesian step attempted per control cycle [m].
       # In topic mode each cycle streams a trajectory aimed this far toward the
@@ -88,9 +95,13 @@
       velocity_scaling: 0.90
       acceleration_scaling: 0.80
 
-      # Milliseconds added to the trajectory header stamp before publishing.
-      # Gives the controller a head-start to pre-buffer the trajectory,
-      # eliminating the stall between the end of one trajectory and the next.
+      # Lookahead used when sampling the previously-sent trajectory to build the
+      # seed state for the next replan (elapsed = time-since-send + lookahead).
+      # This budgets for planning/transport latency so the seed is taken slightly
+      # ahead of "now", keeping the new hop velocity-continuous with what the
+      # controller will actually be executing when the new trajectory arrives.
+      # In action mode it is ALSO added to the trajectory header stamp before
+      # publishing, giving the controller a head-start to pre-buffer the goal.
       traj_lookahead_ms: 40
 
       # OMPL planning timeout [s] used in the Cartesian fallback path.

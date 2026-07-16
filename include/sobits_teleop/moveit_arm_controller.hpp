@@ -61,6 +61,16 @@ private:
     std::unordered_map<std::string, double> vel_limits;
     std::unordered_map<std::string, double> accel_limits;
 
+    // Streaming seed bookkeeping: the last trajectory handed to send_trajectory()
+    // and when it was sent, so the tracking loop can sample the commanded
+    // (not measured) state as the start state for the next hop. Written by the
+    // owning arm's tracking thread and cleared by cancel_trajectory() (which may
+    // run from the enable_callback thread) — protect the pair with last_sent_mutex,
+    // held only for the pointer swap/read-copy, never during planning.
+    robot_trajectory::RobotTrajectoryPtr last_sent_traj;
+    rclcpp::Time last_sent_time;
+    std::mutex last_sent_mutex;
+
     ArmData() = default;
     ArmData(const ArmData &) = delete;
     ArmData & operator=(const ArmData &) = delete;
