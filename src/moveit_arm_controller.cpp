@@ -3,6 +3,8 @@
 #include <moveit/robot_model/joint_model_group.hpp>
 #include <moveit/robot_state/robot_state.hpp>
 #include <moveit/kinematics_base/kinematics_base.hpp>
+#include <moveit/trajectory_processing/ruckig_traj_smoothing.hpp>
+#include <tf2_eigen/tf2_eigen.hpp>
 #include <Eigen/Geometry>
 #include <chrono>
 #include <thread>
@@ -44,6 +46,18 @@ MoveitArmController::MoveitArmController(const rclcpp::NodeOptions & options)
     this->declare_parameter("arm_teleop.ompl_planning_timeout_s", 0.5);
   if (!this->has_parameter("arm_teleop.preempt_threshold_m"))
     this->declare_parameter("arm_teleop.preempt_threshold_m", 0.15);
+  if (!this->has_parameter("arm_teleop.arrival_threshold_rad"))
+    this->declare_parameter("arm_teleop.arrival_threshold_rad", 0.05);   // ~3 deg
+  if (!this->has_parameter("arm_teleop.replan_threshold_rad"))
+    this->declare_parameter("arm_teleop.replan_threshold_rad", 0.05);    // ~3 deg
+  if (!this->has_parameter("arm_teleop.preempt_threshold_rad"))
+    this->declare_parameter("arm_teleop.preempt_threshold_rad", 0.26);   // ~15 deg
+  if (!this->has_parameter("arm_teleop.avoid_collisions"))
+    this->declare_parameter("arm_teleop.avoid_collisions", false);
+  if (!this->has_parameter("arm_teleop.preempt_settle_ms"))
+    this->declare_parameter("arm_teleop.preempt_settle_ms", 10);
+  if (!this->has_parameter("arm_teleop.publish_mode"))
+    this->declare_parameter("arm_teleop.publish_mode", std::string("topic"));
 
   update_rate_hz_           = this->get_parameter("arm_teleop.update_rate_hz").as_double();
   max_cartesian_step_m_     = this->get_parameter("arm_teleop.max_cartesian_step_m").as_double();
@@ -56,6 +70,12 @@ MoveitArmController::MoveitArmController(const rclcpp::NodeOptions & options)
   traj_lookahead_ms_        = this->get_parameter("arm_teleop.traj_lookahead_ms").as_int();
   ompl_planning_timeout_s_  = this->get_parameter("arm_teleop.ompl_planning_timeout_s").as_double();
   preempt_threshold_m_      = this->get_parameter("arm_teleop.preempt_threshold_m").as_double();
+  arrival_threshold_rad_    = this->get_parameter("arm_teleop.arrival_threshold_rad").as_double();
+  replan_threshold_rad_     = this->get_parameter("arm_teleop.replan_threshold_rad").as_double();
+  preempt_threshold_rad_    = this->get_parameter("arm_teleop.preempt_threshold_rad").as_double();
+  avoid_collisions_         = this->get_parameter("arm_teleop.avoid_collisions").as_bool();
+  preempt_settle_ms_        = this->get_parameter("arm_teleop.preempt_settle_ms").as_int();
+  use_topic_                = (this->get_parameter("arm_teleop.publish_mode").as_string() == "topic");
 
   if (!this->has_parameter("arm_teleop.arms"))
     this->declare_parameter("arm_teleop.arms",
@@ -98,6 +118,13 @@ MoveitArmController::MoveitArmController(const rclcpp::NodeOptions & options)
     arm_data->action_client =
       rclcpp_action::create_client<FollowJointTrajectory>(this, action_topic);
 
+    // Direct-publish path (publish_mode: topic). The joint_trajectory_controller
+    // subscribes to this command topic with reliable QoS; publishing a new
+    // trajectory replaces the active one mid-flight (no goal/cancel handshake).
+    arm_data->traj_pub =
+      this->create_publisher<trajectory_msgs::msg::JointTrajectory>(
+        cfg.trajectory_topic, rclcpp::QoS(10).reliable());
+
     arms_[arm_name] = std::move(arm_data);
 
     auto sub = this->create_subscription<std_msgs::msg::Bool>(
@@ -117,10 +144,13 @@ MoveitArmController::MoveitArmController(const rclcpp::NodeOptions & options)
   RCLCPP_INFO(get_logger(),
     "MoveitArmController: rate=%.1f Hz, max_step=%.3f m, eef_step=%.3f m, "
     "replan_thresh=%.3f m, preempt_thresh=%.3f m, vel_scale=%.2f, "
-    "lookahead=%d ms, ompl_timeout=%.2f s",
+    "lookahead=%d ms, ompl_timeout=%.2f s, avoid_collisions=%s, settle=%d ms, "
+    "publish_mode=%s",
     update_rate_hz_, max_cartesian_step_m_, eef_step_m_,
     replan_threshold_m_, preempt_threshold_m_, velocity_scaling_,
-    traj_lookahead_ms_, ompl_planning_timeout_s_);
+    traj_lookahead_ms_, ompl_planning_timeout_s_,
+    avoid_collisions_ ? "true" : "false", preempt_settle_ms_,
+    use_topic_ ? "topic" : "action");
 
   init_thread_ = std::thread([this]() { init_move_groups(); });
 }
@@ -284,8 +314,9 @@ void MoveitArmController::init_move_groups()
         arm_data->vel_limits   = std::move(vel_limits);
         arm_data->accel_limits = std::move(accel_limits);
         RCLCPP_INFO(get_logger(),
-          "Arm '%s': cached TOTG limits for %zu joints",
-          arm_name.c_str(), arm_data->vel_limits.size());
+          "Arm '%s': %zu active joints, cached vel_limits for %zu, accel_limits for %zu",
+          arm_name.c_str(), jmg->getActiveJointModels().size(),
+          arm_data->vel_limits.size(), arm_data->accel_limits.size());
       }
 
     } catch (const std::exception & e) {
@@ -343,6 +374,19 @@ void MoveitArmController::send_trajectory(
   ArmData & arm,
   const trajectory_msgs::msg::JointTrajectory & jtraj)
 {
+  // ── Topic mode: stream the trajectory on the controller's command topic ──
+  if (use_topic_) {
+    trajectory_msgs::msg::JointTrajectory out = jtraj;
+    out.header.stamp = rclcpp::Time(0, 0, this->get_clock()->get_clock_type());
+    arm.traj_pub->publish(out);
+    return;
+  }
+
+  // ── Action mode (fallback): FollowJointTrajectory goal with preemption ──
+  trajectory_msgs::msg::JointTrajectory action_jtraj = jtraj;
+  action_jtraj.header.stamp =
+    this->now() + rclcpp::Duration::from_nanoseconds(traj_lookahead_ms_ * 1'000'000LL);
+
   if (!arm.action_client->wait_for_action_server(std::chrono::milliseconds(0))) {
     RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
       "follow_joint_trajectory action server not available");
@@ -350,7 +394,7 @@ void MoveitArmController::send_trajectory(
   }
 
   FollowJointTrajectory::Goal goal;
-  goal.trajectory = jtraj;
+  goal.trajectory = action_jtraj;
 
   auto send_opts = rclcpp_action::Client<FollowJointTrajectory>::SendGoalOptions();
 
@@ -394,6 +438,44 @@ void MoveitArmController::send_trajectory(
 
 void MoveitArmController::cancel_trajectory(ArmData & arm)
 {
+  // The cancelled trajectory must never be used as the next cycle's streaming
+  // seed (may be called from the enable_callback thread, hence the mutex).
+  {
+    std::lock_guard<std::mutex> lk(arm.last_sent_mutex);
+    arm.last_sent_traj.reset();
+  }
+
+  // Topic mode: halt by commanding the controller to hold the current joint
+  // positions.
+  if (use_topic_) {
+    if (!arm.mgi) return;
+    std::vector<std::string> names;
+    std::vector<double> pos;
+    {
+      std::lock_guard<std::mutex> lk(planning_mutex_);
+      names = arm.mgi->getJoints();
+      pos   = arm.mgi->getCurrentJointValues();
+    }
+    if (names.empty() || pos.size() != names.size()) {
+      RCLCPP_WARN(get_logger(),
+        "topic-stop: skipped hold (joints=%zu, values=%zu) — arm holds last trajectory",
+        names.size(), pos.size());
+      return;  // never publish empty names
+    }
+    RCLCPP_INFO(get_logger(), "topic-stop: holding %zu joints at current position",
+      names.size());
+
+    trajectory_msgs::msg::JointTrajectory hold;
+    hold.header.stamp = rclcpp::Time(0, 0, this->get_clock()->get_clock_type());
+    hold.joint_names = std::move(names);
+    trajectory_msgs::msg::JointTrajectoryPoint pt;
+    pt.positions = std::move(pos);
+    pt.time_from_start = rclcpp::Duration::from_seconds(0.1);
+    hold.points.push_back(std::move(pt));
+    arm.traj_pub->publish(hold);
+    return;
+  }
+
   std::shared_ptr<GoalHandleFJT> gh;
   {
     std::lock_guard<std::mutex> lock(arm.goal_mutex);
@@ -416,14 +498,57 @@ void MoveitArmController::tracking_loop(const std::string & arm_name)
 
   RCLCPP_INFO(get_logger(), "Tracking loop started for arm '%s'", arm_name.c_str());
 
+  const std::string ee_link = mgi->getEndEffectorLink();
+  if (ee_link.empty()) {
+    RCLCPP_ERROR(get_logger(),
+      "Arm '%s': no end-effector link configured (check SRDF) — tracking loop exiting",
+      arm_name.c_str());
+    return;
+  }
+
+  const moveit::core::JointModelGroup * jmg =
+    mgi->getRobotModel()->getJointModelGroup(cfg.planning_group);
+  if (!jmg) {
+    RCLCPP_ERROR(get_logger(),
+      "Arm '%s': planning group '%s' not found in robot model — tracking loop exiting",
+      arm_name.c_str(), cfg.planning_group.c_str());
+    return;
+  }
+
+  // getGlobalLinkTransform() returns the pose in the robot model's root frame,
+  // while cfg.base_frame is the frame all TF lookups/targets are expressed in.
+  // On this robot they are expected to match (no TF re-transform is done below);
+  // this is a one-time tripwire, not a fix — if it ever fires, the pose math in
+  // this loop needs a proper frame transform.
+  {
+    std::string planning_frame = mgi->getPlanningFrame();
+    std::string base_frame     = cfg.base_frame;
+    if (!planning_frame.empty() && planning_frame.front() == '/') {
+      planning_frame = planning_frame.substr(1);
+    }
+    if (!base_frame.empty() && base_frame.front() == '/') {
+      base_frame = base_frame.substr(1);
+    }
+    if (planning_frame != base_frame) {
+      RCLCPP_WARN(get_logger(),
+        "Arm '%s': planning frame '%s' != base_frame '%s' — EE pose math in "
+        "tracking_loop assumes these match and does NOT re-transform",
+        arm_name.c_str(), mgi->getPlanningFrame().c_str(), cfg.base_frame.c_str());
+    }
+  }
+
   rclcpp::Rate rate(update_rate_hz_);
+  const double lookahead_s = traj_lookahead_ms_ / 1000.0;
 
   geometry_msgs::msg::Pose last_submitted_target;
   bool first_iter = true;
   last_heartbeat_sec_ = this->now().seconds();
 
-  const rclcpp::Duration lookahead =
-    rclcpp::Duration::from_nanoseconds(traj_lookahead_ms_ * 1'000'000LL);
+  // Invalidate any seed left over from a previous enable/disable cycle.
+  {
+    std::lock_guard<std::mutex> lk(arm.last_sent_mutex);
+    arm.last_sent_traj.reset();
+  }
 
   while (rclcpp::ok() && arm.enabled.load()) {
     // ── 1. Look up target TF ──────────────────────────────────────────────
@@ -445,44 +570,116 @@ void MoveitArmController::tracking_loop(const std::string & arm_name)
     target_pose.position.z  = tf_stamped.transform.translation.z;
     target_pose.orientation = tf_stamped.transform.rotation;
 
-    // ── 2. Get current EE pose ────────────────────────────────────────────
-    geometry_msgs::msg::Pose current_pose;
-    try {
-      current_pose = mgi->getCurrentPose().pose;
-    } catch (const std::exception & e) {
+    // ── 2. Get measured state, then build the SEED state ──────────────────
+    // The seed is what we plan the next hop FROM. If a previous streamed
+    // trajectory is still "in flight" (elapsed < its duration), sample it at
+    // now()+lookahead so the new hop chains forward from the commanded
+    // setpoint (with its velocity) instead of from the lagging measured state.
+    moveit::core::RobotStatePtr measured_state = mgi->getCurrentState();
+    if (!measured_state) {
       RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
-        "getCurrentPose failed for '%s': %s", arm_name.c_str(), e.what());
+        "Arm '%s': current state unavailable — skipping cycle", arm_name.c_str());
       rate.sleep();
       continue;
     }
 
-    // ── 3. Distance to target ─────────────────────────────────────────────
+    moveit::core::RobotStatePtr seed;
+    {
+      robot_trajectory::RobotTrajectoryPtr prev_traj;
+      rclcpp::Time prev_time;
+      {
+        std::lock_guard<std::mutex> lk(arm.last_sent_mutex);
+        prev_traj = arm.last_sent_traj;
+        prev_time = arm.last_sent_time;
+      }
+
+      if (prev_traj) {
+        double elapsed = (this->now() - prev_time).seconds() + lookahead_s;
+        if (elapsed < prev_traj->getDuration()) {
+          seed = std::make_shared<moveit::core::RobotState>(*measured_state);
+          prev_traj->getStateAtDurationFromStart(elapsed, seed);
+
+          // getStateAtDurationFromStart() uses RobotState::interpolate, which
+          // blends POSITIONS ONLY — the seed's velocities/accelerations are
+          // still the measured ones copied at construction. Blend them from
+          // the bracketing waypoints explicitly so the seed carries the
+          // in-flight COMMANDED velocity, which is what waypoint 0 hands to
+          // Ruckig below.
+          const std::size_t n = prev_traj->getWayPointCount();
+          std::size_t after = 0;
+          while (after < n &&
+                 prev_traj->getWayPointDurationFromStart(after) < elapsed) {
+            ++after;
+          }
+          if (after >= n) after = n - 1;
+          const std::size_t before = (after > 0) ? after - 1 : 0;
+          double blend = 0.0;
+          if (after > before) {
+            const double t_before = prev_traj->getWayPointDurationFromStart(before);
+            const double t_after  = prev_traj->getWayPointDurationFromStart(after);
+            if (t_after > t_before) {
+              blend = (elapsed - t_before) / (t_after - t_before);
+            }
+          }
+          std::vector<double> vel_before, vel_after, accel_before, accel_after;
+          prev_traj->getWayPoint(before).copyJointGroupVelocities(jmg, vel_before);
+          prev_traj->getWayPoint(after).copyJointGroupVelocities(jmg, vel_after);
+          prev_traj->getWayPoint(before).copyJointGroupAccelerations(jmg, accel_before);
+          prev_traj->getWayPoint(after).copyJointGroupAccelerations(jmg, accel_after);
+          for (std::size_t k = 0; k < vel_before.size() && k < vel_after.size(); ++k) {
+            vel_before[k] += (vel_after[k] - vel_before[k]) * blend;
+          }
+          for (std::size_t k = 0; k < accel_before.size() && k < accel_after.size(); ++k) {
+            accel_before[k] += (accel_after[k] - accel_before[k]) * blend;
+          }
+          seed->setJointGroupVelocities(jmg, vel_before);
+          seed->setJointGroupAccelerations(jmg, accel_before);
+        }
+      }
+      if (!seed) {
+        seed = std::make_shared<moveit::core::RobotState>(*measured_state);
+        seed->zeroVelocities();
+      }
+    }
+
+    const Eigen::Isometry3d & seed_ee_tf = seed->getGlobalLinkTransform(ee_link);
+    geometry_msgs::msg::Pose current_pose = tf2::toMsg(seed_ee_tf);
+
+    // ── 3. Distance to target (position AND orientation) ──────────────────
+    // Both must be within threshold to count as "arrived"; otherwise a pure
+    // reorientation (target rotates in place) would be ignored, since position
+    // alone would read as already-there.
     double dist = pose_distance(current_pose, target_pose);
-    if (dist < arrival_threshold_m_) {
+    double ang  = pose_angle(current_pose, target_pose);
+    if (dist < arrival_threshold_m_ && ang < arrival_threshold_rad_) {
       rate.sleep();
       continue;
     }
 
     // ── 4. Execution / preemption logic ───────────────────────────────────
     if (arm.executing.load()) {
-      double target_moved = pose_distance(target_pose, last_submitted_target);
-      if (target_moved < preempt_threshold_m_) {
+      double target_moved   = pose_distance(target_pose, last_submitted_target);
+      double target_rotated = pose_angle(target_pose, last_submitted_target);
+      if (target_moved < preempt_threshold_m_ && target_rotated < preempt_threshold_rad_) {
         rate.sleep();
         continue;
       }
       RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 500,
-        "Arm '%s': target moved %.3f m — preempting trajectory",
-        arm_name.c_str(), target_moved);
+        "Arm '%s': target moved %.3f m / %.1f deg — preempting trajectory",
+        arm_name.c_str(), target_moved, target_rotated * 180.0 / M_PI);
       cancel_trajectory(arm);
-      std::this_thread::sleep_for(std::chrono::milliseconds(50));
+      std::this_thread::sleep_for(std::chrono::milliseconds(preempt_settle_ms_));
     }
 
     // ── 5. Replan decision (when not executing) ───────────────────────────
     if (!first_iter && !arm.executing.load()) {
       auto now_sec = this->now().seconds();
       bool heartbeat = (now_sec - last_heartbeat_sec_ >= heartbeat_period_sec_);
-      double target_moved = pose_distance(target_pose, last_submitted_target);
-      if (!heartbeat && target_moved < replan_threshold_m_) {
+      double target_moved   = pose_distance(target_pose, last_submitted_target);
+      double target_rotated = pose_angle(target_pose, last_submitted_target);
+      if (!heartbeat &&
+          target_moved < replan_threshold_m_ &&
+          target_rotated < replan_threshold_rad_) {
         rate.sleep();
         continue;
       }
@@ -506,13 +703,15 @@ void MoveitArmController::tracking_loop(const std::string & arm_name)
     }
 
     // ── 7. Compute Cartesian path ─────────────────────────────────────────
-    mgi->setStartStateToCurrentState();
+    std::unique_lock<std::mutex> plan_lock(planning_mutex_);
+
+    mgi->setStartState(*seed);
     std::vector<geometry_msgs::msg::Pose> waypoints = {step_target};
     moveit_msgs::msg::RobotTrajectory traj_msg;
 
     auto t0 = std::chrono::steady_clock::now();
     double fraction = mgi->computeCartesianPath(
-      waypoints, eef_step_m_, traj_msg, true);
+      waypoints, eef_step_m_, traj_msg, avoid_collisions_);
     auto plan_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
       std::chrono::steady_clock::now() - t0).count();
 
@@ -545,6 +744,7 @@ void MoveitArmController::tracking_loop(const std::string & arm_name)
       auto ompl_result = mgi->plan(ompl_plan);
 
       if (ompl_result != moveit::core::MoveItErrorCode::SUCCESS) {
+        plan_lock.unlock();
         RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
           "OMPL plan failed for arm '%s' (code %d) — target xyz=[%.3f, %.3f, %.3f]",
           arm_name.c_str(), ompl_result.val,
@@ -555,8 +755,16 @@ void MoveitArmController::tracking_loop(const std::string & arm_name)
 
       trajectory_msgs::msg::JointTrajectory jtraj_ompl =
         ompl_plan.trajectory.joint_trajectory;
-      jtraj_ompl.header.stamp = this->now() + lookahead;
+      plan_lock.unlock();
       send_trajectory(arm, jtraj_ompl);
+
+      // OMPL joint-space sweeps aren't re-timed with the seed's velocity (no
+      // Ruckig pass below), so using one as the next cycle's streaming seed
+      // would misreport velocity continuity that doesn't exist — clear instead.
+      {
+        std::lock_guard<std::mutex> lk(arm.last_sent_mutex);
+        arm.last_sent_traj.reset();
+      }
 
       last_submitted_target = step_target;
       first_iter = false;
@@ -567,28 +775,80 @@ void MoveitArmController::tracking_loop(const std::string & arm_name)
     // ── 8. Time-parameterise ──────────────────────────────────────────────
     auto robot_traj = std::make_shared<robot_trajectory::RobotTrajectory>(
       mgi->getRobotModel(), cfg.planning_group);
-    robot_traj->setRobotTrajectoryMsg(*mgi->getCurrentState(), traj_msg);
+    robot_traj->setRobotTrajectoryMsg(*seed, traj_msg);
 
-    trajectory_processing::TimeOptimalTrajectoryGeneration totg;
-    bool totg_ok = false;
-    if (!arm.vel_limits.empty() && !arm.accel_limits.empty()) {
-      totg_ok = totg.computeTimeStamps(*robot_traj, arm.vel_limits, arm.accel_limits);
-    } else {
-      totg_ok = totg.computeTimeStamps(*robot_traj, velocity_scaling_, acceleration_scaling_);
+    constexpr double kMinWaypointSeparation = 0.01;  // rad (L1 over the group)
+    {
+      auto deduped = std::make_shared<robot_trajectory::RobotTrajectory>(
+        mgi->getRobotModel(), cfg.planning_group);
+      for (size_t i = 0; i < robot_traj->getWayPointCount(); ++i) {
+        const moveit::core::RobotState & wp = robot_traj->getWayPoint(i);
+        if (deduped->getWayPointCount() == 0 ||
+            deduped->getLastWayPoint().distance(wp, jmg) > kMinWaypointSeparation) {
+          deduped->addSuffixWayPoint(wp, 0.0);
+        }
+      }
+      if (deduped->getWayPointCount() < 2) {
+        plan_lock.unlock();
+        RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 1000,
+          "Arm '%s': degenerate trajectory (%zu distinct waypoints) — skipping",
+          arm_name.c_str(), deduped->getWayPointCount());
+        rate.sleep();
+        continue;
+      }
+      robot_traj = deduped;
     }
 
+    // Use the scaling-factor overload velocity/acceleration limit vectors
+    trajectory_processing::TimeOptimalTrajectoryGeneration totg;
+    bool totg_ok =
+      totg.computeTimeStamps(*robot_traj, velocity_scaling_, acceleration_scaling_);
+
     if (!totg_ok) {
+      plan_lock.unlock();
       RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000,
         "TOTG failed for arm '%s'", arm_name.c_str());
       rate.sleep();
       continue;
     }
-    robot_traj->getRobotTrajectoryMsg(traj_msg);
 
-    // ── 9. Send via action client ─────────────────────────────────────────
+    // ── 8b. Velocity-continuous retiming ──────────────────────────────────
+    // TOTG always starts a trajectory from rest. Overwrite waypoint 0's
+    // velocity/acceleration with the seed's (the state we actually planned
+    // from, which may itself carry non-zero velocity sampled from the
+    // in-flight previous trajectory), then re-smooth with Ruckig — Ruckig
+    // reads its initial kinematic state from waypoint 0, so the trajectory it
+    // hands back starts at the arm's actual commanded velocity instead of
+    // zero, eliminating the stop-start sawtooth between streamed hops.
+    {
+      moveit::core::RobotState & wp0 = *robot_traj->getFirstWayPointPtr();
+      std::vector<double> seed_vel, seed_accel;
+      seed->copyJointGroupVelocities(jmg, seed_vel);
+      seed->copyJointGroupAccelerations(jmg, seed_accel);
+      wp0.setJointGroupVelocities(jmg, seed_vel);
+      wp0.setJointGroupAccelerations(jmg, seed_accel);
+    }
+
+    bool smoothed = trajectory_processing::RuckigSmoothing::applySmoothing(
+      *robot_traj, velocity_scaling_, acceleration_scaling_);
+    if (!smoothed) {
+      RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000,
+        "Arm '%s': Ruckig smoothing failed — falling back to TOTG timing "
+        "(trajectory will restart at zero velocity)", arm_name.c_str());
+    }
+
+    robot_traj->getRobotTrajectoryMsg(traj_msg);
+    plan_lock.unlock();
+
+    // ── 9. Send (topic publish or action goal, per publish_mode) ──────────
     trajectory_msgs::msg::JointTrajectory jtraj = traj_msg.joint_trajectory;
-    jtraj.header.stamp = this->now() + lookahead;
     send_trajectory(arm, jtraj);
+
+    {
+      std::lock_guard<std::mutex> lk(arm.last_sent_mutex);
+      arm.last_sent_traj = robot_traj;
+      arm.last_sent_time = this->now();
+    }
 
     last_submitted_target = step_target;
     first_iter = false;
@@ -614,6 +874,19 @@ double MoveitArmController::pose_distance(
   double dy = a.position.y - b.position.y;
   double dz = a.position.z - b.position.z;
   return std::sqrt(dx * dx + dy * dy + dz * dz);
+}
+
+double MoveitArmController::pose_angle(
+  const geometry_msgs::msg::Pose & a,
+  const geometry_msgs::msg::Pose & b)
+{
+  // Angle [rad] between the two orientations: 2*acos(|<qa, qb>|).
+  double dot = a.orientation.x * b.orientation.x +
+               a.orientation.y * b.orientation.y +
+               a.orientation.z * b.orientation.z +
+               a.orientation.w * b.orientation.w;
+  dot = std::min(1.0, std::max(-1.0, std::abs(dot)));
+  return 2.0 * std::acos(dot);
 }
 
 }  // namespace sobits_teleop

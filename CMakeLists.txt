@@ -22,12 +22,14 @@ find_package(geometry_msgs REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(tf2_msgs REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
+find_package(tf2_eigen REQUIRED)
 find_package(sobits_interfaces REQUIRED)
 find_package(urdf REQUIRED)
 find_package(control_msgs REQUIRED)
 find_package(moveit_ros_planning_interface REQUIRED)
 find_package(moveit_core REQUIRED)
 find_package(moveit_msgs REQUIRED)
+find_package(std_srvs REQUIRED)
 
 # uncomment the following section in order to fill in
 # further dependencies manually.
@@ -69,6 +71,7 @@ ament_target_dependencies(
   geometry_msgs
   tf2_ros
   tf2_geometry_msgs
+  tf2_eigen
   control_msgs
   moveit_ros_planning_interface
   moveit_core
@@ -77,6 +80,23 @@ ament_target_dependencies(
 rclcpp_components_register_node(moveit_arm_controller_components
   PLUGIN "sobits_teleop::MoveitArmController"
   EXECUTABLE moveit_arm_controller
+)
+
+add_library(servo_target_bridge_components SHARED src/servo_target_bridge.cpp)
+ament_target_dependencies(
+  servo_target_bridge_components
+  rclcpp
+  rclcpp_components
+  std_msgs
+  geometry_msgs
+  std_srvs
+  moveit_msgs
+  tf2_ros
+  tf2_geometry_msgs
+)
+rclcpp_components_register_node(servo_target_bridge_components
+  PLUGIN "sobits_teleop::ServoTargetBridge"
+  EXECUTABLE servo_target_bridge
 )
 
 add_library(arm_scale_calibrator_components SHARED src/arm_scale_calibrator.cpp)
@@ -97,6 +117,7 @@ rclcpp_components_register_node(arm_scale_calibrator_components
 install(TARGETS
   sobits_teleop_components
   moveit_arm_controller_components
+  servo_target_bridge_components
   arm_scale_calibrator_components
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
@@ -105,6 +126,7 @@ install(TARGETS
 install(TARGETS
   sobits_teleop
   moveit_arm_controller
+  servo_target_bridge
   arm_scale_calibrator
   DESTINATION lib/${PROJECT_NAME})
   
@@ -116,6 +138,11 @@ install(DIRECTORY
   config
   launch
   DESTINATION share/${PROJECT_NAME}
+)
+
+install(PROGRAMS
+  scripts/tracking_test.py
+  DESTINATION lib/${PROJECT_NAME}
 )
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)

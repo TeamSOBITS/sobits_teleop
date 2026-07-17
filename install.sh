@@ -35,7 +35,10 @@ sudo apt-get install -y \
     ros-$ROS_DISTRO-joy-linux \
     ros-$ROS_DISTRO-rclcpp-components \
     ros-$ROS_DISTRO-control-msgs \
-    ros-$ROS_DISTRO-moveit
+    ros-$ROS_DISTRO-moveit \
+    ros-$ROS_DISTRO-moveit-servo \
+    ros-$ROS_DISTRO-std-srvs \
+    ros-$ROS_DISTRO-tf2-eigen
 
 # Download ds4drv for dualshock 4
 sudo pip install ds4drv --break-system-packages

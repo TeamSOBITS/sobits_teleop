@@ -44,8 +44,21 @@ SOBITSTeleop::SOBITSTeleop(const rclcpp::NodeOptions & options)
 
   load_parameters();
 
+  if (!this->has_parameter("teleop_rate_hz"))
+    this->declare_parameter("teleop_rate_hz", teleop_rate_hz);
+  this->get_parameter("teleop_rate_hz", teleop_rate_hz);
+  if (teleop_rate_hz <= 0.0) {
+    RCLCPP_WARN(get_logger(),
+      "teleop_rate_hz=%.2f is invalid — clamping to 20.0 Hz", teleop_rate_hz);
+    teleop_rate_hz = 20.0;
+  }
+  // Config speed values are radians per legacy 50 ms tick (the hardcoded timer
+  // period they were tuned against); scale per-tick jog deltas to the actual
+  // loop period so raising teleop_rate_hz does not speed up jogging.
+  jog_tick_scale_ = (1.0 / teleop_rate_hz) / 0.05;
+
   timer = create_wall_timer(
-    std::chrono::milliseconds(50),
+    std::chrono::duration<double>(1.0 / teleop_rate_hz),
     std::bind(&SOBITSTeleop::teleop, this));
   tf_broadcaster = std::make_shared<tf2_ros::TransformBroadcaster>(this);
 }
@@ -188,13 +201,13 @@ void SOBITSTeleop::load_parameters()
     RCLCPP_INFO(get_logger(), "Loaded control_velocity parameters from rosparam");
   }
   // Load quest parameters
-  if (this->has_parameter("quest_control.controller")) {
-    this->get_parameter("quest_control.controller", controller_types);
+  if (this->has_parameter("quest_control.controllers")) {
+    this->get_parameter("quest_control.controllers", controller_types);
     for (const auto& controller_type : controller_types) {
       if (controller_type == "head") {
         this->get_parameter("quest_control." + controller_type + ".vertical",             qhm.vertical);
         this->get_parameter("quest_control." + controller_type + ".horizontal",           qhm.horizontal);
-        this->get_parameter("quest_control." + controller_type + ".head_mode",            qhm.head_mode);
+        this->get_parameter("quest_control." + controller_type + ".head_enable_axis",            qhm.head_mode);
         this->get_parameter("quest_control." + controller_type + ".vertical_sign",        qhm.vertical_sign);
         this->get_parameter("quest_control." + controller_type + ".horizontal_sign",      qhm.horizontal_sign);
         this->get_parameter("quest_control." + controller_type + ".scale",                qhm.scale);
@@ -217,7 +230,7 @@ void SOBITSTeleop::load_parameters()
           this->get_parameter("quest_control." + controller_type + ".end_effector_frame_name", qcm.end_effector_frame_name);
           this->get_parameter("quest_control." + controller_type + ".target_frame_name",       qcm.target_frame_name);
           this->get_parameter("quest_control." + controller_type + ".scale",                   qcm.scale);
-          this->get_parameter("quest_control." + controller_type + ".arm_mode",                qcm.arm_mode);
+          this->get_parameter("quest_control." + controller_type + ".arm_enable_axis",                qcm.arm_mode);
           this->get_parameter("robot_topic_name.joint_trajectory_topic." + qcm.arm,            qcm.arm_joint_trajectory_topic);
           // Optional proximity thresholds — defaults are set in the struct
           if (this->has_parameter("quest_control." + controller_type + ".arm_proximity_threshold")) {
@@ -235,14 +248,16 @@ void SOBITSTeleop::load_parameters()
         if (this->has_parameter("quest_control." + controller_type + ".gripper.hand")) {
           this->get_parameter("quest_control." + controller_type + ".gripper.hand",            qcm.hand);
           this->get_parameter("quest_control." + controller_type + ".gripper.names",           qcm.names);
-          this->get_parameter("quest_control." + controller_type + ".gripper.gripper_mode",    qcm.gripper_mode);
+          this->get_parameter("quest_control." + controller_type + ".gripper.legacy_gripper_axis",    qcm.gripper_mode);
           this->get_parameter("quest_control." + controller_type + ".gripper.axis",            qcm.axis);
           this->get_parameter("quest_control." + controller_type + ".gripper.axis_sign",       qcm.axis_sign);
           this->get_parameter("quest_control." + controller_type + ".gripper.speed",           qcm.speed);
           this->get_parameter("robot_topic_name.joint_trajectory_topic." + qcm.hand,           qcm.hand_joint_trajectory_topic);
-          if (this->has_parameter("quest_control." + controller_type + ".gripper.type_axis")) {
-            this->get_parameter("quest_control." + controller_type + ".gripper.type_axis",     qcm.type_axis);
-            this->get_parameter("quest_control." + controller_type + ".gripper.type_joint",    qcm.type_joint);
+          if (this->has_parameter("quest_control." + controller_type + ".gripper.single_joint_axis")) {
+            this->get_parameter("quest_control." + controller_type + ".gripper.single_joint_axis",     qcm.type_axis);
+            this->get_parameter("quest_control." + controller_type + ".gripper.single_joint_name",    qcm.type_joint);
+            if (this->has_parameter("quest_control." + controller_type + ".gripper.single_joint_sign"))
+              this->get_parameter("quest_control." + controller_type + ".gripper.single_joint_sign",  qcm.type_sign);
           }
           if (this->has_parameter("quest_control." + controller_type + ".gripper.hand_pose_button")) {
             this->get_parameter("quest_control." + controller_type + ".gripper.hand_pose_button", qcm.hand_pose_button);
@@ -287,8 +302,14 @@ void SOBITSTeleop::load_parameters()
     // Create one enable-publisher per arm (planning group)
     for (const auto & [ctrl_name, qcm_ref] : quest_controller_mappings) {
       if (!qcm_ref.arm.empty() && arm_track_pubs_.find(qcm_ref.arm) == arm_track_pubs_.end()) {
+        // Reliable + transient_local (depth 1) so a late-starting subscriber
+        // (e.g. the Servo target bridge, which may come up after this node)
+        // still receives the current enable state instead of missing it.
+        // moveit_arm_controller's volatile subscriber remains compatible: QoS
+        // compatibility only requires publisher-durability >= subscriber-durability.
         arm_track_pubs_[qcm_ref.arm] = this->create_publisher<std_msgs::msg::Bool>(
-          qcm_ref.arm + "/moveit_track_enabled", rclcpp::QoS(1));
+          qcm_ref.arm + "/moveit_track_enabled",
+          rclcpp::QoS(1).reliable().transient_local());
         RCLCPP_INFO(get_logger(),
           "Created arm track publisher for '%s'", qcm_ref.arm.c_str());
       }
@@ -402,7 +423,8 @@ void SOBITSTeleop::teleop()
     float axis_val = latest_axes[m.axis];
     if (std::abs(axis_val) < 1e-3) continue;
 
-    double delta_pos = axis_val * m.axis_sign * (latest_buttons[m.fast_button] == 1 ? m.fast_speed : m.speed);
+    // Config speeds are radians per legacy 50 ms tick — scale to the actual loop rate.
+    double delta_pos = axis_val * m.axis_sign * (latest_buttons[m.fast_button] == 1 ? m.fast_speed : m.speed) * jog_tick_scale_;
     joint_pos[m.joint_name] += delta_pos;
     auto [actual_min, actual_max] = std::minmax({joint_limits[m.joint_name].lower, joint_limits[m.joint_name].upper});
     joint_pos[m.joint_name] = std::clamp(joint_pos[m.joint_name], actual_min, actual_max);
@@ -532,7 +554,7 @@ void SOBITSTeleop::teleop()
     }
   };
 
-  if (this->has_parameter("quest_control.controller")) {
+  if (this->has_parameter("quest_control.controllers")) {
     // Head / HMD — also used as body reference for arm target scaling
     bool head_tf_ok = false;
     if (base_odom_ok) {
@@ -905,7 +927,10 @@ void SOBITSTeleop::teleop()
             if (client->wait_for_action_server(std::chrono::milliseconds(200))) {
               auto goal = sobits_interfaces::action::MoveToPose::Goal();
               goal.pose_name = pose_name;
-              goal.time_allowance.sec = 5;
+              // joint_action_server uses time_allowance as the trajectory's
+              // time_from_start, so this IS the open/close motion duration —
+              // 5 s made the gripper crawl. 1 s is ample for the hand joints.
+              goal.time_allowance.sec = 1;
               auto opts = rclcpp_action::Client<sobits_interfaces::action::MoveToPose>::SendGoalOptions();
               opts.result_callback = [this, pose_name](const auto & result) {
                 if (result.code == rclcpp_action::ResultCode::SUCCEEDED)
@@ -936,9 +961,26 @@ void SOBITSTeleop::teleop()
           float open_frac  = std::clamp(-raw_stick * m.adaptive_close_sign, 0.0f, 1.0f);
           float deflection = std::max(close_frac, open_frac);
 
-          if (deflection >= 0.1f) {
+          // Vertical stick (single_joint_axis) rotates single_joint_name — the
+          // grip-configuration knuckle — while the adaptive trigger is held.
+          float vjog_stick = 0.0f;
+          if (m.type_axis >= 0 && m.type_axis < static_cast<int>(latest_axes.size()) &&
+              std::abs(latest_axes[m.type_axis]) > 0.5f) {
+            vjog_stick = latest_axes[m.type_axis];
+          }
+
+          if (deflection >= 0.1f || vjog_stick != 0.0f) {
             const bool closing = (close_frac >= open_frac);
-            float step = m.speed * deflection;
+            // Config speeds are radians per legacy 50 ms tick — scale to the actual loop rate.
+            float step = m.speed * deflection * static_cast<float>(jog_tick_scale_);
+            float vjog_step = m.speed * vjog_stick * static_cast<float>(m.type_sign) * static_cast<float>(jog_tick_scale_);
+
+            auto clamp_to_limits = [&](const std::string & jname, float value) -> float {
+              if (!joint_limits.count(jname)) return value;
+              return std::clamp(value,
+                static_cast<float>(std::min(joint_limits.at(jname).lower, joint_limits.at(jname).upper)),
+                static_cast<float>(std::max(joint_limits.at(jname).lower, joint_limits.at(jname).upper)));
+            };
 
             auto step_toward = [&](const std::string & jname, float target) -> float {
               if (joint_pos.find(jname) == joint_pos.end()) return target;
@@ -946,22 +988,28 @@ void SOBITSTeleop::teleop()
               float dir = (target > cur) ? 1.0f : -1.0f;
               float next = cur + dir * step;
               if ((dir > 0 && next > target) || (dir < 0 && next < target)) next = target;
-              if (joint_limits.count(jname)) {
-                next = std::clamp(next,
-                  static_cast<float>(std::min(joint_limits.at(jname).lower, joint_limits.at(jname).upper)),
-                  static_cast<float>(std::max(joint_limits.at(jname).lower, joint_limits.at(jname).upper)));
-              }
-              return next;
+              return clamp_to_limits(jname, next);
             };
 
             auto goal = sobits_interfaces::action::MoveJoint::Goal();
             for (const auto & ajt : m.adaptive_joints) {
               goal.target_joint_names.push_back(ajt.name);
+              float cur = joint_pos.count(ajt.name)
+                ? static_cast<float>(joint_pos.at(ajt.name)) : ajt.close_pos;
               if (ajt.fixed) {
-                goal.target_joint_rad.push_back(ajt.close_pos);
-              } else {
+                // Fixed joints HOLD their current position (the pose buttons set
+                // the base grip configuration) — except the grip-type knuckle,
+                // which the vertical stick rotates freely.
+                float tgt = cur;
+                if (ajt.name == m.type_joint && vjog_stick != 0.0f) {
+                  tgt = clamp_to_limits(ajt.name, cur + vjog_step);
+                }
+                goal.target_joint_rad.push_back(tgt);
+              } else if (deflection >= 0.1f) {
                 float tgt = closing ? ajt.close_pos : ajt.open_pos;
                 goal.target_joint_rad.push_back(step_toward(ajt.name, tgt));
+              } else {
+                goal.target_joint_rad.push_back(cur);  // vertical-only: hold curl
               }
             }
             goal.time_allowance.nanosec = static_cast<uint32_t>(100'000'000u);  // 100 ms
@@ -980,7 +1028,8 @@ void SOBITSTeleop::teleop()
 
           for (const auto & joint_name : m.names) {
             if (std::abs(latest_axes[m.axis]) > 0.2) {
-              target_rad = joint_pos[joint_name] + m.speed * latest_axes[m.axis] * m.axis_sign;
+              // Config speeds are radians per legacy 50 ms tick — scale to the actual loop rate.
+              target_rad = joint_pos[joint_name] + m.speed * latest_axes[m.axis] * m.axis_sign * jog_tick_scale_;
               target_rad = std::clamp(target_rad,
                 std::min(joint_limits[joint_name].lower, joint_limits[joint_name].upper),
                 std::max(joint_limits[joint_name].lower, joint_limits[joint_name].upper));
@@ -991,7 +1040,7 @@ void SOBITSTeleop::teleop()
 
           if (m.type_axis >= 0 && m.type_axis < static_cast<int>(latest_axes.size()) &&
               std::abs(latest_axes[m.type_axis]) > 0.8) {
-            target_rad = joint_pos[m.type_joint] + m.speed * std::copysign(1.0, latest_axes[m.type_axis]) * -m.axis_sign;
+            target_rad = joint_pos[m.type_joint] + m.speed * std::copysign(1.0, latest_axes[m.type_axis]) * -m.axis_sign * jog_tick_scale_;
             target_rad = std::clamp(target_rad,
               std::min(joint_limits[m.type_joint].lower, joint_limits[m.type_joint].upper),
               std::max(joint_limits[m.type_joint].lower, joint_limits[m.type_joint].upper));

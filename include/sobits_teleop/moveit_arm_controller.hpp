@@ -50,6 +50,7 @@ private:
     ArmTeleopConfig config;
     std::shared_ptr<moveit::planning_interface::MoveGroupInterface> mgi;
     rclcpp_action::Client<FollowJointTrajectory>::SharedPtr action_client;
+    rclcpp::Publisher<trajectory_msgs::msg::JointTrajectory>::SharedPtr traj_pub;
     std::shared_ptr<GoalHandleFJT> goal_handle;  // protected by goal_mutex
     std::mutex goal_mutex;
     std::atomic<bool> executing{false};
@@ -59,6 +60,16 @@ private:
 
     std::unordered_map<std::string, double> vel_limits;
     std::unordered_map<std::string, double> accel_limits;
+
+    // Streaming seed bookkeeping: the last trajectory handed to send_trajectory()
+    // and when it was sent, so the tracking loop can sample the commanded
+    // (not measured) state as the start state for the next hop. Written by the
+    // owning arm's tracking thread and cleared by cancel_trajectory() (which may
+    // run from the enable_callback thread) — protect the pair with last_sent_mutex,
+    // held only for the pointer swap/read-copy, never during planning.
+    robot_trajectory::RobotTrajectoryPtr last_sent_traj;
+    rclcpp::Time last_sent_time;
+    std::mutex last_sent_mutex;
 
     ArmData() = default;
     ArmData(const ArmData &) = delete;
@@ -80,6 +91,10 @@ private:
     const geometry_msgs::msg::Pose & a,
     const geometry_msgs::msg::Pose & b);
 
+  static double pose_angle(
+    const geometry_msgs::msg::Pose & a,
+    const geometry_msgs::msg::Pose & b);
+
   std::thread init_thread_;
 
   std::unordered_map<std::string, std::unique_ptr<ArmData>> arms_;
@@ -87,6 +102,13 @@ private:
 
   std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
   std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
+
+  // The two arms share a single MoveIt RobotModel (one model is loaded for the
+  // whole node). MoveGroupInterface / computeCartesianPath / OMPL plan() / TOTG
+  // are NOT thread-safe across that shared model, so the per-arm tracking
+  // threads must not run their planning sections concurrently. Held only around
+  // the compute section, released before the action-server send.
+  std::mutex planning_mutex_;
 
   double update_rate_hz_;
   double max_cartesian_step_m_;
@@ -99,6 +121,12 @@ private:
   int    traj_lookahead_ms_;
   double ompl_planning_timeout_s_;
   double preempt_threshold_m_;
+  double arrival_threshold_rad_;
+  double replan_threshold_rad_;
+  double preempt_threshold_rad_;
+  bool   avoid_collisions_;
+  int    preempt_settle_ms_;
+  bool   use_topic_;
 
   double last_heartbeat_sec_{0.0};
   static constexpr double heartbeat_period_sec_ = 2.0;

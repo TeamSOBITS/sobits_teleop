@@ -1,5 +1,8 @@
 /**:
   ros__parameters:
+    # Main teleop control-loop frequency [Hz]. Drives how often joystick input
+    # is sampled and joint/pose/cmd_vel commands are published.
+    teleop_rate_hz: 100.0
     robot_topic_name:
       joint_states_topic: joint_states
       joint_trajectory_topic:

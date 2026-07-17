@@ -22,7 +22,8 @@
         <li><a href="#configファイル作成">configファイル作成</a></li>
         <li><a href="#起動引数">起動引数</a></li>
         <li><a href="#テレオペノード実行">テレオペノード実行</a></li>
-        <li><a href="#moveitアームコントローラmeta-quest">MoveItアームコントローラ（Meta Quest）</a></li>
+        <li><a href="#アーム追跡バックエンドmeta-quest">アーム追跡バックエンド（Meta Quest）</a></li>
+        <li><a href="#新しいロボットへの移植">新しいロボットへの移植</a></li>
         <li><a href="#アームスケールキャリブレーションmeta-quest">アームスケールキャリブレーション（Meta Quest）</a></li>
         <li><a href="#シミュレーションモード">シミュレーションモード</a></li>
       </ul>
@@ -36,10 +37,15 @@
 <!-- 概要 -->
 ## 概要
 
-SOBITSのロボットをジョイスティック（PS4, PS5）、Meta Quest、またはキーボードで遠隔操作するためのパッケージ．\
+ロボットをジョイスティック（PS4, PS5）、Meta Quest、またはキーボードで遠隔操作するためのパッケージ．\
 Meta Questのセットアップについては[こちら](https://github.com/TeamSOBITS/meta_quest_teleoperation)を参照．
 
-対応ロボット：`sobit_home`、`sobit_pro`、`sobit_edu`、`sobit_mini`、`sobit_light`\
+本パッケージは**ロボット非依存**です．ロボット固有の設定はすべて1つのconfigディレクトリ
+（`config/{robot_name}/`）にまとまっており，起動時に`robot_name:=<名前>`で選択します．
+SOBITSロボット（`sobit_home`、`sobit_pro`、`sobit_edu`、`sobit_mini`、`sobit_light`）用の
+configは同梱済みで，新しいロボットへの移植はこのディレクトリを作成するだけです —
+コードやlaunchの変更は不要です（[新しいロボットへの移植](#新しいロボットへの移植)参照）．
+
 対応入力デバイス：`ps4`、`ps5`、`quest`、`keyboard`
 
 <p align="right">(<a href="#readme-top">上に戻る</a>)</p>
@@ -113,14 +119,21 @@ Meta Questのセットアップについては[こちら](https://github.com/Tea
 
 ### configファイル作成
 
-各ロボットのconfigは`config/{robot_name}/`以下に配置します：
+各ロボットのconfigは`config/{robot_name}/`以下に配置します．
+このディレクトリが本パッケージ内で唯一のロボット固有部分です：
 
 | ファイル | 役割 |
 |---|---|
 | `robot.yaml` | ジョイントコントローラとcmd_velのトピック名 |
 | `{device}.yaml` | 使用するデバイスのボタン・軸マッピング |
-| `moveit_arm_controller.yaml` | MoveItアーム追跡パラメータ（Quest使用時のみ） |
+| `arm_backend_plan.yaml` | Plan-and-replaceアーム追跡バックエンドのチューニング（Quest使用時のみ） |
+| `arm_backend_servo.yaml` | MoveIt Servoアーム追跡バックエンドのチューニング（Quest使用時のみ） |
 | `arm_scale_calibrator.yaml` | アームリーチキャリブレーションパラメータ（Quest使用時のみ） |
+
+**アームの構成情報**（アームの一覧・planning group・目標/エンドエフェクタのフレーム・
+コントローラトピック）は`{device}.yaml`（アームごとの`arm:`ブロック）と`robot.yaml`
+（trajectoryトピックのマップ）に一度だけ定義します．launcherが起動するバックエンドへ
+注入するため，2つの`arm_backend_*.yaml`はチューニングのみを持ち，ほぼロボット非依存です．
 
 <details>
 <summary>robot.yaml（例）</summary>
@@ -201,7 +214,8 @@ Meta Questのセットアップについては[こちら](https://github.com/Tea
 | `joystick_device` | `/dev/input/js0` | ジョイスティックデバイスパス（PS4/PS5のみ） |
 | `ros_ip` | `0.0.0.0` | Quest TCP接続用のPC IPアドレス |
 | `use_ds4drv` | `True` | `ds4drv`を同時起動する（PS4のみ） |
-| `use_moveit` | `false` | MoveItアームコントローラを起動する（Questのみ） |
+| `use_moveit` | `false` | アーム追跡バックエンドを起動する（Questのみ） |
+| `use_servo` | `false` | Plan-and-replaceの代わりにMoveIt Servoバックエンドを使用する（`use_moveit:=true`が必要） |
 | `use_sim_time` | `false` | シミュレーション時刻を使用する（Gazebo） |
 
 <p align="right">(<a href="#readme-top">上に戻る</a>)</p>
@@ -254,46 +268,104 @@ ros2 launch sobits_teleop sobits_teleop.launch.py \
 
 ---
 
-### MoveItアームコントローラ（Meta Quest）
+### アーム追跡バックエンド（Meta Quest）
 
-Quest使用時にアームのテレオペを行う場合、`moveit_arm_controller`ノードがMoveIt2のCartesian経路計画を用いてコントローラのTFポーズをリアルタイムで追従します．
+ハンドコントローラのTFポーズをリアルタイムで追従するバックエンドが2種類あります．
+どちらも同じインタフェース — `{side}_target_link` TFと
+`/{robot_name}/{arm_name}/moveit_track_enabled`（`std_msgs/Bool`，グリップボタンが
+自動でパブリッシュ）— を使うため，launch引数1つで切り替えられます．
 
-`use_moveit:=true`を指定することで有効になります：
+| バックエンド | 選択方法 | 追従方式 |
+|---|---|---|
+| Plan-and-replace（`moveit_arm_controller`） | `use_moveit:=true` | MoveIt2で短いCartesian計画をストリーミング；特異点付近はOMPLへフォールバック |
+| MoveIt Servo（`servo_node` + `servo_target_bridge`） | `use_moveit:=true use_servo:=true` | アームごとの`moveit_servo`インスタンスが50Hzで微分IK |
 
 ```sh
 ros2 launch sobits_teleop sobits_teleop.launch.py \
-  robot_name:=sobit_home \
+  robot_name:=<robot_name> \
   device:=quest \
   ros_ip:=<PC_IPアドレス> \
-  use_moveit:=true
+  use_moveit:=true \
+  use_servo:=true        # 省略するとPlan-and-replaceバックエンド
 ```
 
-設定ファイルは`config/{robot_name}/moveit_arm_controller.yaml`です：
+両launcherは`launch/include/`にあり，アーム構成を`quest.yaml`/`robot.yaml`から
+注入するため，バックエンドのconfigはチューニングのみです．
+
+#### Plan-and-replaceのチューニング — `config/{robot_name}/arm_backend_plan.yaml`
 
 ```yaml
 arm_teleop:
-  arms: [arm_left, arm_right]   # SRDFのplanning group名と一致させること
-
-  arm_left:
-    planning_group:    "arm_left"
-    target_frame:      "left_target_link"   # sobits_teleopがブロードキャストするTFフレーム
-    base_frame:        "base_footprint"
-    trajectory_topic:  "arm_left_position_controller/joint_trajectory"
-
-  update_rate_hz:          25.0   # 追従ループ周波数
-  max_cartesian_step_m:     0.5   # 1サイクルの最大ステップ
-  eef_step_m:              0.03   # Cartesian補間解像度
+  update_rate_hz:          50.0   # 追従ループ周波数
+  max_cartesian_step_m:    0.10   # 1サイクルの最大ステップ
+  eef_step_m:              0.02   # Cartesian補間解像度
   min_cartesian_fraction:   0.2   # この値を下回るとOMPLにフォールバック
-  replan_threshold_m:      0.02   # アイドル時に目標がこの距離動いたら再計画
-  preempt_threshold_m:     0.15   # 実行中の軌道をキャンセルして再計画する距離
+  replan_threshold_m:      0.03   # 目標がこの距離動いたら再計画
+  preempt_threshold_m:     0.30   # 実行中の軌道をキャンセルする距離
   arrival_threshold_m:     0.03   # EEがこの距離以内なら計画をスキップ
-  velocity_scaling:         0.6
-  acceleration_scaling:     0.6
-  traj_lookahead_ms:          40
-  ompl_planning_timeout_s:   0.5
+  velocity_scaling:        0.90
+  acceleration_scaling:    0.80
+  publish_mode: topic             # 軌道ストリーミング（テレオペに最適）
 ```
 
-各アームの追従は`/{robot_name}/{arm_name}/moveit_track_enabled`（`std_msgs/Bool`）のパブリッシュで有効・無効を切り替えます．Questコントローラのグリップボタンが`sobits_teleop`を通じて自動的にパブリッシュします．
+#### Servoのチューニング — `config/{robot_name}/arm_backend_servo.yaml`
+
+Servoスタック全ノードで1ファイル；共有の`/**:`セクションがチューニングを持ちます．
+移植時に確認すべきロボット依存の項目：
+
+```yaml
+moveit_servo:
+  scale: {linear: 1.5, rotational: 3.0}  # EE速度上限 [m/s, rad/s]
+  publish_joint_velocities: false  # アームのJTCが終端速度非ゼロの軌道を
+                                   # 拒否する場合はfalseのまま
+  lower_singularity_threshold: 50.0
+  hard_stop_singularity_threshold: 200.0  # 無効化しないこと（関節ワインドアップ）
+  joint_limit_margins: [0.02]
+
+servo_bridge:
+  pose_rate_hz: 100.0
+  max_reach: 1.10   # 各アームの肩を中心としたリーチクランプ球の半径 [m]
+                    # — 対象ロボットの肩→EEチェーン長の約90〜95%に設定
+```
+
+bridgeは目標を`max_reach`球にクランプするため，届かない位置の手をアームが追いかけて
+完全伸展の特異点に陥ることを防ぎます．アームごとのフレームやトピックはアーム名から
+規約で導出されます（`arm_right` → `right_target_link`、
+`hand_right_end_effector_link`、`arm_right_shoulder_tilt_link`など）．
+ロボットの命名が異なる場合は`servo_bridge.{arm_name}.*`のキーで上書きしてください．
+
+Servoバックエンドには`ros-$ROS_DISTRO-moveit-servo`（`install.sh`でインストール）と，
+`/{robot_name}`名前空間で動作中の`move_group`が必要です — launcherが起動時に
+ロボットモデルをそこから取得します．
+
+#### グリッパ操作（Quest，両バックエンド共通）
+
+| 入力 | 動作 |
+|---|---|
+| グリップボタン（`arm_enable_axis`） | 押している間アームを追従 |
+| ポーズボタン（`hand_pose_button`） | `hand_pose_open`/`hand_pose_close`をトグル |
+| トリガ + スティック左右 | アダプティブ開閉 |
+| トリガ + スティック上下 | 把持タイプ関節（`single_joint_name`）を回転 |
+
+<p align="right">(<a href="#readme-top">上に戻る</a>)</p>
+
+---
+
+### 新しいロボットへの移植
+
+1. `config/{robot_name}/`を作成し，`robot.yaml`（コントローラトピック）と使用する
+   デバイスごとの`{device}.yaml`を用意する．
+2. Questでアームテレオペを行う場合，`quest.yaml`にアームごとのブロック（`arm:`、
+   `target_frame_name:`、`end_effector_frame_name:`、グリッパのマッピング）を追加する —
+   これが両バックエンド共通のアーム構成の単一定義源になります．
+3. 既存ロボットの`arm_backend_plan.yaml`/`arm_backend_servo.yaml`をコピーし，
+   チューニングを調整する（`max_reach`をアーム長に合わせる；速度上限；しきい値）．
+4. `robot_name:={robot_name}`で起動する — それ以外の変更は不要です．
+
+前提条件：アームが`joint_trajectory_controller`のトピックインタフェースで駆動される
+こと（`robot.yaml`参照），アームごとに1つのplanning groupを持ち，SRDFの最後のリンクが
+エンドエフェクタであるMoveIt configがあること，`/{robot_name}`名前空間で`move_group`
+が動作していること．
 
 <p align="right">(<a href="#readme-top">上に戻る</a>)</p>
 
