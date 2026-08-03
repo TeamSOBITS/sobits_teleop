@@ -347,10 +347,10 @@ fetches the robot model from it at startup.
 
 | Input | Action |
 |---|---|
-| Grip button (`arm_enable_axis`) | Hold to track the arm |
-| Pose button (`hand_pose_button`) | Toggle `hand_pose_open` / `hand_pose_close` |
+| Grip button (`enable_axis`) | Hold to track the arm |
+| Pose button (`pose_button`) | Toggle `pose_open` / `pose_close` |
 | Trigger + stick left/right | Adaptive open/close curl |
-| Trigger + stick up/down | Rotate the grip-type joint (`single_joint_name`) |
+| Trigger + stick up/down | Rotate the grip-type joint (`single_joint.name`) |
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -360,8 +360,8 @@ fetches the robot model from it at startup.
 
 1. Create `config/{robot_name}/` with `robot.yaml` (controller topics) and one
    `{device}.yaml` per input device you use.
-2. For Quest arm teleop, add per-arm blocks to `quest.yaml` (`arm:`,
-   `target_frame_name:`, `end_effector_frame_name:`, gripper mapping) — this is
+2. For Quest arm teleop, add `arm_<side>`/`hand_<side>` groups to `quest.yaml`
+   (`target_frame_name:`, `end_effector_frame_name:`, gripper mapping) — this is
    the single source of arm identity for both backends.
 3. Copy `arm_backend_plan.yaml` / `arm_backend_servo.yaml` from an existing
    robot and adjust the tuning (`max_reach` to your arm length; speed caps;
@@ -383,7 +383,7 @@ The `scale` parameter in `quest.yaml` maps the human arm reach to the robot arm 
 
 #### When to run
 
-Run once per operator, or whenever the robot URDF arm reach changes. The result is pasted into `config/{robot_name}/quest.yaml` under `right.scale` and `left.scale`.
+Run once per operator, or whenever the robot URDF arm reach changes. The result is pasted into `config/{robot_name}/quest.yaml` under `arm_right.scale` and `arm_left.scale`.
 
 #### Configuration
 
@@ -447,9 +447,9 @@ Update config/sobit_home/quest.yaml:
 Paste the value into `quest.yaml`:
 
 ```yaml
-right:
+arm_right:
   scale: 1.4126
-left:
+arm_left:
   scale: 1.4126
 ```
 

@@ -342,10 +342,10 @@ Servoバックエンドには`ros-$ROS_DISTRO-moveit-servo`（`install.sh`でイ
 
 | 入力 | 動作 |
 |---|---|
-| グリップボタン（`arm_enable_axis`） | 押している間アームを追従 |
-| ポーズボタン（`hand_pose_button`） | `hand_pose_open`/`hand_pose_close`をトグル |
+| グリップボタン（`enable_axis`） | 押している間アームを追従 |
+| ポーズボタン（`pose_button`） | `pose_open`/`pose_close`をトグル |
 | トリガ + スティック左右 | アダプティブ開閉 |
-| トリガ + スティック上下 | 把持タイプ関節（`single_joint_name`）を回転 |
+| トリガ + スティック上下 | 把持タイプ関節（`single_joint.name`）を回転 |
 
 <p align="right">(<a href="#readme-top">上に戻る</a>)</p>
 
@@ -355,9 +355,9 @@ Servoバックエンドには`ros-$ROS_DISTRO-moveit-servo`（`install.sh`でイ
 
 1. `config/{robot_name}/`を作成し，`robot.yaml`（コントローラトピック）と使用する
    デバイスごとの`{device}.yaml`を用意する．
-2. Questでアームテレオペを行う場合，`quest.yaml`にアームごとのブロック（`arm:`、
-   `target_frame_name:`、`end_effector_frame_name:`、グリッパのマッピング）を追加する —
-   これが両バックエンド共通のアーム構成の単一定義源になります．
+2. Questでアームテレオペを行う場合，`quest.yaml`に`arm_<side>`/`hand_<side>`
+   グループ（`target_frame_name:`、`end_effector_frame_name:`、グリッパのマッピング）を
+   追加する — これが両バックエンド共通のアーム構成の単一定義源になります．
 3. 既存ロボットの`arm_backend_plan.yaml`/`arm_backend_servo.yaml`をコピーし，
    チューニングを調整する（`max_reach`をアーム長に合わせる；速度上限；しきい値）．
 4. `robot_name:={robot_name}`で起動する — それ以外の変更は不要です．
@@ -377,7 +377,7 @@ Servoバックエンドには`ros-$ROS_DISTRO-moveit-servo`（`install.sh`でイ
 
 #### 実行タイミング
 
-オペレータごとに一度実行する（ロボットURDFのアームリーチが変わった場合も再実行）．結果を`config/{robot_name}/quest.yaml`の`right.scale`と`left.scale`に設定する．
+オペレータごとに一度実行する（ロボットURDFのアームリーチが変わった場合も再実行）．結果を`config/{robot_name}/quest.yaml`の`arm_right.scale`と`arm_left.scale`に設定する．
 
 #### 設定ファイル
 
@@ -441,9 +441,9 @@ Update config/sobit_home/quest.yaml:
 表示された`scale`値を`quest.yaml`に設定する：
 
 ```yaml
-right:
+arm_right:
   scale: 1.4126
-left:
+arm_left:
   scale: 1.4126
 ```
 

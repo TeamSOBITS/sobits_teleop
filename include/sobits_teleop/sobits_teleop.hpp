@@ -91,36 +91,39 @@ struct AdaptiveJointTarget {
   bool fixed = false;  // true: always commanded at close_pos regardless of direction
 };
 
-struct QuestControllerMap {
-  std::string controller_group;
-  std::string controller_name;
-  std::string arm;
+// One per arm_* group (planning group tracked by an arm controller).
+struct QuestArmMap {
+  std::string group;        // planning group, e.g. "arm_left"
+  std::string controller;   // "left" or "right"
   std::string base_frame_name;
   std::string end_effector_frame_name;
   std::string target_frame_name;
-  std::string hand;
-  std::string head_joint_trajectory_topic;
   std::string arm_joint_trajectory_topic;
-  std::string hand_joint_trajectory_topic;
-  std::string type_joint;
-  std::vector<std::string> names;
-  int arm_mode;
-  float scale;
-  int gripper_mode = -1;        // legacy_gripper_axis: -1 = legacy continuous mode off
-  int hand_pose_button = -1;    // button to toggle open/close hand pose
-  std::string hand_pose_open;   // pose name sent when toggling open
-  std::string hand_pose_close;  // pose name sent when toggling close
-  std::string hand_pose_action; // action server name for hand pose (e.g. "move_left_hand_to_pose")
+  int enable_axis = -1;
+  float scale = 1.0f;
+  // Proximity thresholds: arm only latches when controller is within these
+  // distances of the robot end-effector. Set to <=0 to disable the check.
+  double proximity_threshold = 0.15;       // metres (position)
+  double proximity_angle_threshold = 0.52; // radians (~30 deg, orientation)
+};
+
+// One per hand_* group (gripper controlled by a hand controller).
+struct QuestHandMap {
+  std::string group;        // e.g. "hand_left"
+  std::string controller;   // "left" or "right"
+  int pose_button = -1;    // button to toggle open/close hand pose
+  std::string pose_open;   // pose name sent when toggling open
+  std::string pose_close;  // pose name sent when toggling close
+  std::string pose_action; // action server name for hand pose (e.g. "move_left_hand_to_pose")
+  float speed = 0.2f;
   int adaptive_trigger_axis = -1;   // trigger axis that enables adaptive grip
   int adaptive_stick_axis   = -1;   // stick axis that controls open/close
   int adaptive_close_sign   = 1;    // +1: positive stick = close, -1: negative stick = close
   std::vector<AdaptiveJointTarget> adaptive_joints;  // per-joint targets for adaptive grip
-  int axis = -1;                // legacy continuous mode stick axis (mode off by default)
-  int axis_sign = 1;
-  float speed = 0.2f;
-  int type_axis = -1;   // single_joint_axis: -1 = feature off
-  int type_sign = 1;    // single_joint_sign: +1/-1 flips the vertical-jog direction
-  // Optional functional range for the vjog joint (single_joint_min/max). The jog
+  std::string type_joint;
+  int type_axis = -1;   // single_joint.axis: -1 = feature off
+  int type_sign = 1;    // single_joint.axis_sign: +1/-1 flips the vertical-jog direction
+  // Optional functional range for the vjog joint (single_joint.min/max). The jog
   // is confined to this range instead of the full URDF limits — outside it the
   // switching-gear mechanism can jam. If the joint starts outside the range the
   // jog may still step back toward it, never further away.
@@ -150,10 +153,6 @@ struct QuestControllerMap {
   // engaged. The deadline is a backstop against a lost action result.
   bool hand_pose_in_flight = false;
   rclcpp::Time hand_pose_deadline{0, 0, RCL_ROS_TIME};
-  // Proximity thresholds: arm only latches when controller is within these
-  // distances of the robot end-effector. Set to <=0 to disable the check.
-  double arm_proximity_threshold = 0.15;       // metres (position)
-  double arm_proximity_angle_threshold = 0.52; // radians (~30 deg, orientation)
 };
 
 class SOBITSTeleop : public rclcpp::Node {
@@ -190,8 +189,8 @@ private:
 
   rclcpp_action::Client<sobits_interfaces::action::MoveToPose>::SharedPtr move_to_pose_client;
   rclcpp_action::Client<sobits_interfaces::action::MoveJoint>::SharedPtr move_joint_client;
-  // Per-controller hand pose action clients, keyed by controller name (e.g. "left", "right").
-  // Created at startup from hand_pose_action in each controller's config.
+  // Hand pose action clients, keyed by hand group name (e.g. "hand_left").
+  // Created at startup from pose_action in each hand group's config.
   std::map<std::string,
     rclcpp_action::Client<sobits_interfaces::action::MoveToPose>::SharedPtr>
     hand_pose_clients_;
@@ -219,7 +218,8 @@ private:
   std::vector<std::string> joint_groups;
   std::vector<std::string> joint_names;
   std::map<std::string, JointMap> joint_mappings;
-  std::map<std::string, QuestControllerMap> quest_controller_mappings;
+  std::map<std::string, QuestArmMap> quest_arm_mappings;
+  std::map<std::string, QuestHandMap> quest_hand_mappings;
   std::map<std::string, double> joint_pos;
   const double dt = 0.1;
   double teleop_rate_hz = 100.0;
@@ -235,7 +235,7 @@ private:
   std::vector<int> latest_buttons;
   std::vector<int> previous_buttons;
 
-  std::vector<std::string> controller_types;
+  std::vector<std::string> quest_groups;
 
   bool head_control_enabled = false;
   bool arm_control_enabled = false;
@@ -275,8 +275,8 @@ private:
   bool have_pub_prev_l_ = false;
 
   // Hand pose toggle state per controller: true = open, false = closed
-  std::map<std::string, bool>          hand_open_state_;    // keyed by controller name
-  std::map<std::string, rclcpp::Time>  hand_toggle_time_;   // debounce timestamp per controller
+  std::map<std::string, bool>          hand_open_state_;    // keyed by hand group name
+  std::map<std::string, rclcpp::Time>  hand_toggle_time_;   // debounce timestamp per hand group
 
   tf2::Transform last_tf;
   tf2::Transform current_tf;
@@ -285,7 +285,6 @@ private:
   double roll, pitch, yaw;
   double dz;
   double pan_target, tilt_target, body_lift_target;
-  double target_rad = 0.0;
 
   // Current controller poses in base_footprint (recomputed every tick)
   tf2::Transform current_tf_hmd;
@@ -315,7 +314,6 @@ private:
   JointMap jm;
   PoseMap pm;
   CmdVelMap cvm;
-  QuestControllerMap qcm;
   QuestHeadMap qhm;
 };
 
