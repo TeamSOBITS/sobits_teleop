@@ -56,9 +56,7 @@ SOBITSTeleop::SOBITSTeleop(const rclcpp::NodeOptions & options)
       "teleop_rate_hz=%.2f is out of sane bounds [1, 1000] — clamping", teleop_rate_hz);
     teleop_rate_hz = std::clamp(teleop_rate_hz, 1.0, 1000.0);
   }
-  // Config speed values are radians per legacy 50 ms tick (the hardcoded timer
-  // period they were tuned against); scale per-tick jog deltas to the actual
-  // loop period so raising teleop_rate_hz does not speed up jogging.
+  // Config speeds are radians per legacy 50 ms tick; scale so teleop_rate_hz doesn't change jog speed.
   jog_tick_scale_ = (1.0 / teleop_rate_hz) / 0.05;
 
   timer = create_wall_timer(
@@ -338,11 +336,8 @@ void SOBITSTeleop::load_parameters()
     // Create one enable-publisher per arm (planning group)
     for (const auto & [arm_name, am] : quest_arm_mappings) {
       if (arm_track_pubs_.find(am.group) == arm_track_pubs_.end()) {
-        // Reliable + transient_local (depth 1) so a late-starting subscriber
-        // (e.g. the Servo target bridge, which may come up after this node)
-        // still receives the current enable state instead of missing it.
-        // moveit_arm_controller's volatile subscriber remains compatible: QoS
-        // compatibility only requires publisher-durability >= subscriber-durability.
+        // transient_local so a late-starting subscriber (e.g. the Servo bridge)
+        // still receives the current enable state.
         arm_track_pubs_[am.group] = this->create_publisher<std_msgs::msg::Bool>(
           am.group + "/moveit_track_enabled",
           rclcpp::QoS(1).reliable().transient_local());
@@ -409,13 +404,8 @@ void SOBITSTeleop::joy_callback(const sensor_msgs::msg::Joy::SharedPtr msg)
 
 void SOBITSTeleop::robot_tf_callback(const tf2_msgs::msg::TFMessage::SharedPtr msg)
 {
-  // Re-stamp EVERY transform with the local wall clock on arrival. Sources
-  // stamp with their own clocks (robot: sim time ~300 s; Quest: its device
-  // clock, observed up to ~4 min AHEAD of ours), and tf2 always serves the
-  // newest stamp — so a skewed source's cached frames shadow live data long
-  // after it disconnects. Arrival-time stamps make "newest" mean "most recently
-  // received" and make the quest-frame staleness guard measure exactly whether
-  // the stream is alive.
+  // Re-stamp every transform with arrival wall time: sources use skewed clocks (sim time,
+  // Quest up to ~4 min ahead), so "newest" must mean "most recently received".
   const rclcpp::Time now_wall = wall_clock_->now();
 
   for (const auto & t : msg->transforms) {
@@ -594,9 +584,7 @@ void SOBITSTeleop::teleop()
     cmd_vel_was_enabled_ = cmd_vel_enabled;
   }
 
-  // Quest controllers
-  // Unity publishes Quest frames directly under base_footprint, so we look them
-  // up from base_footprint. No odom intermediate is needed.
+  // Quest controllers: Unity publishes Quest frames directly under base_footprint.
   bool base_odom_ok = true;  // always ready; kept as guard variable for structure
 
   // out      = T(base_footprint <- quest_frame)  — used for arm target computation
@@ -606,10 +594,8 @@ void SOBITSTeleop::teleop()
                                 tf2::Transform * out_base = nullptr) -> bool {
     try {
       auto ts = tf_buffer->lookupTransform("base_footprint", quest_frame, tf2::TimePointZero, tf2::Duration(0));
-      // Reject frames whose stamp is far from the current wall clock, in either
-      // direction. TimePointZero serves the newest cached transform forever, so
-      // without this a disconnected headset's last pose (or future-stamped data
-      // from a clock-skewed source) is indistinguishable from live input.
+      // Reject stamps far from the wall clock: TimePointZero serves cached transforms
+      // forever, so a disconnected headset's last pose would look like live input.
       const double age = std::abs(
         (wall_clock_->now() - rclcpp::Time(ts.header.stamp, RCL_SYSTEM_TIME)).seconds());
       if (age > kQuestTfMaxAgeSec) {
@@ -725,9 +711,7 @@ void SOBITSTeleop::teleop()
     } // if (head_tf_ok)
 
 
-    // Arm
-    // Helper: returns false if any component of the transform is NaN/Inf
-    // (Quest controllers broadcast NaN when not yet tracked)
+    // Arm. Helper: false if any transform component is NaN/Inf (Quest broadcasts NaN when untracked).
     auto transform_valid = [](const geometry_msgs::msg::Transform & t) {
       const auto & q = t.rotation;
       const auto & v = t.translation;
@@ -783,12 +767,9 @@ void SOBITSTeleop::teleop()
       }
     }
 
-    // Lost or stale controller input unlatches its arm. Keeping a latch alive
-    // on dead input freezes the target while the operator keeps moving, and the
-    // next valid frame would then teleport it. Re-gripping (or input returning
-    // while gripped) re-latches with a fresh zero-error capture, so recovery is
-    // jump-free by construction.
-    // Find the arm map for a given controller side ("right"/"left").
+    // Stale/lost input unlatches its arm — a frozen latch would teleport on the next
+    // valid frame; re-gripping re-latches with a fresh zero-error capture.
+    // Find the arm map for a controller side ("right"/"left").
     auto find_arm = [&](const std::string & side) -> QuestArmMap * {
       for (auto & [name, m] : quest_arm_mappings) {
         if (m.controller == side) return &m;
@@ -863,10 +844,8 @@ void SOBITSTeleop::teleop()
           T_target_r.setRotation(current_tf_r_odom.getRotation());
         }
 
-        // Per-arm latch: requires grip button. Proximity check is skipped when both
-        // thresholds are 0 (immediate latch). On latch the raw target and EE pose are
-        // captured; the published target is re-zeroed onto the EE so tracking starts
-        // without a jump.
+        // Per-arm latch on grip: proximity check skipped when thresholds are 0;
+        // the target is re-zeroed onto the EE so tracking starts jump-free.
         if (arm_control_enabled && !right_arm_latched && ee_r_ok) {
           bool prox_ok = true;
           if (m.proximity_threshold > 0.0 || m.proximity_angle_threshold > 0.0) {
@@ -902,13 +881,8 @@ void SOBITSTeleop::teleop()
           }
         }
 
-        // Re-zero onto the EE while latched: the published target tracks EE_latch
-        // composed with the CONTROLLER's motion delta since the latch instant.
-        // Deltas come from the controller pose alone — not the HMD-anchored raw
-        // mapping (scale*ctrl + (1-scale)*hmd), which leaks head sway into the
-        // target whenever scale != 1 and makes the arm drift with the controller
-        // at rest. A soft-start ramps the delta in after latch so the physical
-        // jerk of squeezing the grip does not become a sudden arm motion.
+        // While latched: target = EE_latch + controller-only delta (the HMD term would leak
+        // head sway); a soft-start ramp keeps the grip-squeeze jerk from moving the arm.
         tf2::Transform T_pub_r = T_target_r;
         if (right_arm_latched) {
           const double ramp = std::clamp(
@@ -922,9 +896,7 @@ void SOBITSTeleop::teleop()
           q_delta_r = tf2::Quaternion::getIdentity().slerp(q_delta_r.normalized(), ramp);
           T_pub_r.setRotation((q_delta_r * T_ee_latch_r.getRotation()).normalized());
 
-          // Safety net: rate-limit the published target's motion. Whatever goes
-          // wrong upstream (mixed TF sources, stale caches, math bugs), the
-          // target can only crawl away from the arm, never jump.
+          // Safety net: rate-limit target motion so upstream faults can only crawl, never jump.
           if (have_pub_prev_r_) {
             const double dt_s = 1.0 / teleop_rate_hz;
             const double max_lin = kMaxTargetLinVel * dt_s;
@@ -953,10 +925,8 @@ void SOBITSTeleop::teleop()
         target_msg_r.transform       = tf2::toMsg(T_pub_r);
         tf_broadcaster->sendTransform(target_msg_r);
 
-        // Enable tracking only AFTER the first re-zeroed target is on TF: if the
-        // enable were published inside the latch block (before sendTransform), a
-        // backend waking in between would plan toward the stale pre-latch raw
-        // target — exactly the startup jump the re-zeroing exists to prevent.
+        // Enable tracking only after the first re-zeroed target is on TF, else a
+        // waking backend would plan toward the stale pre-latch target.
         if (right_arm_just_latched) {
           right_arm_just_latched = false;
           const char * prox_note = (m.proximity_threshold <= 0.0 &&
@@ -998,10 +968,8 @@ void SOBITSTeleop::teleop()
           T_target_l.setRotation(current_tf_l_odom.getRotation());
         }
 
-        // Per-arm latch: requires grip button. Proximity check is skipped when both
-        // thresholds are 0 (immediate latch). On latch the raw target and EE pose are
-        // captured; the published target is re-zeroed onto the EE so tracking starts
-        // without a jump.
+        // Per-arm latch on grip: proximity check skipped when thresholds are 0;
+        // the target is re-zeroed onto the EE so tracking starts jump-free.
         if (arm_control_enabled && !left_arm_latched && ee_l_ok) {
           bool prox_ok = true;
           if (m.proximity_threshold > 0.0 || m.proximity_angle_threshold > 0.0) {
@@ -1128,9 +1096,7 @@ void SOBITSTeleop::teleop()
 
               auto goal = sobits_interfaces::action::MoveToPose::Goal();
               goal.pose_name = pose_name;
-              // joint_action_server uses time_allowance as the trajectory's
-              // time_from_start, so this IS the open/close motion duration —
-              // 5 s made the gripper crawl. 1 s is ample for the hand joints.
+              // time_allowance becomes the trajectory's time_from_start, i.e. the motion duration.
               goal.time_allowance.sec = 1;
               // Suppress this hand's adaptive goal stream until the pose motion
               // completes, so per-tick "hold" goals don't fight the trajectory.
@@ -1159,10 +1125,7 @@ void SOBITSTeleop::teleop()
         }
 
         // ── 2. Adaptive gripper control (trigger held + thumbstick) ──────────
-        // Configured via adaptive.trigger_axis / stick_axis / axis_sign / names in quest.yaml.
-        // adaptive_close_sign: +1 → positive stick = close, -1 → negative = close.
-        // A pose toggle that is still executing takes precedence over the
-        // adaptive stream for this hand (both drive the same hand controller).
+        // A pose toggle still executing takes precedence over the adaptive stream.
         if (m.hand_pose_in_flight && this->now() >= m.hand_pose_deadline) {
           m.hand_pose_in_flight = false;
         }
@@ -1177,12 +1140,8 @@ void SOBITSTeleop::teleop()
           float open_frac  = std::clamp(-raw_stick * m.adaptive_close_sign, 0.0f, 1.0f);
           float deflection = std::max(close_frac, open_frac);
 
-          // Vertical stick (single_joint.axis) rotates single_joint.name — the
-          // grip-configuration knuckle — while the adaptive trigger is held.
-          // Small deadzone only to reject stick noise; past it the deflection is
-          // rescaled so the step ramps up from zero instead of jumping straight to
-          // half speed. A large deadzone here makes the jog feel stepwise rather
-          // than continuous, and lets tremor near the threshold toggle it on/off.
+          // Vertical stick rotates the grip-type knuckle while the trigger is held.
+          // Small deadzone rejects noise; rescaled past it so the step ramps from zero.
           constexpr float kVjogDeadzone = 0.15f;
           float vjog_stick = 0.0f;
           if (m.type_axis >= 0 && m.type_axis < static_cast<int>(latest_axes.size())) {
@@ -1193,21 +1152,11 @@ void SOBITSTeleop::teleop()
             }
           }
 
-          // Endpoint-swing mode, active when a functional range is configured
-          // (single_joint.min/max): the grip-type knuckle works against a spring,
-          // and the current-capped servo cannot break its stiction with small
-          // incremental position errors — a distant target sustains full torque
-          // and demonstrably moves it. The knuckle is a binary 2f/3f switch in
-          // practice, so one stick flick = one full swing to the flicked
-          // endpoint; the stick must return to center to re-arm. Configs without
-          // a range keep the legacy incremental jog.
+          // Endpoint-swing mode (single_joint.min/max set): the servo can't break the gear
+          // spring with small errors, so one flick = one full swing; recenter stick to re-arm.
           const bool vjog_has_range = (m.type_min > -1e8f && m.type_max < 1e8f);
-          // The flick fires only on a DECISIVE, DOMINANTLY-vertical push. The
-          // open/close control shares the same physical stick (left/right), and
-          // with only the small jog deadzone as the trigger, a firm horizontal
-          // push with a slight vertical component fired the 2f/3f swing and
-          // changed the finger pose mid-grasp. Re-arm keeps the low deadzone,
-          // giving hysteresis between fire (0.6) and re-arm (0.15).
+          // Fire only on a decisive, dominantly-vertical push — the same stick's horizontal
+          // axis drives open/close and must not flip the 2f/3f pose mid-grasp.
           constexpr float kFlickThreshold = 0.6f;
           float vjog_h = 0.0f;
           if (m.adaptive_stick_axis >= 0 &&
@@ -1232,11 +1181,8 @@ void SOBITSTeleop::teleop()
             float step = m.speed * deflection * static_cast<float>(jog_tick_scale_);
             float vjog_step = m.speed * vjog_stick * static_cast<float>(m.type_sign) * static_cast<float>(jog_tick_scale_);
 
-            // A flick starts (or redirects) a persistent endpoint swing: every
-            // goal until arrival commands the knuckle to the endpoint, so the
-            // large sustained position error the gear spring demands persists
-            // across ordinary loop-rate goals — open/close rides in the same
-            // goals instead of being blocked behind one long swing goal.
+            // A flick starts a persistent swing: every goal re-commands the endpoint until
+            // arrival, so open/close rides in the same goals instead of blocking behind one.
             if (vjog_fire) {
               m.vjog_armed = false;
               m.vjog_swing_active = true;
@@ -1276,9 +1222,7 @@ void SOBITSTeleop::teleop()
                 ? static_cast<float>(joint_pos.at(ajt.name)) : ajt.close_pos;
               float tgt;
               if (ajt.fixed) {
-                // Fixed joints HOLD their current position (the pose buttons set
-                // the base grip configuration) — except the grip-type knuckle,
-                // which the vertical stick rotates freely.
+                // Fixed joints hold position — except the grip-type knuckle, driven by the stick.
                 tgt = cur;
                 if (ajt.name == m.type_joint) {
                   if (m.vjog_swing_active) {
@@ -1305,13 +1249,8 @@ void SOBITSTeleop::teleop()
             const double goal_sec = std::max(1.0 / teleop_rate_hz, max_delta / kMaxHandJointVel);
             goal.time_allowance = rclcpp::Duration::from_seconds(goal_sec);
 
-            // One jog goal in flight PER HAND. The server accepts every goal and
-            // runs it on its own detached thread without preempting the previous
-            // one, so flooding stacks up overlapping threads publishing stale
-            // targets — but a single global gate made the two hands block each
-            // other. The mapping storage is stable after startup, so capturing a
-            // pointer to the per-hand flag in the callbacks is safe.
-            // Deadline backstops a lost result so the flag can't stick true forever.
+            // One jog goal in flight per hand (server runs goals unpreempted on detached
+            // threads; a global gate made hands block each other). Deadline backstops a lost result.
             if (move_joint_client->action_server_is_ready() &&
                 (!m.jog_goal_in_flight || this->now() >= m.jog_goal_deadline)) {
               m.jog_goal_in_flight = true;

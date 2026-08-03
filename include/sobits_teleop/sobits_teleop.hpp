@@ -123,34 +123,21 @@ struct QuestHandMap {
   std::string type_joint;
   int type_axis = -1;   // single_joint.axis: -1 = feature off
   int type_sign = 1;    // single_joint.axis_sign: +1/-1 flips the vertical-jog direction
-  // Optional functional range for the vjog joint (single_joint.min/max). The jog
-  // is confined to this range instead of the full URDF limits — outside it the
-  // switching-gear mechanism can jam. If the joint starts outside the range the
-  // jog may still step back toward it, never further away.
+  // Functional range for the vjog joint (single_joint.min/max) — the
+  // switching-gear mechanism can jam outside it.
   float type_min = -1e9f;
   float type_max =  1e9f;
-  // Flick re-arm latch for the endpoint-swing jog mode (used when a functional
-  // range is configured): one swing per stick flick, re-armed at stick center.
+  // Endpoint-swing state: one swing per stick flick, re-armed at stick center;
+  // the endpoint is re-commanded every goal until arrival (beats the gear spring).
   bool vjog_armed = true;
-  // Persistent swing: after a flick, every adaptive goal keeps commanding the
-  // knuckle toward the endpoint until it arrives (or the deadline expires).
-  // The sustained large position error is what beats the gear spring; carrying
-  // it inside ordinary loop-rate goals lets open/close run concurrently
-  // instead of being blocked behind one long-running swing goal.
   bool vjog_swing_active = false;
   float vjog_swing_target = 0.0f;
   rclcpp::Time vjog_swing_deadline{0, 0, RCL_ROS_TIME};
-  // Per-hand goal gate: one adaptive MoveJoint goal in flight per hand, so the
-  // two hands never block each other (the server runs goals on detached
-  // threads without preemption; see the send-site comment).
+  // One adaptive MoveJoint goal in flight per hand; deadline backstops a lost result.
   bool jog_goal_in_flight = false;
-  // Deadline backstop for a lost MoveJoint result (e.g. server restart).
   rclcpp::Time jog_goal_deadline{0, 0, RCL_ROS_TIME};
-  // While a full-hand pose action (open/close toggle) runs, this hand's
-  // adaptive goal stream pauses — otherwise the loop-rate adaptive goals
-  // command "hold current" every tick and override the pose trajectory on the
-  // same controller, making the button appear dead whenever adaptive mode is
-  // engaged. The deadline is a backstop against a lost action result.
+  // Adaptive stream pauses while a pose action runs, else per-tick "hold" goals
+  // override the pose trajectory; deadline backstops a lost result.
   bool hand_pose_in_flight = false;
   rclcpp::Time hand_pose_deadline{0, 0, RCL_ROS_TIME};
 };
@@ -223,9 +210,7 @@ private:
   std::map<std::string, double> joint_pos;
   const double dt = 0.1;
   double teleop_rate_hz = 100.0;
-  // Config speed values are defined as position delta per legacy 50 ms tick
-  // (the timer period when they were tuned). This scales those per-tick deltas
-  // to the actual loop period so jog speed is independent of teleop_rate_hz.
+  // Scales legacy per-50ms-tick config speeds to the actual loop period.
   double jog_tick_scale_ = 1.0;
 
   std::vector<std::string> pose_list;
@@ -249,11 +234,8 @@ private:
   bool right_arm_just_latched = false;
   bool left_arm_just_latched  = false;
 
-  // Clutch re-zeroing: controller pose and EE pose captured at the latch
-  // instant; while latched the published target is EE_latch composed with the
-  // CONTROLLER's delta since latch (scaled), so tracking starts with zero error.
-  // Deltas deliberately exclude the HMD: the raw mapping scale*ctrl+(1-scale)*hmd
-  // leaks operator head sway into the target whenever scale != 1.
+  // Clutch re-zeroing: poses captured at latch; target = EE_latch + controller-only
+  // delta (HMD excluded — it leaks head sway), so tracking starts with zero error.
   tf2::Transform T_ctrl_latch_r, T_ee_latch_r;
   tf2::Transform T_ctrl_latch_l, T_ee_latch_l;
   // Latch timestamps for the soft-start ramp (grip-squeeze jerk suppression).
@@ -261,10 +243,8 @@ private:
   rclcpp::Time latch_time_l_{0, 0, RCL_ROS_TIME};
   // Seconds over which the post-latch delta ramps from 0 to full authority.
   static constexpr double kLatchSoftStartSec = 0.5;
-  // Quest TF frames whose stamp differs from the wall clock by more than this
-  // are treated as absent. Serving "latest" from the buffer regardless of age
-  // let a stale cache (headset disconnect) or future-stamped data (clock-skewed
-  // source) shadow live input — the cause of a 12.6 cm uncommanded lunge.
+  // Quest frames with stamps further than this from the wall clock are treated as
+  // absent (a stale cache once caused a 12.6 cm uncommanded lunge).
   static constexpr double kQuestTfMaxAgeSec = 0.5;
   // Safety net: hard cap on how fast the published arm target may move, applied
   // after all other target math. Bounds the damage of any upstream fault.

@@ -4,109 +4,57 @@
       # Plan-and-replace arm-tracking backend — tuning only. Arm identity comes
       # from quest.yaml/robot.yaml via arm_backend_plan.launch.py.
 
-      # Tracking loop frequency [Hz].
-      # 50 Hz gives ~20ms cycle budget — comfortably met now that planning is ~2ms
-      # (avoid_collisions=false). Higher rate = more frequent goal updates = lower lag.
-      # Previously capped at 30 Hz because each replan restarted the streamed
-      # trajectory from zero velocity (TOTG-only), so replanning faster than the
-      # arm could accelerate just caused a crawl. The loop now plans from the
-      # commanded (not measured) state and re-times with Ruckig so the new
-      # trajectory starts at the arm's actual commanded velocity — it is
-      # velocity-continuous across replans, so higher replan rates no longer
-      # cause that crawl behavior.
+      # Tracking loop frequency [Hz]. Replans are velocity-continuous (Ruckig),
+      # so a high rate no longer causes the old restart-from-rest crawl.
       update_rate_hz: 50.0
 
-      # Maximum Cartesian step attempted per control cycle [m].
-      # In topic mode each cycle streams a trajectory aimed this far toward the
-      # target. Each streamed trajectory is REPLACED by the next one ~every replan
-      # cycle, so it must be SHORT enough to mostly execute within that cycle —
-      # otherwise the controller only runs a small fraction of each long trajectory
-      # and the arm crawls while streaming, then lurches to the last goal when
-      # streaming stops on release. Keep this small (a quick hop that completes per
-      # cycle) for steady real-time following.
+      # Max Cartesian step per cycle [m]. Keep short enough to mostly execute
+      # within one replan cycle, else the arm crawls then lurches on release.
       max_cartesian_step_m: 0.10
 
-      # Cartesian path interpolation resolution [m].
-      # 2 cm keeps each short hop to just a few waypoints so planning is fast and
-      # the streaming rate stays high (higher rate = each trajectory replaced sooner
-      # but also each completes a larger fraction per cycle). Collision checking is
-      # off so IK cost is low either way.
+      # Cartesian interpolation resolution [m]; keeps each hop to a few waypoints.
       eef_step_m: 0.02
 
-      # Minimum fraction of the Cartesian path that must be computable before
-      # the trajectory is submitted.  Lower = arm keeps moving even near limits.
+      # Min computable fraction of the Cartesian path before submitting.
+      # Lower = arm keeps moving even near limits.
       min_cartesian_fraction: 0.2
 
-      # Replan whenever the target moves more than this from the last submitted goal [m].
-      # KEY anti-crawl knob in topic mode: each replan replaces the trajectory and
-      # TOTG restarts it from rest, so replanning too often (tiny threshold) caps the
-      # arm's speed — it never reaches cruise before being reset. 3 cm lets each
-      # streamed trajectory build up speed and cover ground before the next replaces
-      # it, so the arm actually follows instead of crawling. Lower for tighter
-      # position granularity at the cost of more re-start churn (slower following).
+      # Replan when the target moves this far from the last goal [m].
+      # Key anti-crawl knob: too small and the arm never reaches cruise speed.
       replan_threshold_m: 0.03
 
-      # Cancel a currently-executing trajectory and replan when the target has moved
-      # more than this from the last submitted goal [m].
-      # Larger than replan_threshold_m: interrupting a running trajectory causes an
-      # abrupt stop. Kept WELL ABOVE max_cartesian_step_m on purpose: with small
-      # streamed hops, a low preempt threshold cancels every hop before it finishes
-      # (the arm just churns in place and crawls). At 0.30 m, hops complete and chain
-      # smoothly; preemption only kicks in if the target teleports far (>30 cm).
+      # Cancel a running trajectory and replan past this distance [m]. Kept well
+      # above max_cartesian_step_m so hops complete; only fires on target teleports.
       preempt_threshold_m: 0.30
 
       # Do not replan when EE is already within this distance of target [m].
       arrival_threshold_m: 0.03
 
-      # Angular counterparts of the thresholds above [rad]. The tracker follows
-      # target ORIENTATION as well as position: arrival, replan and preempt each
-      # trigger if EITHER the position OR the orientation differs by more than its
-      # threshold. Without these a pure rotation of the target (hand twisting in
-      # place) would be ignored, since position alone reads as "already arrived".
+      # Angular counterparts [rad]: arrival/replan/preempt fire on position OR
+      # orientation, else a pure rotation of the target would be ignored.
       arrival_threshold_rad: 0.05   # ~3 deg
       replan_threshold_rad:  0.05   # ~3 deg
       preempt_threshold_rad: 0.26   # ~15 deg
 
-      # Velocity and acceleration scaling factors [0, 1] passed to TOTG.
-      # For streaming, each short hop must execute quickly within one replan cycle,
-      # so acceleration must be HIGH (low accel = the hop never finishes before the
-      # next replaces it = the arm crawls). Velocity sets chase speed. 0.80 / 0.70
-      # gives responsive following; lower acceleration if the physical arm is jerky.
+      # TOTG scaling [0, 1]. Acceleration must be high or hops never finish
+      # before being replaced (crawl); velocity sets chase speed.
       velocity_scaling: 0.90
       acceleration_scaling: 0.80
 
-      # Lookahead used when sampling the previously-sent trajectory to build the
-      # seed state for the next replan (elapsed = time-since-send + lookahead).
-      # This budgets for planning/transport latency so the seed is taken slightly
-      # ahead of "now", keeping the new hop velocity-continuous with what the
-      # controller will actually be executing when the new trajectory arrives.
-      # In action mode it is ALSO added to the trajectory header stamp before
-      # publishing, giving the controller a head-start to pre-buffer the goal.
+      # Seed-sampling lookahead [ms]: budgets planning/transport latency so each
+      # hop stays velocity-continuous. Action mode also stamps goals ahead by this.
       traj_lookahead_ms: 40
 
-      # OMPL planning timeout [s] used in the Cartesian fallback path.
-      # When computeCartesianPath fraction < min_cartesian_fraction, we fall back
-      # to OMPL joint-space planning to cross singularities/out-of-workspace regions.
+      # OMPL timeout [s] for the joint-space fallback (crossing singularities).
       ompl_planning_timeout_s: 0.5
 
-      # Collision-check the Cartesian path against the planning scene.
-      # false makes computeCartesianPath ~30x faster (pure IK interpolation, no
-      # scene checks) — essential for responsive teleop. Safe here because teleop
-      # is operator-driven; the arm will NOT auto-avoid obstacles or self-collision.
-      # Set true to restore collision avoidance at the cost of ~100 ms/plan latency.
+      # false = ~30x faster planning (pure IK, no scene checks) — the arm will
+      # NOT auto-avoid obstacles or self-collision; operator-driven teleop only.
       avoid_collisions: false
 
-      # Settling delay after cancelling a running trajectory before sending the
-      # next one [ms]. Kept small so a moving target is followed without stalling
-      # a whole control cycle on every preemption. (Action mode only.)
+      # Settling delay after a cancel before the next goal [ms]. (Action mode only.)
       preempt_settle_ms: 10
 
-      # How planned trajectories are sent to the joint_trajectory_controller:
-      #   topic  - publish directly on <trajectory_topic>. Each message replaces
-      #            the active trajectory mid-flight (no goal handshake, no cancel),
-      #            so the arm streams toward the latest target. Best for teleop.
-      #   action - FollowJointTrajectory goal with cancel-based preemption
-      #            (preempt_threshold_m / preempt_settle_ms / traj_lookahead_ms
-      #            apply). Fallback; gives execution feedback but stalls under
-      #            continuous fast target updates.
+      # topic  = publish trajectories directly; each replaces the last mid-flight (best for teleop).
+      # action = FollowJointTrajectory with cancel-based preemption; stalls under fast updates.
       publish_mode: topic

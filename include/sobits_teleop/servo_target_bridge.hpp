@@ -30,36 +30,18 @@ struct ServoBridgeArmConfig {
   std::string base_frame;
   std::string servo_node;
   std::string enable_topic;
-  // end_effector_frame is the robot link that should FOLLOW the target
-  // (matches quest.yaml's end_effector_frame_name). servo_ee_frame is the link
-  // servo actually drives (the planning group's last SRDF link); EMPTY means
-  // "servo drives end_effector_frame itself" — no correction. When they
-  // differ, the bridge re-expresses the target for the servo frame each tick:
-  //   T(base->cmd) = T(base->target) * T(end_effector_frame->servo_ee_frame)
+  // end_effector_frame follows the target; servo_ee_frame is what servo drives
+  // (empty = same link). When they differ the target is re-expressed each tick.
   std::string end_effector_frame;
   std::string servo_ee_frame;
-  // Reach clamp: targets are clamped to a sphere of radius max_reach around
-  // reach_origin_frame before being sent to servo. Chasing an out-of-reach hand
-  // target otherwise drives the arm to full extension — a true elbow
-  // singularity where servo 2.12 latches an emergency stop that only an
-  // external joint-space move can clear. max_reach <= 0 disables the clamp.
+  // Reach clamp: targets clamped to a max_reach sphere around reach_origin_frame —
+  // full extension latches a servo e-stop. <= 0 disables.
   std::string reach_origin_frame;
   double max_reach{0.0};
 };
 
-// ---------------------------------------------------------------------------
-// ServoTargetBridge
-//
-// Streams geometry_msgs/PoseStamped targets (read from TF) into a
-// moveit_servo::ServoNode's ~/pose_target_cmds topic, one instance per arm,
-// gated by the sobits_teleop-published */moveit_track_enabled Bool topic.
-//
-// This node must NEVER block its executor: all service calls (switch_command_type,
-// pause_servo) are async with response callbacks, and the shared timer only does
-// a TF lookup + publish per enabled arm (finding 10 in the old moveit_arm_controller
-// design was a blocking-call stall — this node is deliberately structured to avoid
-// that class of bug).
-// ---------------------------------------------------------------------------
+// ServoTargetBridge: streams TF targets into servo's pose_target_cmds per arm,
+// gated by */moveit_track_enabled. Never blocks the executor — all calls async.
 class ServoTargetBridge : public rclcpp::Node
 {
 public:
@@ -88,9 +70,8 @@ private:
 
   void enable_callback(const std::string & arm_name, const std_msgs::msg::Bool::SharedPtr msg);
 
-  // Async, non-blocking: fires repeatedly per arm on a slow timer until both the
-  // startup POSE command-type switch and the startup pause(true) succeed, then
-  // cancels itself.
+  // Fires per arm on a slow timer until the startup POSE switch and pause
+  // both succeed, then cancels itself.
   void try_startup_sequence(const std::string & arm_name);
 
   // Shared timer tick: for each enabled arm, TF-lookup + publish PoseStamped.

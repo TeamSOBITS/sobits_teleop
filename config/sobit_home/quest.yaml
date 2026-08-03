@@ -1,10 +1,8 @@
 /**:
   ros__parameters:
 
-    # Press X (left controller) on its own to return the robot to its initial
-    # pose. "trigger" is omitted, so no modifier button is required.
-    # pose_name is resolved server-side by the move_to_pose action, so this
-    # block works for any robot that defines a pose of the same name.
+    # X (left controller) sends the pose below; no modifier since "trigger" is omitted.
+    # pose_name is resolved server-side, so this works for any robot defining it.
     control_poses:
       pose_action : "move_to_pose"   # MoveToPose action server name
       pose_list:

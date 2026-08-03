@@ -80,10 +80,7 @@ def _fetch_move_group_params(context, *args, **kwargs):
 
     move_group_node_name = f'/{robot_name}/move_group'
 
-    # Use a DEDICATED rclpy context (never the default one): this code runs
-    # inside the `ros2 launch` process, and launch_ros uses rclpy's default
-    # context in-process — rclpy.init() would raise if already initialized and
-    # rclpy.shutdown() would tear down state launch still needs.
+    # Dedicated rclpy context — launch_ros already owns the default one in-process.
     ctx = rclpy.Context()
     rclpy.init(context=ctx, args=None)
     fetch_node = None
@@ -115,14 +112,8 @@ def _fetch_move_group_params(context, *args, **kwargs):
                     f"timed out or failed. Aborting launch.")
             return future.result()
 
-        # move_group declares some planning params (e.g. *.has_jerk_limits,
-        # *.max_position) without ever setting them. GetParameters returns an
-        # entry of type NOT_SET for such a name — but if a BATCH request contains
-        # even one of them, this move_group's service returns an EMPTY value list
-        # for the WHOLE batch (verified: names[10:20] -> 0 values, because
-        # arm_left_elbow_joint.has_jerk_limits is unset). Batching is therefore
-        # unusable here; fetch one name at a time. Unset names come back empty and
-        # are skipped (aligned to `names` by index; missing -> None -> caller skips).
+        # move_group returns an EMPTY list for a whole GetParameters batch if any
+        # name is unset (verified), so fetch one name at a time and skip empties.
         def get_params_chunked(names, what):
             values = []
             for name in names:
@@ -181,11 +172,8 @@ def _fetch_move_group_params(context, *args, **kwargs):
                 "robot_description_planning namespace empty on move_group — "
                 "Servo joint-limit awareness may be degraded")
 
-        # ── robot_description_kinematics.* (recursive list, then get) ──────
-        # Servo POSE tracking solves Cartesian->joint IK every tick; without
-        # these params servo_node logs "No IK solver for planning group" and
-        # emits zero commands. move_group already holds them (loaded from the
-        # moveit_config kinematics.yaml), so fetch the same way as _planning.*.
+        # ── robot_description_kinematics.* ── without the IK params servo emits
+        # zero commands; fetch from move_group the same way as _planning.*.
         kin_list_req = ListParameters.Request()
         kin_list_req.prefixes = ['robot_description_kinematics']
         kin_list_req.depth = 0  # recursive
@@ -225,10 +213,8 @@ def _fetch_move_group_params(context, *args, **kwargs):
         **kinematics_params,
     }
 
-    # arm_backend_servo.yaml carries only the tuning shared by all nodes. The per-arm
-    # identity (which arms exist, their planning groups, target/EE frames and
-    # controller topics) is declared ONCE in quest.yaml / robot.yaml and
-    # injected here, so adding or renaming an arm never touches servo config.
+    # Per-arm identity comes from quest.yaml / robot.yaml; this yaml carries only
+    # tuning shared by all nodes.
     servo_yaml = f'{pkg_share}/config/{robot_name}/arm_backend_servo.yaml'
 
     import yaml as pyyaml

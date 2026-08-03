@@ -1,12 +1,5 @@
-// arm_scale_calibrator — measures human arm reach from Quest controller TFs
-// and computes the correct scale value for quest.yaml.
-//
-// Usage:
-//   ros2 run sobits_teleop arm_scale_calibrator [--ros-args -p joy_topic:=/sobit_home/joy]
-//
-// Control via the Quest right grip button (axis index 7):
-//   - First press+release  → start recording (begin sweep)
-//   - Second press+release → stop recording, print result
+// arm_scale_calibrator — measures human arm reach from Quest TFs and prints the quest.yaml scale.
+// Right grip press+release starts recording; a second press+release stops and prints.
 
 #include "sobits_teleop/arm_scale_calibrator.hpp"
 #include <rclcpp_components/register_node_macro.hpp>
@@ -63,9 +56,8 @@ void ArmScaleCalibrator::joy_cb(const sensor_msgs::msg::Joy::SharedPtr msg)
 
   bool grip = (msg->axes[grip_axis_] > 0.5f);
 
-  // Ignore all edges until we have seen at least one message with grip released.
-  // This prevents a grip that is already held at startup from immediately
-  // triggering step 1 and then step 2 in rapid succession.
+  // Ignore edges until the grip has been seen released, so a grip held at
+  // startup doesn't fire both steps at once.
   if (!seen_grip_released_) {
     if (!grip) seen_grip_released_ = true;
     prev_grip_ = grip;

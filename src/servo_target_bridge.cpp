@@ -7,9 +7,7 @@
 namespace sobits_teleop
 {
 
-// ---------------------------------------------------------------------------
-// Constructor
-// ---------------------------------------------------------------------------
+// ── Constructor ──
 
 ServoTargetBridge::ServoTargetBridge(const rclcpp::NodeOptions & options)
 : Node(
@@ -36,10 +34,8 @@ ServoTargetBridge::ServoTargetBridge(const rclcpp::NodeOptions & options)
     this->get_parameter("servo_bridge.max_reach").as_double();
 
   for (const auto & arm_name : arm_names) {
-    // Convention over configuration: every frame/topic defaults from the arm
-    // name (arm_right -> side "right"), matching this package's naming used in
-    // quest.yaml and the SRDF. The YAML only carries values that break the
-    // convention. Keys use the same vocabulary as quest.yaml's blocks.
+    // Frames/topics default from the arm name (arm_right -> side "right");
+    // the YAML only carries values that break the convention.
     const std::string side =
       arm_name.rfind("arm_", 0) == 0 ? arm_name.substr(4) : arm_name;
 
@@ -92,10 +88,8 @@ ServoTargetBridge::ServoTargetBridge(const rclcpp::NodeOptions & options)
     arm_data->pause_servo_client =
       this->create_client<SetBool>(cfg.servo_node + "/pause_servo");
 
-    // Enable subscription: reliable + transient_local so a late-starting Servo
-    // bridge still receives the current enable state even if it started after
-    // sobits_teleop published it (see D6 — the sobits_teleop publisher side is
-    // switched to reliable/transient_local/depth1 to match).
+    // reliable + transient_local so a late-starting bridge still receives the
+    // current enable state (publisher side matches).
     rclcpp::QoS enable_qos(1);
     enable_qos.reliable();
     enable_qos.transient_local();
@@ -117,11 +111,8 @@ ServoTargetBridge::ServoTargetBridge(const rclcpp::NodeOptions & options)
       cfg.servo_ee_frame.c_str(), cfg.enable_topic.c_str(),
       cfg.reach_origin_frame.c_str(), cfg.max_reach);
 
-    // Startup sequence — switch_command_type(POSE) once per arm and
-    // pause_servo(true) so arms don't move until first enable. Both are async
-    // and retried on a slow (2 s) timer until each succeeds independently
-    // (servo_node's services are typically not up yet at bridge construction
-    // time, since the launcher starts them concurrently).
+    // Startup: switch_command_type(POSE) + pause_servo(true) per arm, async and
+    // retried on a slow timer (servo_node's services come up concurrently).
     arms_[arm_name]->startup_retry_timer = this->create_wall_timer(
       std::chrono::seconds(2),
       [this, arm_name]() { try_startup_sequence(arm_name); });
@@ -140,10 +131,7 @@ ServoTargetBridge::ServoTargetBridge(const rclcpp::NodeOptions & options)
     arms_.size(), pose_rate_hz_);
 }
 
-// ---------------------------------------------------------------------------
-// Startup sequence: switch_command_type(POSE) + pause_servo(true), each async
-// and retried independently on a slow timer until both have succeeded.
-// ---------------------------------------------------------------------------
+// ── Startup sequence: async POSE switch + pause, retried until both succeed ──
 
 void ServoTargetBridge::try_startup_sequence(const std::string & arm_name)
 {
@@ -209,9 +197,8 @@ void ServoTargetBridge::try_startup_sequence(const std::string & arm_name)
             RCLCPP_INFO(get_logger(),
               "Arm '%s': initial pause_servo(true) succeeded on '%s'",
               arm_name.c_str(), arm2.config.servo_node.c_str());
-            // Race guard: an enable arrived while this startup pause was in
-            // flight — it just froze an arm the operator believes is enabled.
-            // Undo immediately with an async unpause.
+            // Race guard: an enable arrived while this startup pause was in flight —
+            // undo immediately with an async unpause.
             if (arm2.enabled.load()) {
               RCLCPP_WARN(get_logger(),
                 "Arm '%s': startup pause_servo(true) landed after an enable — "
@@ -241,9 +228,7 @@ void ServoTargetBridge::try_startup_sequence(const std::string & arm_name)
   }
 }
 
-// ---------------------------------------------------------------------------
-// Enable / disable callback (async only — never blocks the executor)
-// ---------------------------------------------------------------------------
+// ── Enable / disable callback (async only — never blocks the executor) ──
 
 void ServoTargetBridge::enable_callback(
   const std::string & arm_name,
@@ -256,10 +241,8 @@ void ServoTargetBridge::enable_callback(
   if (msg->data) {
     if (arm.enabled.load()) return;
 
-    // Don't wait for service responses before publishing — Servo tolerates
-    // early pose commands while paused. Ensure POSE mode is (re-)requested in
-    // case the servo_node restarted after our one-time startup call, then
-    // unpause.
+    // No waiting on responses — Servo tolerates early pose commands while paused.
+    // Re-request POSE mode in case servo_node restarted, then unpause.
     if (arm.switch_command_type_client->service_is_ready()) {
       auto req = std::make_shared<ServoCommandType::Request>();
       req->command_type = ServoCommandType::Request::POSE;
@@ -311,9 +294,7 @@ void ServoTargetBridge::enable_callback(
   }
 }
 
-// ---------------------------------------------------------------------------
-// Shared pose-publish timer
-// ---------------------------------------------------------------------------
+// ── Shared pose-publish timer ──
 
 void ServoTargetBridge::pose_timer_callback()
 {
@@ -343,9 +324,8 @@ void ServoTargetBridge::pose_timer_callback()
         tf_stamped.transform.translation.x, tf_stamped.transform.translation.y,
         tf_stamped.transform.translation.z));
 
-    // Reach clamp: pull an out-of-reach target back onto the max_reach sphere
-    // around the shoulder. Prevents the arm from chasing an unreachable hand
-    // target into full extension (elbow singularity -> latched servo e-stop).
+    // Reach clamp: pull out-of-reach targets onto the max_reach sphere —
+    // full extension is an elbow singularity that latches a servo e-stop.
     if (arm.config.max_reach > 0.0 && !arm.config.reach_origin_frame.empty()) {
       try {
         auto sh = tf_buffer_->lookupTransform(
@@ -369,12 +349,8 @@ void ServoTargetBridge::pose_timer_callback()
       }
     }
 
-    // The target describes the desired pose of end_effector_frame_name, but
-    // servo drives servo_ee_frame. When those differ, re-express the target
-    // for the servo frame: T(base->cmd) = T(base->target) * T(ee->servo_ee).
-    // Looked up per tick (NOT cached) so end_effector_frame_name may be a
-    // link that moves relative to the hand (e.g. a grasp midpoint between
-    // fingers). Empty servo_ee_frame = servo drives the EE link itself.
+    // Re-express the target for the servo-driven frame when it differs from the EE:
+    // T(base->cmd) = T(base->target) * T(ee->servo_ee). Looked up per tick, not cached.
     tf2::Transform base_to_cmd = base_to_target;
     if (!arm.config.servo_ee_frame.empty() &&
         !arm.config.end_effector_frame.empty() &&

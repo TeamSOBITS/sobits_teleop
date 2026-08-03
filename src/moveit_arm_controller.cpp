@@ -12,9 +12,7 @@
 namespace sobits_teleop
 {
 
-// ---------------------------------------------------------------------------
-// Constructor
-// ---------------------------------------------------------------------------
+// ── Constructor ─────────────────────────────────────────────────
 
 MoveitArmController::MoveitArmController(const rclcpp::NodeOptions & options)
 : Node(
@@ -107,9 +105,8 @@ MoveitArmController::MoveitArmController(const rclcpp::NodeOptions & options)
     auto arm_data = std::make_unique<ArmData>();
     arm_data->config = cfg;
 
-    // Derive action server name from trajectory topic:
-    // "arm_right_position_controller/joint_trajectory"
-    // → "arm_right_position_controller/follow_joint_trajectory"
+    // Derive action server name from the trajectory topic:
+    // ".../joint_trajectory" → ".../follow_joint_trajectory"
     std::string action_topic = cfg.trajectory_topic;
     auto pos = action_topic.rfind('/');
     if (pos != std::string::npos) {
@@ -118,9 +115,8 @@ MoveitArmController::MoveitArmController(const rclcpp::NodeOptions & options)
     arm_data->action_client =
       rclcpp_action::create_client<FollowJointTrajectory>(this, action_topic);
 
-    // Direct-publish path (publish_mode: topic). The joint_trajectory_controller
-    // subscribes to this command topic with reliable QoS; publishing a new
-    // trajectory replaces the active one mid-flight (no goal/cancel handshake).
+    // Direct-publish path (publish_mode: topic): publishing a new trajectory
+    // replaces the active one mid-flight (no goal/cancel handshake).
     arm_data->traj_pub =
       this->create_publisher<trajectory_msgs::msg::JointTrajectory>(
         cfg.trajectory_topic, rclcpp::QoS(10).reliable());
@@ -155,9 +151,7 @@ MoveitArmController::MoveitArmController(const rclcpp::NodeOptions & options)
   init_thread_ = std::thread([this]() { init_move_groups(); });
 }
 
-// ---------------------------------------------------------------------------
-// Destructor
-// ---------------------------------------------------------------------------
+// ── Destructor ──────────────────────────────────────────────────
 
 MoveitArmController::~MoveitArmController()
 {
@@ -175,9 +169,7 @@ MoveitArmController::~MoveitArmController()
   }
 }
 
-// ---------------------------------------------------------------------------
-// MoveGroupInterface initialisation (background thread)
-// ---------------------------------------------------------------------------
+// ── MoveGroupInterface initialisation (background thread) ───────
 
 void MoveitArmController::init_move_groups()
 {
@@ -326,9 +318,7 @@ void MoveitArmController::init_move_groups()
   }
 }
 
-// ---------------------------------------------------------------------------
-// Enable / disable callback
-// ---------------------------------------------------------------------------
+// ── Enable / disable callback ───────────────────────────────────
 
 void MoveitArmController::enable_callback(
   const std::string & arm_name,
@@ -366,9 +356,7 @@ void MoveitArmController::enable_callback(
   }
 }
 
-// ---------------------------------------------------------------------------
-// Trajectory helpers
-// ---------------------------------------------------------------------------
+// ── Trajectory helpers ──────────────────────────────────────────
 
 void MoveitArmController::send_trajectory(
   ArmData & arm,
@@ -486,9 +474,7 @@ void MoveitArmController::cancel_trajectory(ArmData & arm)
   }
 }
 
-// ---------------------------------------------------------------------------
-// Tracking loop (per-arm thread)
-// ---------------------------------------------------------------------------
+// ── Tracking loop (per-arm thread) ──────────────────────────────
 
 void MoveitArmController::tracking_loop(const std::string & arm_name)
 {
@@ -515,11 +501,8 @@ void MoveitArmController::tracking_loop(const std::string & arm_name)
     return;
   }
 
-  // getGlobalLinkTransform() returns the pose in the robot model's root frame,
-  // while cfg.base_frame is the frame all TF lookups/targets are expressed in.
-  // On this robot they are expected to match (no TF re-transform is done below);
-  // this is a one-time tripwire, not a fix — if it ever fires, the pose math in
-  // this loop needs a proper frame transform.
+  // Tripwire: getGlobalLinkTransform() is in the model root frame, which must
+  // match cfg.base_frame — no re-transform is done below.
   {
     std::string planning_frame = mgi->getPlanningFrame();
     std::string base_frame     = cfg.base_frame;
@@ -571,10 +554,8 @@ void MoveitArmController::tracking_loop(const std::string & arm_name)
     target_pose.orientation = tf_stamped.transform.rotation;
 
     // ── 2. Get measured state, then build the SEED state ──────────────────
-    // The seed is what we plan the next hop FROM. If a previous streamed
-    // trajectory is still "in flight" (elapsed < its duration), sample it at
-    // now()+lookahead so the new hop chains forward from the commanded
-    // setpoint (with its velocity) instead of from the lagging measured state.
+    // Seed from the in-flight commanded state (sampled at now()+lookahead), not
+    // the lagging measured state, so hops chain forward smoothly.
     moveit::core::RobotStatePtr measured_state = mgi->getCurrentState();
     if (!measured_state) {
       RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
@@ -599,12 +580,8 @@ void MoveitArmController::tracking_loop(const std::string & arm_name)
           seed = std::make_shared<moveit::core::RobotState>(*measured_state);
           prev_traj->getStateAtDurationFromStart(elapsed, seed);
 
-          // getStateAtDurationFromStart() uses RobotState::interpolate, which
-          // blends POSITIONS ONLY — the seed's velocities/accelerations are
-          // still the measured ones copied at construction. Blend them from
-          // the bracketing waypoints explicitly so the seed carries the
-          // in-flight COMMANDED velocity, which is what waypoint 0 hands to
-          // Ruckig below.
+          // interpolate() blends positions only — blend velocity/acceleration
+          // explicitly so the seed carries the in-flight commanded velocity.
           const std::size_t n = prev_traj->getWayPointCount();
           std::size_t after = 0;
           while (after < n &&
@@ -645,10 +622,8 @@ void MoveitArmController::tracking_loop(const std::string & arm_name)
     const Eigen::Isometry3d & seed_ee_tf = seed->getGlobalLinkTransform(ee_link);
     geometry_msgs::msg::Pose current_pose = tf2::toMsg(seed_ee_tf);
 
-    // ── 3. Distance to target (position AND orientation) ──────────────────
-    // Both must be within threshold to count as "arrived"; otherwise a pure
-    // reorientation (target rotates in place) would be ignored, since position
-    // alone would read as already-there.
+    // ── 3. Distance to target ── position AND orientation must both be within
+    // threshold, else a pure reorientation would read as already-there.
     double dist = pose_distance(current_pose, target_pose);
     double ang  = pose_angle(current_pose, target_pose);
     if (dist < arrival_threshold_m_ && ang < arrival_threshold_rad_) {
@@ -758,9 +733,8 @@ void MoveitArmController::tracking_loop(const std::string & arm_name)
       plan_lock.unlock();
       send_trajectory(arm, jtraj_ompl);
 
-      // OMPL joint-space sweeps aren't re-timed with the seed's velocity (no
-      // Ruckig pass below), so using one as the next cycle's streaming seed
-      // would misreport velocity continuity that doesn't exist — clear instead.
+      // OMPL sweeps aren't re-timed with the seed velocity, so don't use one as
+      // the next streaming seed — clear instead.
       {
         std::lock_guard<std::mutex> lk(arm.last_sent_mutex);
         arm.last_sent_traj.reset();
@@ -812,14 +786,8 @@ void MoveitArmController::tracking_loop(const std::string & arm_name)
       continue;
     }
 
-    // ── 8b. Velocity-continuous retiming ──────────────────────────────────
-    // TOTG always starts a trajectory from rest. Overwrite waypoint 0's
-    // velocity/acceleration with the seed's (the state we actually planned
-    // from, which may itself carry non-zero velocity sampled from the
-    // in-flight previous trajectory), then re-smooth with Ruckig — Ruckig
-    // reads its initial kinematic state from waypoint 0, so the trajectory it
-    // hands back starts at the arm's actual commanded velocity instead of
-    // zero, eliminating the stop-start sawtooth between streamed hops.
+    // ── 8b. Velocity-continuous retiming ── TOTG starts from rest; seed waypoint 0
+    // with the in-flight velocity and re-smooth with Ruckig to kill the stop-start sawtooth.
     {
       moveit::core::RobotState & wp0 = *robot_traj->getFirstWayPointPtr();
       std::vector<double> seed_vel, seed_accel;
@@ -862,9 +830,7 @@ void MoveitArmController::tracking_loop(const std::string & arm_name)
   RCLCPP_INFO(get_logger(), "Tracking loop ended for arm '%s'", arm_name.c_str());
 }
 
-// ---------------------------------------------------------------------------
-// Helper
-// ---------------------------------------------------------------------------
+// ── Helper ──────────────────────────────────────────────────────
 
 double MoveitArmController::pose_distance(
   const geometry_msgs::msg::Pose & a,

@@ -14,18 +14,11 @@ def generate_launch_description():
     declare_robot_name_cmd = DeclareLaunchArgument(
         'robot_name',
         default_value='sobit_home',
-        # default_value="sobit_pro",
-        # default_value="sobit_edu",
-        # default_value="sobit_mini",
-        # default_value="sobit_light",
         description='Robot name used to select configuration file'
     )
     declare_device_cmd = DeclareLaunchArgument(
         'device',
         default_value='ps4', 
-        # default_value='ps5',
-        # default_value='quest',
-        # default_value='keyboard',
         description='Input device type: ps4, quest, keyboard'
     )
     declare_joystick_device_cmd = DeclareLaunchArgument(
@@ -94,9 +87,7 @@ def generate_launch_description():
         ],
     )
 
-    # Input-device drivers (quest tcp endpoint / joy_linux / keyboard +
-    # quest USB setup) live in a shared include so sobits_vla_deploy can
-    # bring up the same controllers without the teleop control node.
+    # Shared input-driver include so sobits_vla_deploy can reuse the same controllers.
     controller_input_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(os.path.join(
             get_package_share_directory(pkg_name),
@@ -111,9 +102,7 @@ def generate_launch_description():
         }.items(),
     )
 
-    # Arm-tracking backends (device=quest && use_moveit only; use_servo picks
-    # exactly one). Both live in launch/include/ and inject the arm identity
-    # from quest.yaml / robot.yaml themselves.
+    # Arm-tracking backends (device=quest && use_moveit; use_servo picks exactly one).
     launch_include_dir = os.path.join(
         get_package_share_directory(pkg_name), 'launch', 'include')
     backend_args = {

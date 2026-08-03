@@ -61,12 +61,8 @@ private:
     std::unordered_map<std::string, double> vel_limits;
     std::unordered_map<std::string, double> accel_limits;
 
-    // Streaming seed bookkeeping: the last trajectory handed to send_trajectory()
-    // and when it was sent, so the tracking loop can sample the commanded
-    // (not measured) state as the start state for the next hop. Written by the
-    // owning arm's tracking thread and cleared by cancel_trajectory() (which may
-    // run from the enable_callback thread) — protect the pair with last_sent_mutex,
-    // held only for the pointer swap/read-copy, never during planning.
+    // Streaming seed: last sent trajectory + send time, so the next hop plans from
+    // the commanded state. Guarded by last_sent_mutex (pointer swap/read only).
     robot_trajectory::RobotTrajectoryPtr last_sent_traj;
     rclcpp::Time last_sent_time;
     std::mutex last_sent_mutex;
@@ -103,11 +99,8 @@ private:
   std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
   std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
 
-  // The two arms share a single MoveIt RobotModel (one model is loaded for the
-  // whole node). MoveGroupInterface / computeCartesianPath / OMPL plan() / TOTG
-  // are NOT thread-safe across that shared model, so the per-arm tracking
-  // threads must not run their planning sections concurrently. Held only around
-  // the compute section, released before the action-server send.
+  // The arms share one RobotModel and MoveIt planning isn't thread-safe across it.
+  // Held around the compute section only, released before the send.
   std::mutex planning_mutex_;
 
   double update_rate_hz_;

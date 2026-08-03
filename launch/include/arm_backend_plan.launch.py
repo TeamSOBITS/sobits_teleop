@@ -29,13 +29,8 @@ def _make_nodes(context, *args, **kwargs):
         robot_params = pyyaml.safe_load(f)['/**']['ros__parameters']
     traj_topics = robot_params['robot_topic_name']['joint_trajectory_topic']
 
-    # MoveGroupInterface needs an IK solver to plan Cartesian paths. Without
-    # robot_description_kinematics the node logs "No kinematics plugins defined"
-    # and every computeCartesianPath() returns fraction=0.0, so arm tracking
-    # silently never moves. Load the moveit config's kinematics.yaml under that
-    # namespace, mirroring how move_group itself is parameterised. Node()
-    # flattens nested dicts into dotted parameter names on its own, so the
-    # plain yaml.safe_load() dict can be passed through as-is.
+    # Without robot_description_kinematics computeCartesianPath() returns 0.0 and
+    # tracking silently never moves. Node() flattens the nested dict on its own.
     kinematics_params = {}
     try:
         kin_path = os.path.join(
