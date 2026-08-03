@@ -29,28 +29,28 @@ namespace sobits_teleop
 {
 
 struct Limit {
-  double lower;
-  double upper;
+  double lower = 0.0;
+  double upper = 0.0;
 };
 
 struct JointMap {
   std::string joint_group;
   std::string joint_name;
   std::string joint_trajectory_topic;
-  int button;
-  int fast_button;
-  int axis;
-  int axis_sign;
-  float speed;
-  float fast_speed;
-  double min_pos;
-  double max_pos;
+  int button = -1;
+  int fast_button = -1;
+  int axis = -1;
+  int axis_sign = 1;
+  float speed = 0.0f;
+  float fast_speed = 0.0f;
+  double min_pos = 0.0;
+  double max_pos = 0.0;
 };
 
 struct PoseMap {
   std::string pose_name;
-  int trigger;
-  int button;
+  int trigger = -1;   // optional modifier button; -1 = no modifier required
+  int button = -1;
 };
 
 struct CmdVelMap {
@@ -120,6 +120,36 @@ struct QuestControllerMap {
   float speed = 0.2f;
   int type_axis = -1;   // single_joint_axis: -1 = feature off
   int type_sign = 1;    // single_joint_sign: +1/-1 flips the vertical-jog direction
+  // Optional functional range for the vjog joint (single_joint_min/max). The jog
+  // is confined to this range instead of the full URDF limits — outside it the
+  // switching-gear mechanism can jam. If the joint starts outside the range the
+  // jog may still step back toward it, never further away.
+  float type_min = -1e9f;
+  float type_max =  1e9f;
+  // Flick re-arm latch for the endpoint-swing jog mode (used when a functional
+  // range is configured): one swing per stick flick, re-armed at stick center.
+  bool vjog_armed = true;
+  // Persistent swing: after a flick, every adaptive goal keeps commanding the
+  // knuckle toward the endpoint until it arrives (or the deadline expires).
+  // The sustained large position error is what beats the gear spring; carrying
+  // it inside ordinary loop-rate goals lets open/close run concurrently
+  // instead of being blocked behind one long-running swing goal.
+  bool vjog_swing_active = false;
+  float vjog_swing_target = 0.0f;
+  rclcpp::Time vjog_swing_deadline{0, 0, RCL_ROS_TIME};
+  // Per-hand goal gate: one adaptive MoveJoint goal in flight per hand, so the
+  // two hands never block each other (the server runs goals on detached
+  // threads without preemption; see the send-site comment).
+  bool jog_goal_in_flight = false;
+  // Deadline backstop for a lost MoveJoint result (e.g. server restart).
+  rclcpp::Time jog_goal_deadline{0, 0, RCL_ROS_TIME};
+  // While a full-hand pose action (open/close toggle) runs, this hand's
+  // adaptive goal stream pauses — otherwise the loop-rate adaptive goals
+  // command "hold current" every tick and override the pose trajectory on the
+  // same controller, making the button appear dead whenever adaptive mode is
+  // engaged. The deadline is a backstop against a lost action result.
+  bool hand_pose_in_flight = false;
+  rclcpp::Time hand_pose_deadline{0, 0, RCL_ROS_TIME};
   // Proximity thresholds: arm only latches when controller is within these
   // distances of the robot end-effector. Set to <=0 to disable the check.
   double arm_proximity_threshold = 0.15;       // metres (position)
@@ -139,6 +169,10 @@ private:
   void robot_tf_callback(const tf2_msgs::msg::TFMessage::SharedPtr msg);
   void robot_tf_static_callback(const tf2_msgs::msg::TFMessage::SharedPtr msg);
   void teleop();
+  // Clamp value into joint's URDF limits; false (no clamp) if limits unknown.
+  bool clamp_to_limits_checked(const std::string & joint, double & value);
+  // Publish the tracking enable/disable state for one arm's planning group.
+  void publish_arm_tracking(const std::string & arm, bool enabled);
 
   rclcpp::Subscription<sensor_msgs::msg::Joy>::SharedPtr joy_sub;
   rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr joint_state_sub;
@@ -168,6 +202,8 @@ private:
   bool joy_received = false;
   bool requires_joint_states = false;
   bool has_quest_controls = false;
+  // Previous tick's cmd_vel enable state, for edge-triggered stop publish.
+  bool cmd_vel_was_enabled_ = false;
 
   std::string robot_description_source_node;
   std::shared_ptr<rclcpp::AsyncParametersClient> async_param_client;
@@ -203,12 +239,40 @@ private:
 
   bool head_control_enabled = false;
   bool arm_control_enabled = false;
-  bool gripper_control_enabled = false;
 
   bool head_tracking = false;
   bool arm_tracking = false;
   bool right_arm_latched = false;
   bool left_arm_latched  = false;
+  // Set for exactly one teleop tick when an arm latches: defers the tracking
+  // enable publish until after the first re-zeroed target is broadcast on TF.
+  bool right_arm_just_latched = false;
+  bool left_arm_just_latched  = false;
+
+  // Clutch re-zeroing: controller pose and EE pose captured at the latch
+  // instant; while latched the published target is EE_latch composed with the
+  // CONTROLLER's delta since latch (scaled), so tracking starts with zero error.
+  // Deltas deliberately exclude the HMD: the raw mapping scale*ctrl+(1-scale)*hmd
+  // leaks operator head sway into the target whenever scale != 1.
+  tf2::Transform T_ctrl_latch_r, T_ee_latch_r;
+  tf2::Transform T_ctrl_latch_l, T_ee_latch_l;
+  // Latch timestamps for the soft-start ramp (grip-squeeze jerk suppression).
+  rclcpp::Time latch_time_r_{0, 0, RCL_ROS_TIME};
+  rclcpp::Time latch_time_l_{0, 0, RCL_ROS_TIME};
+  // Seconds over which the post-latch delta ramps from 0 to full authority.
+  static constexpr double kLatchSoftStartSec = 0.5;
+  // Quest TF frames whose stamp differs from the wall clock by more than this
+  // are treated as absent. Serving "latest" from the buffer regardless of age
+  // let a stale cache (headset disconnect) or future-stamped data (clock-skewed
+  // source) shadow live input — the cause of a 12.6 cm uncommanded lunge.
+  static constexpr double kQuestTfMaxAgeSec = 0.5;
+  // Safety net: hard cap on how fast the published arm target may move, applied
+  // after all other target math. Bounds the damage of any upstream fault.
+  static constexpr double kMaxTargetLinVel = 0.5;  // m/s
+  static constexpr double kMaxTargetAngVel = 1.5;  // rad/s
+  tf2::Transform T_pub_prev_r_, T_pub_prev_l_;
+  bool have_pub_prev_r_ = false;
+  bool have_pub_prev_l_ = false;
 
   // Hand pose toggle state per controller: true = open, false = closed
   std::map<std::string, bool>          hand_open_state_;    // keyed by controller name

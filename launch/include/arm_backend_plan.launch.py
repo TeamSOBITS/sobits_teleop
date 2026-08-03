@@ -12,7 +12,8 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
-from ament_index_python.packages import get_package_share_directory
+from ament_index_python.packages import (
+    PackageNotFoundError, get_package_share_directory)
 
 
 def _make_nodes(context, *args, **kwargs):
@@ -27,6 +28,25 @@ def _make_nodes(context, *args, **kwargs):
     with open(os.path.join(cfg_dir, 'robot.yaml')) as f:
         robot_params = pyyaml.safe_load(f)['/**']['ros__parameters']
     traj_topics = robot_params['robot_topic_name']['joint_trajectory_topic']
+
+    # MoveGroupInterface needs an IK solver to plan Cartesian paths. Without
+    # robot_description_kinematics the node logs "No kinematics plugins defined"
+    # and every computeCartesianPath() returns fraction=0.0, so arm tracking
+    # silently never moves. Load the moveit config's kinematics.yaml under that
+    # namespace, mirroring how move_group itself is parameterised. Node()
+    # flattens nested dicts into dotted parameter names on its own, so the
+    # plain yaml.safe_load() dict can be passed through as-is.
+    kinematics_params = {}
+    try:
+        kin_path = os.path.join(
+            get_package_share_directory(f'{robot_name}_moveit_config'),
+            'config', 'kinematics.yaml')
+        with open(kin_path) as f:
+            kin_yaml = pyyaml.safe_load(f) or {}
+        kinematics_params = {'robot_description_kinematics': kin_yaml}
+    except (PackageNotFoundError, FileNotFoundError):
+        # Fall back to whatever the node can fetch from move_group.
+        pass
 
     quest_control = quest_params['quest_control']
     arm_params = {}
@@ -51,6 +71,7 @@ def _make_nodes(context, *args, **kwargs):
         parameters=[
             os.path.join(cfg_dir, 'arm_backend_plan.yaml'),
             arm_params,
+            kinematics_params,
             {'use_sim_time': LaunchConfiguration('use_sim_time')},
         ],
     )]

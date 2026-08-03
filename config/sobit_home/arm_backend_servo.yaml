@@ -30,7 +30,12 @@
       is_primary_planning_scene_monitor: false   # move_group owns the scene
       monitored_planning_scene_topic: /sobit_home/monitored_planning_scene
 
-      check_collisions: true
+      # TEMPORARILY false: the left arm hardware is not publishing joint states,
+      # so servo's collision monitor models it at all-zeros and its proximity
+      # check (4 mm) permanently halts the right arm on a phantom contact
+      # (move_group's binary validity check reports the same state as valid).
+      # REVERT to true once the left arm hardware is up.
+      check_collisions: false
       collision_check_rate: 10.0
       self_collision_proximity_threshold: 0.004   # 0.01 kept the arm in permanent decel-crawl whenever hand near torso in quest teleop
       scene_collision_proximity_threshold: 0.008
@@ -59,3 +64,12 @@
       # Per-arm keys (target_frame_name, base_frame_name, end_effector_frame_name,
       # servo_ee_frame, servo_node, enable_topic, reach_origin_frame, max_reach)
       # default by convention from the arm name; set here only to override.
+
+      # servo_ee_frame stays EMPTY (the default): moveit_servo's ee_frame
+      # defaults to the group's LAST link, which for arm_* groups is the
+      # explicitly listed hand_*_end_effector_link — the same frame the target
+      # describes, so no re-expression is needed. Do NOT set the wrist here: a
+      # wrist override makes the bridge add the 13 cm hand->wrist offset to a
+      # controller that already drives the hand, causing a 13 cm lunge at latch.
+      # (That override was once "verified" while servo was frozen by a
+      # joint-limit condition, which masked the motion it would have caused.)

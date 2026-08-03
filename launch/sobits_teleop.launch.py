@@ -94,54 +94,21 @@ def generate_launch_description():
         ],
     )
 
-    ds4drv_cmd = ExecuteProcess(
-        cmd=['ds4drv'],
-        output='screen',
-        condition=IfCondition(AndSubstitution(EqualsSubstitution(LaunchConfiguration('device'), 'ps4'), EqualsSubstitution(LaunchConfiguration('use_ds4drv'), 'True')))
-    )
-
-    # joy_linux node for joy controllers (ps4, ps5)
-    joystick_node = Node(
-        package='joy_linux',
-        executable='joy_linux_node',
-        name='joystick_node',
-        output='screen',
-        namespace=robot_name,
-        parameters=[
-            {'dev': joystick_device},
-            {'deadzone': 0.05},
-            {'autorepeat_rate': 100.0},
-            {'use_sim_time': LaunchConfiguration('use_sim_time')},
-        ],
-        arguments=['--ros-args', '--log-level', 'fatal'],
-        condition=IfCondition(OrSubstitution(EqualsSubstitution(LaunchConfiguration('device'), 'ps4'), EqualsSubstitution(LaunchConfiguration('device'), 'ps5')))
-    )
-
-    # quest node for meta quest controllers
-    quest_node = Node(
-        package='ros_tcp_endpoint',
-        executable='default_server_endpoint',
-        name='quest_node',
-        output='screen',
-        namespace=robot_name,
-        parameters=[
-            {'ROS_IP': ros_ip},
-            {'use_sim_time': LaunchConfiguration('use_sim_time')},
-        ],
-        condition=IfCondition(EqualsSubstitution(LaunchConfiguration('device'), 'quest'))
-    )
-
-    # keyboard node for keyboard teleop
-    keyboard_node = Node(
-        package='keyboard_joy',
-        executable='joy_node',
-        name='keyboard_node',
-        output='screen',
-        namespace=robot_name,
-        parameters=[
-            {'use_sim_time': LaunchConfiguration('use_sim_time')},
-        ],
-        condition=IfCondition(EqualsSubstitution(LaunchConfiguration('device'), 'keyboard'))
+    # Input-device drivers (quest tcp endpoint / joy_linux / keyboard +
+    # quest USB setup) live in a shared include so sobits_vla_deploy can
+    # bring up the same controllers without the teleop control node.
+    controller_input_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(os.path.join(
+            get_package_share_directory(pkg_name),
+            'launch', 'include', 'controller_input.launch.py')),
+        launch_arguments={
+            'robot_name': robot_name,
+            'device': device,
+            'joystick_device': joystick_device,
+            'ros_ip': ros_ip,
+            'use_ds4drv': use_ds4drv,
+            'use_sim_time': LaunchConfiguration('use_sim_time'),
+        }.items(),
     )
 
     # Arm-tracking backends (device=quest && use_moveit only; use_servo picks
@@ -174,21 +141,6 @@ def generate_launch_description():
         ), LaunchConfiguration('use_servo')))
     )
 
-    # Launch quest usb network setup script (only needed on Linux, and only if using Quest controllers)
-    # User needs to allow debugging access on the Quest and connect it via USB for this to work
-    usb_network_setup_cmd = ExecuteProcess(
-        cmd=['bash', '-c', 'sudo adb reverse tcp:10000 tcp:10000'],
-        output='screen',
-        condition=IfCondition(EqualsSubstitution(LaunchConfiguration('device'), 'quest'))
-    )
-
-    # Kill any process still holding port 10000 (stale quest_node from a previous launch)
-    kill_stale_quest = ExecuteProcess(
-        cmd=['bash', '-c', 'fuser -k 10000/tcp 2>/dev/null || true'],
-        output='screen',
-        condition=IfCondition(EqualsSubstitution(LaunchConfiguration('device'), 'quest'))
-    )
-
     return LaunchDescription([
         declare_robot_name_cmd,
         declare_device_cmd,
@@ -198,13 +150,8 @@ def generate_launch_description():
         declare_use_sim_time_cmd,
         declare_use_moveit_cmd,
         declare_use_servo_cmd,
-        kill_stale_quest,
         sobits_teleop_node,
         arm_backend_plan_launch,
         arm_backend_servo_launch,
-        ds4drv_cmd,
-        joystick_node,
-        quest_node,
-        keyboard_node,
-        usb_network_setup_cmd
+        controller_input_launch
     ])
