@@ -202,6 +202,14 @@ void SOBITSTeleop::process_arm(const QuestArmMap & m, ArmTrackState & st, bool /
     T_target.setRotation(st.current_tf_odom.getRotation());
   }
 
+  // Releasing this arm's own grip unlatches it, independent of the other arm.
+  if (!arm_enabled && st.latched) {
+    st.latched = false;
+    st.have_pub_prev = false;
+    publish_arm_tracking(m.group, false);
+    RCLCPP_INFO(this->get_logger(), "%s arm unlatched (grip released)", m.controller.c_str());
+  }
+
   // Per-arm latch on grip: proximity check skipped when thresholds are 0;
   // the target is re-zeroed onto the EE so tracking starts jump-free.
   if (arm_enabled && !st.latched && ee_ok) {
