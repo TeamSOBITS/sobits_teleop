@@ -634,6 +634,10 @@ void SOBITSTeleop::teleop()
     if (it != joint_pub.end() && traj.joint_names.size() > 0) it->second->publish(traj);
   }
 
+  // Skip pose buttons while any arm is latched — a pose trajectory would fight tracking.
+  bool any_arm_latched = false;
+  for (const auto & kv : arm_track_) any_arm_latched = any_arm_latched || kv.second.latched;
+
   for (const auto &pose_map : pose_mappings) {
     // A trigger of -1 means no modifier is required; otherwise it must be held.
     if (pose_map.trigger >= 0) {
@@ -641,7 +645,13 @@ void SOBITSTeleop::teleop()
       if (latest_buttons[pose_map.trigger] == 0) continue;
     }
 
-    bool button_just_pressed = pose_map.button >= 0 && 
+    if (any_arm_latched) {
+      RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 3000,
+        "pose buttons disabled while an arm is latched");
+      continue;
+    }
+
+    bool button_just_pressed = pose_map.button >= 0 &&
                               pose_map.button < static_cast<int>(latest_buttons.size()) &&
                               latest_buttons[pose_map.button] == 1 &&
                               (previous_buttons.empty() || 
