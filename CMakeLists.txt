@@ -159,6 +159,9 @@ if(BUILD_TESTING)
   ament_add_gtest(test_pose_metrics test/test_pose_metrics.cpp)
   target_include_directories(test_pose_metrics PRIVATE include)
   ament_target_dependencies(test_pose_metrics geometry_msgs)
+
+  find_package(launch_testing_ament_cmake REQUIRED)
+  add_launch_test(test/test_node_startup.py)
 endif()
 
 ament_package()
