@@ -5,6 +5,7 @@
 #include <rclcpp_action/rclcpp_action.hpp>
 #include <rclcpp_components/register_node_macro.hpp>
 #include <std_msgs/msg/bool.hpp>
+#include <sensor_msgs/msg/joint_state.hpp>
 #include <trajectory_msgs/msg/joint_trajectory.hpp>
 #include <control_msgs/action/follow_joint_trajectory.hpp>
 
@@ -83,6 +84,8 @@ private:
     const std::string & arm_name,
     const std_msgs::msg::Bool::SharedPtr msg);
 
+  void joint_state_callback(const sensor_msgs::msg::JointState::SharedPtr msg);
+
   void tracking_loop(const std::string & arm_name);
 
   void send_trajectory(ArmData & arm, const trajectory_msgs::msg::JointTrajectory & jtraj);
@@ -100,6 +103,12 @@ private:
 
   std::unordered_map<std::string, std::unique_ptr<ArmData>> arms_;
   std::vector<rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr> enable_subs_;
+
+  // Cached joint state for the topic-stop hold, so cancel_trajectory never
+  // blocks the executor on MoveIt's current-state monitor.
+  rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr joint_state_sub_;
+  std::unordered_map<std::string, double> joint_state_cache_;
+  std::mutex joint_state_cache_mutex_;
 
   std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
   std::shared_ptr<tf2_ros::TransformListener> tf_listener_;

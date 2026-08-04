@@ -148,6 +148,12 @@ MoveitArmController::MoveitArmController(const rclcpp::NodeOptions & options)
     avoid_collisions_ ? "true" : "false", preempt_settle_ms_,
     use_topic_ ? "topic" : "action");
 
+  joint_state_sub_ = this->create_subscription<sensor_msgs::msg::JointState>(
+    "joint_states", rclcpp::QoS(10),
+    [this](const sensor_msgs::msg::JointState::SharedPtr msg) {
+      joint_state_callback(msg);
+    });
+
   init_thread_ = std::thread([this]() { init_move_groups(); });
 }
 
@@ -318,6 +324,18 @@ void MoveitArmController::init_move_groups()
   }
 }
 
+// ── Joint state cache (for the topic-stop hold — never blocks the executor) ──
+
+void MoveitArmController::joint_state_callback(const sensor_msgs::msg::JointState::SharedPtr msg)
+{
+  // position can be shorter than name (velocity/effort-only publishers).
+  const size_t n = std::min(msg->name.size(), msg->position.size());
+  std::lock_guard<std::mutex> lk(joint_state_cache_mutex_);
+  for (size_t i = 0; i < n; i++) {
+    joint_state_cache_[msg->name[i]] = msg->position[i];
+  }
+}
+
 // ── Enable / disable callback ───────────────────────────────────
 
 void MoveitArmController::enable_callback(
@@ -435,20 +453,29 @@ void MoveitArmController::cancel_trajectory(ArmData & arm)
   }
 
   // Topic mode: halt by commanding the controller to hold the current joint
-  // positions.
+  // positions. Uses the joint_states cache, not MGI's state monitor — this
+  // may run on the enable_callback/executor thread and must never block it.
   if (use_topic_) {
     if (!arm.mgi) return;
-    std::vector<std::string> names;
+    std::vector<std::string> names = arm.mgi->getJoints();  // cached local call, no service
     std::vector<double> pos;
+    pos.reserve(names.size());
     {
-      std::lock_guard<std::mutex> lk(planning_mutex_);
-      names = arm.mgi->getJoints();
-      pos   = arm.mgi->getCurrentJointValues();
+      std::lock_guard<std::mutex> lk(joint_state_cache_mutex_);
+      for (const auto & name : names) {
+        auto it = joint_state_cache_.find(name);
+        if (it == joint_state_cache_.end()) {
+          RCLCPP_WARN(get_logger(),
+            "topic-stop: joint '%s' missing from joint_states cache — arm holds last trajectory",
+            name.c_str());
+          return;  // never publish empty/partial names
+        }
+        pos.push_back(it->second);
+      }
     }
-    if (names.empty() || pos.size() != names.size()) {
+    if (names.empty()) {
       RCLCPP_WARN(get_logger(),
-        "topic-stop: skipped hold (joints=%zu, values=%zu) — arm holds last trajectory",
-        names.size(), pos.size());
+        "topic-stop: skipped hold (no joints) — arm holds last trajectory");
       return;  // never publish empty names
     }
     RCLCPP_INFO(get_logger(), "topic-stop: holding %zu joints at current position",
