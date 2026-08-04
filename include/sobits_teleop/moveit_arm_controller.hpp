@@ -19,6 +19,8 @@
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 #include <geometry_msgs/msg/pose.hpp>
 
+#include "sobits_teleop/pose_metrics.hpp"
+
 #include <atomic>
 #include <memory>
 #include <mutex>
@@ -92,14 +94,6 @@ private:
 
   void send_trajectory(ArmData & arm, const trajectory_msgs::msg::JointTrajectory & jtraj);
   void cancel_trajectory(ArmData & arm);
-
-  static double pose_distance(
-    const geometry_msgs::msg::Pose & a,
-    const geometry_msgs::msg::Pose & b);
-
-  static double pose_angle(
-    const geometry_msgs::msg::Pose & a,
-    const geometry_msgs::msg::Pose & b);
 
   std::thread init_thread_;
 

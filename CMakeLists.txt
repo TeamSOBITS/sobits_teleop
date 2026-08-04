@@ -154,6 +154,11 @@ if(BUILD_TESTING)
   # a copyright and license is added to all source files
   set(ament_cmake_cpplint_FOUND TRUE)
   ament_lint_auto_find_test_dependencies()
+
+  find_package(ament_cmake_gtest REQUIRED)
+  ament_add_gtest(test_pose_metrics test/test_pose_metrics.cpp)
+  target_include_directories(test_pose_metrics PRIVATE include)
+  ament_target_dependencies(test_pose_metrics geometry_msgs)
 endif()
 
 ament_package()

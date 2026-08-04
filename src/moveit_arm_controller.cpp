@@ -873,31 +873,6 @@ void MoveitArmController::tracking_loop(const std::string & arm_name)
   RCLCPP_INFO(get_logger(), "Tracking loop ended for arm '%s'", arm_name.c_str());
 }
 
-// ── Helper ──────────────────────────────────────────────────────
-
-double MoveitArmController::pose_distance(
-  const geometry_msgs::msg::Pose & a,
-  const geometry_msgs::msg::Pose & b)
-{
-  double dx = a.position.x - b.position.x;
-  double dy = a.position.y - b.position.y;
-  double dz = a.position.z - b.position.z;
-  return std::sqrt(dx * dx + dy * dy + dz * dz);
-}
-
-double MoveitArmController::pose_angle(
-  const geometry_msgs::msg::Pose & a,
-  const geometry_msgs::msg::Pose & b)
-{
-  // Angle [rad] between the two orientations: 2*acos(|<qa, qb>|).
-  double dot = a.orientation.x * b.orientation.x +
-               a.orientation.y * b.orientation.y +
-               a.orientation.z * b.orientation.z +
-               a.orientation.w * b.orientation.w;
-  dot = std::min(1.0, std::max(-1.0, std::abs(dot)));
-  return 2.0 * std::acos(dot);
-}
-
 }  // namespace sobits_teleop
 
 RCLCPP_COMPONENTS_REGISTER_NODE(sobits_teleop::MoveitArmController)
