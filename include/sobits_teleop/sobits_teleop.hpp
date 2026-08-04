@@ -142,6 +142,20 @@ struct QuestHandMap {
   rclcpp::Time hand_pose_deadline{0, 0, RCL_ROS_TIME};
 };
 
+// Per-controller-side arm tracking state (one entry per "left"/"right" etc.).
+struct ArmTrackState {
+  bool latched = false;
+  bool just_latched = false;
+  bool have_pub_prev = false;
+  bool tf_ok = false;
+  tf2::Transform current_tf;       // controller in base_footprint
+  tf2::Transform current_tf_odom;  // same (kept for parity with existing math)
+  tf2::Transform current_tf_ee;    // EE in base_footprint
+  tf2::Transform T_ctrl_latch, T_ee_latch;
+  tf2::Transform T_pub_prev;
+  rclcpp::Time latch_time{0, 0, RCL_ROS_TIME};
+};
+
 class SOBITSTeleop : public rclcpp::Node {
 public:
   explicit SOBITSTeleop(const rclcpp::NodeOptions & options = rclcpp::NodeOptions());
@@ -159,6 +173,10 @@ private:
   bool clamp_to_limits_checked(const std::string & joint, double & value);
   // Publish the tracking enable/disable state for one arm's planning group.
   void publish_arm_tracking(const std::string & arm, bool enabled);
+  // True if any arm mapping's own enable axis is currently held.
+  bool any_arm_enable_held();
+  // Runs the latch/ramp/rate-limit/publish pipeline for one arm controller.
+  void process_arm(const QuestArmMap & m, ArmTrackState & st, bool head_tf_ok, bool arm_enabled);
 
   rclcpp::Subscription<sensor_msgs::msg::Joy>::SharedPtr joy_sub;
   rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr joint_state_sub;
@@ -223,24 +241,13 @@ private:
   std::vector<std::string> quest_groups;
 
   bool head_control_enabled = false;
-  bool arm_control_enabled = false;
 
   bool head_tracking = false;
   bool arm_tracking = false;
-  bool right_arm_latched = false;
-  bool left_arm_latched  = false;
-  // Set for exactly one teleop tick when an arm latches: defers the tracking
-  // enable publish until after the first re-zeroed target is broadcast on TF.
-  bool right_arm_just_latched = false;
-  bool left_arm_just_latched  = false;
+  // Per-controller-side arm tracking state, keyed by controller ("left"/"right").
+  std::map<std::string, ArmTrackState> arm_track_;
 
-  // Clutch re-zeroing: poses captured at latch; target = EE_latch + controller-only
-  // delta (HMD excluded — it leaks head sway), so tracking starts with zero error.
-  tf2::Transform T_ctrl_latch_r, T_ee_latch_r;
-  tf2::Transform T_ctrl_latch_l, T_ee_latch_l;
-  // Latch timestamps for the soft-start ramp (grip-squeeze jerk suppression).
-  rclcpp::Time latch_time_r_{0, 0, RCL_ROS_TIME};
-  rclcpp::Time latch_time_l_{0, 0, RCL_ROS_TIME};
+  // Latch timestamps use the soft-start ramp (grip-squeeze jerk suppression).
   // Seconds over which the post-latch delta ramps from 0 to full authority.
   static constexpr double kLatchSoftStartSec = 0.5;
   // Quest frames with stamps further than this from the wall clock are treated as
@@ -250,49 +257,26 @@ private:
   // after all other target math. Bounds the damage of any upstream fault.
   static constexpr double kMaxTargetLinVel = 0.5;  // m/s
   static constexpr double kMaxTargetAngVel = 1.5;  // rad/s
-  tf2::Transform T_pub_prev_r_, T_pub_prev_l_;
-  bool have_pub_prev_r_ = false;
-  bool have_pub_prev_l_ = false;
 
   // Hand pose toggle state per controller: true = open, false = closed
   std::map<std::string, bool>          hand_open_state_;    // keyed by hand group name
   std::map<std::string, rclcpp::Time>  hand_toggle_time_;   // debounce timestamp per hand group
 
+  // Head tracking latch state: pose captured at latch, delta computed against it every tick.
   tf2::Transform last_tf;
-  tf2::Transform current_tf;
-  tf2::Transform T_delta;
   double last_pan, last_tilt, last_body_lift;
-  double roll, pitch, yaw;
-  double dz;
-  double pan_target, tilt_target, body_lift_target;
 
   // Current controller poses in base_footprint (recomputed every tick)
   tf2::Transform current_tf_hmd;
-  tf2::Transform current_tf_r;
-  tf2::Transform current_tf_l;
-  tf2::Transform current_tf_ee_r;
-  tf2::Transform current_tf_ee_l;
 
   // Current controller poses in odom (wall-clock, recomputed every tick)
-  tf2::Transform current_tf_r_odom;
-  tf2::Transform current_tf_l_odom;
   tf2::Transform current_tf_hmd_odom;
-
-  tf2::Transform T_target_r;
-  tf2::Transform T_target_l;
-
-  geometry_msgs::msg::TransformStamped tf_msg;
-  geometry_msgs::msg::TransformStamped target_msg_r;
-  geometry_msgs::msg::TransformStamped target_msg_l;
 
   std::shared_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster;
   std::shared_ptr<rclcpp::Clock> wall_clock_;
   // Single wall-clock buffer for all TFs (Quest wall-clock + robot re-stamped).
   std::shared_ptr<tf2_ros::Buffer> tf_buffer;
 
-  Limit lim;
-  JointMap jm;
-  PoseMap pm;
   CmdVelMap cvm;
   QuestHeadMap qhm;
 };

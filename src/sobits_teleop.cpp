@@ -128,6 +128,7 @@ bool SOBITSTeleop::parse_urdf_limits(const std::string & urdf_xml)
     if (!joint) continue;
 
     if (joint->limits) {
+      Limit lim;
       lim.lower = joint->limits->lower;
       lim.upper = joint->limits->upper;
 
@@ -161,6 +162,148 @@ void SOBITSTeleop::publish_arm_tracking(const std::string & arm, bool enabled)
   it->second->publish(msg);
 }
 
+// True if any arm's own enable axis is currently held (drives the shared release path).
+bool SOBITSTeleop::any_arm_enable_held()
+{
+  for (const auto & [name, m] : quest_arm_mappings) {
+    if (m.enable_axis >= 0 && m.enable_axis < static_cast<int>(latest_axes.size()) &&
+        latest_axes[m.enable_axis] > 0.5) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// EE lookup, latch, soft-start ramp, rate limiter, and target broadcast for one arm.
+void SOBITSTeleop::process_arm(const QuestArmMap & m, ArmTrackState & st, bool /*head_tf_ok*/, bool arm_enabled)
+{
+  bool ee_ok = false;
+  try {
+    geometry_msgs::msg::TransformStamped ee_msg = tf_buffer->lookupTransform(
+      "base_footprint",
+      m.end_effector_frame_name,
+        tf2::TimePointZero,
+        tf2::Duration(0)
+    );
+    tf2::fromMsg(ee_msg.transform, st.current_tf_ee);
+    ee_ok = true;
+  }
+  catch (tf2::TransformException &ex) {
+    RCLCPP_WARN_THROTTLE(this->get_logger(), *get_clock(), 2000,
+      "%s EE TF lookup failed: %s", m.controller.c_str(), ex.what());
+  }
+
+  // Compute raw target in base_footprint space (HMD + scaled controller delta from HMD).
+  tf2::Transform T_target;
+  {
+    tf2::Vector3 hmd_pos_odom = current_tf_hmd_odom.getOrigin();
+    tf2::Vector3 delta_odom   = st.current_tf_odom.getOrigin() - hmd_pos_odom;
+    T_target.setOrigin(hmd_pos_odom + delta_odom * m.scale);
+    T_target.setRotation(st.current_tf_odom.getRotation());
+  }
+
+  // Per-arm latch on grip: proximity check skipped when thresholds are 0;
+  // the target is re-zeroed onto the EE so tracking starts jump-free.
+  if (arm_enabled && !st.latched && ee_ok) {
+    bool prox_ok = true;
+    if (m.proximity_threshold > 0.0 || m.proximity_angle_threshold > 0.0) {
+      tf2::Vector3 pos_diff = st.current_tf.getOrigin() - st.current_tf_ee.getOrigin();
+      double pos_err = pos_diff.length();
+      tf2::Quaternion q_diff =
+        st.current_tf_ee.getRotation().inverse() * st.current_tf.getRotation();
+      q_diff.normalize();
+      double angle_err = 2.0 * std::acos(std::clamp(std::abs(q_diff.w()), 0.0, 1.0));
+
+      if (m.proximity_threshold > 0.0 && pos_err > m.proximity_threshold) {
+        RCLCPP_WARN_THROTTLE(this->get_logger(), *get_clock(), 1000,
+          "%s arm: controller %.3f m from EE (threshold %.3f m) — move controller to EE before gripping",
+          m.controller.c_str(), pos_err, m.proximity_threshold);
+        prox_ok = false;
+      }
+      if (prox_ok && m.proximity_angle_threshold > 0.0 &&
+          angle_err > m.proximity_angle_threshold) {
+        RCLCPP_WARN_THROTTLE(this->get_logger(), *get_clock(), 1000,
+          "%s arm: controller %.1f deg from EE orientation (threshold %.1f deg) — align controller before gripping",
+          m.controller.c_str(),
+          angle_err * 180.0 / M_PI,
+          m.proximity_angle_threshold * 180.0 / M_PI);
+        prox_ok = false;
+      }
+    }
+    if (prox_ok) {
+      st.latched = true;
+      st.just_latched = true;
+      st.T_ctrl_latch = st.current_tf_odom;
+      st.T_ee_latch   = st.current_tf_ee;
+      st.latch_time   = this->now();
+      st.have_pub_prev = false;
+    }
+  }
+
+  // While latched: target = EE_latch + controller-only delta (the HMD term would leak
+  // head sway); a soft-start ramp keeps the grip-squeeze jerk from moving the arm.
+  tf2::Transform T_pub = T_target;
+  if (st.latched) {
+    const double ramp = std::clamp(
+      (this->now() - st.latch_time).seconds() / kLatchSoftStartSec, 0.0, 1.0);
+    const tf2::Vector3 dpos =
+      (st.current_tf_odom.getOrigin() - st.T_ctrl_latch.getOrigin()) *
+      static_cast<double>(m.scale) * ramp;
+    T_pub.setOrigin(st.T_ee_latch.getOrigin() + dpos);
+    tf2::Quaternion q_delta =
+      st.current_tf_odom.getRotation() * st.T_ctrl_latch.getRotation().inverse();
+    q_delta = tf2::Quaternion::getIdentity().slerp(q_delta.normalized(), ramp);
+    T_pub.setRotation((q_delta * st.T_ee_latch.getRotation()).normalized());
+
+    // Safety net: rate-limit target motion so upstream faults can only crawl, never jump.
+    if (st.have_pub_prev) {
+      const double dt_s = 1.0 / teleop_rate_hz;
+      const double max_lin = kMaxTargetLinVel * dt_s;
+      tf2::Vector3 dp = T_pub.getOrigin() - st.T_pub_prev.getOrigin();
+      const double d = dp.length();
+      if (d > max_lin) {
+        T_pub.setOrigin(st.T_pub_prev.getOrigin() + dp * (max_lin / d));
+      }
+      const double max_ang = kMaxTargetAngVel * dt_s;
+      tf2::Quaternion q_step =
+        T_pub.getRotation() * st.T_pub_prev.getRotation().inverse();
+      const double ang = q_step.normalized().getAngleShortestPath();
+      if (ang > max_ang) {
+        T_pub.setRotation(st.T_pub_prev.getRotation()
+          .slerp(T_pub.getRotation(), max_ang / ang).normalized());
+      }
+    }
+    st.T_pub_prev = T_pub;
+    st.have_pub_prev = true;
+  }
+
+  // Publish target under base_footprint (visualization — stays fixed in robot space).
+  geometry_msgs::msg::TransformStamped target_msg;
+  target_msg.header.stamp    = this->now();
+  target_msg.header.frame_id = "base_footprint";
+  target_msg.child_frame_id  = m.target_frame_name;
+  target_msg.transform       = tf2::toMsg(T_pub);
+  tf_broadcaster->sendTransform(target_msg);
+
+  // Enable tracking only after the first re-zeroed target is on TF, else a
+  // waking backend would plan toward the stale pre-latch target.
+  if (st.just_latched) {
+    st.just_latched = false;
+    const char * prox_note = (m.proximity_threshold <= 0.0 &&
+                              m.proximity_angle_threshold <= 0.0)
+                             ? " (calibration skipped)" : "";
+    // Publish on every latch, not just the first (re-latch after unlatch).
+    publish_arm_tracking(m.group, true);
+    if (!arm_tracking) {
+      arm_tracking = true;
+      RCLCPP_INFO(this->get_logger(), "Arm tracking started (%s latched%s)",
+        m.controller.c_str(), prox_note);
+    } else {
+      RCLCPP_INFO(this->get_logger(), "%s arm latched%s", m.controller.c_str(), prox_note);
+    }
+  }
+}
+
 void SOBITSTeleop::load_parameters()
 {
   this->get_parameter("robot_topic_name.joint_states_topic", joint_states_topic);
@@ -177,6 +320,7 @@ void SOBITSTeleop::load_parameters()
       if (!this->get_parameter("control_joints." + joint_group + ".names", joint_names)) continue;
       
       for (const auto& joint_name : joint_names) {
+        JointMap jm;
         jm.joint_group = joint_group;
         jm.joint_name  = joint_name;
         this->get_parameter("control_joints." + joint_group + "." + joint_name + ".button",      jm.button);
@@ -200,7 +344,7 @@ void SOBITSTeleop::load_parameters()
   if (this->has_parameter("control_poses.pose_list")) {
     this->get_parameter("control_poses.pose_list", pose_list);
     for (const auto& pose_name : pose_list) {
-      pm = PoseMap{};
+      PoseMap pm{};
       pm.pose_name = pose_name;
       this->get_parameter("control_poses.trigger",                  pm.trigger);
       this->get_parameter("control_poses." + pose_name + ".button", pm.button);
@@ -277,6 +421,8 @@ void SOBITSTeleop::load_parameters()
         joint_pub[am.arm_joint_trajectory_topic] = this->create_publisher<trajectory_msgs::msg::JointTrajectory>(
           am.arm_joint_trajectory_topic, 10);
         quest_arm_mappings[group] = am;
+        // One tracking-state entry per distinct controller side.
+        arm_track_.emplace(am.controller, ArmTrackState{});
       } else if (is_hand) {
         QuestHandMap hm{};
         hm.group = group;
@@ -622,6 +768,7 @@ void SOBITSTeleop::teleop()
   if (this->has_parameter("quest_control.groups")) {
     // Head / HMD — also used as body reference for arm target scaling
     bool head_tf_ok = false;
+    tf2::Transform current_tf;  // controller pose this tick, base_footprint
     if (base_odom_ok) {
       tf2::Transform T_base_hmd;
       head_tf_ok = lookup_quest_frame("hmd_odom", current_tf, &T_base_hmd);
@@ -657,11 +804,13 @@ void SOBITSTeleop::teleop()
     }
 
     if (head_tracking) {
-      T_delta = last_tf.inverse() * current_tf;
+      tf2::Transform T_delta = last_tf.inverse() * current_tf;
+      double roll, pitch, yaw;
       tf2::Matrix3x3(T_delta.getRotation()).getRPY(roll, pitch, yaw);
+      (void)roll;  // only pitch/yaw drive head tracking
 
-      pan_target = last_pan + qhm.scale * yaw * qhm.horizontal_sign;
-      tilt_target = last_tilt + qhm.scale * pitch * -qhm.vertical_sign;
+      double pan_target = last_pan + qhm.scale * yaw * qhm.horizontal_sign;
+      double tilt_target = last_tilt + qhm.scale * pitch * -qhm.vertical_sign;
 
       // RCLCPP_INFO(this->get_logger(), "pub_joint_pos %.2f, %.2f", pan_target, tilt_target);
       if (clamp_to_limits_checked(qhm.horizontal, pan_target) &&
@@ -684,8 +833,8 @@ void SOBITSTeleop::teleop()
       }
 
       if (!qhm.body_lift.empty()) {
-        dz = T_delta.getOrigin().z();
-        body_lift_target = last_body_lift + qhm.scale * dz;
+        double dz = T_delta.getOrigin().z();
+        double body_lift_target = last_body_lift + qhm.scale * dz;
         if (clamp_to_limits_checked(qhm.body_lift, body_lift_target)) {
           trajectory_msgs::msg::JointTrajectory traj;
           traj.joint_names = {qhm.body_lift};
@@ -723,54 +872,7 @@ void SOBITSTeleop::teleop()
              (q.x*q.x + q.y*q.y + q.z*q.z + q.w*q.w) > 0.01;
     };
 
-    bool right_tf_ok = false;
-    if (base_odom_ok) {
-      tf2::Transform T_right, T_base_right;
-      if (lookup_quest_frame("right_controller_odom", T_right, &T_base_right)) {
-        geometry_msgs::msg::Transform t_msg = tf2::toMsg(T_right);
-        if (!transform_valid(t_msg)) {
-          RCLCPP_WARN_THROTTLE(this->get_logger(), *get_clock(), 2000,
-            "right_controller_odom has invalid (NaN/zero) transform — waiting for controller tracking");
-        } else {
-          current_tf_r      = T_right;
-          current_tf_r_odom = T_base_right;
-          right_tf_ok = true;
-          // Re-broadcast under base_footprint (RViz visualization).
-          geometry_msgs::msg::TransformStamped rc_msg;
-          rc_msg.header.stamp    = this->now();
-          rc_msg.header.frame_id = "base_footprint";
-          rc_msg.child_frame_id  = "right_controller_link";
-          rc_msg.transform       = tf2::toMsg(T_base_right);
-          tf_broadcaster->sendTransform(rc_msg);
-        }
-      }
-    }
-
-    bool left_tf_ok = false;
-    if (base_odom_ok) {
-      tf2::Transform T_left, T_base_left;
-      if (lookup_quest_frame("left_controller_odom", T_left, &T_base_left)) {
-        geometry_msgs::msg::Transform t_msg = tf2::toMsg(T_left);
-        if (!transform_valid(t_msg)) {
-          RCLCPP_WARN_THROTTLE(this->get_logger(), *get_clock(), 2000,
-            "left_controller_odom has invalid (NaN/zero) transform — waiting for controller tracking");
-        } else {
-          current_tf_l      = T_left;
-          current_tf_l_odom = T_base_left;
-          left_tf_ok = true;
-          // Re-broadcast under base_footprint (RViz visualization).
-          geometry_msgs::msg::TransformStamped lc_msg;
-          lc_msg.header.stamp    = this->now();
-          lc_msg.header.frame_id = "base_footprint";
-          lc_msg.child_frame_id  = "left_controller_link";
-          lc_msg.transform       = tf2::toMsg(T_base_left);
-          tf_broadcaster->sendTransform(lc_msg);
-        }
-      }
-    }
-
-    // Stale/lost input unlatches its arm — a frozen latch would teleport on the next
-    // valid frame; re-gripping re-latches with a fresh zero-error capture.
+    // Controller TF acquisition: one lookup per distinct controller side.
     // Find the arm map for a controller side ("right"/"left").
     auto find_arm = [&](const std::string & side) -> QuestArmMap * {
       for (auto & [name, m] : quest_arm_mappings) {
@@ -779,297 +881,73 @@ void SOBITSTeleop::teleop()
       return nullptr;
     };
 
-    if (right_arm_latched && !right_tf_ok) {
-      right_arm_latched = false;
-      have_pub_prev_r_ = false;
-      if (auto * m = find_arm("right")) publish_arm_tracking(m->group, false);
-      RCLCPP_WARN(this->get_logger(), "Right controller TF stale/lost — right arm unlatched");
+    for (auto & [side, st] : arm_track_) {
+      st.tf_ok = false;
+      if (!base_odom_ok) continue;
+      tf2::Transform T_ctrl, T_base_ctrl;
+      if (!lookup_quest_frame(side + "_controller_odom", T_ctrl, &T_base_ctrl)) continue;
+      geometry_msgs::msg::Transform t_msg = tf2::toMsg(T_ctrl);
+      if (!transform_valid(t_msg)) {
+        RCLCPP_WARN_THROTTLE(this->get_logger(), *get_clock(), 2000,
+          "%s_controller_odom has invalid (NaN/zero) transform — waiting for controller tracking",
+          side.c_str());
+        continue;
+      }
+      st.current_tf      = T_ctrl;
+      st.current_tf_odom = T_base_ctrl;
+      st.tf_ok = true;
+      // Re-broadcast under base_footprint (RViz visualization).
+      geometry_msgs::msg::TransformStamped c_msg;
+      c_msg.header.stamp    = this->now();
+      c_msg.header.frame_id = "base_footprint";
+      c_msg.child_frame_id  = side + "_controller_link";
+      c_msg.transform       = tf2::toMsg(T_base_ctrl);
+      tf_broadcaster->sendTransform(c_msg);
     }
-    if (left_arm_latched && !left_tf_ok) {
-      left_arm_latched = false;
-      have_pub_prev_l_ = false;
-      if (auto * m = find_arm("left")) publish_arm_tracking(m->group, false);
-      RCLCPP_WARN(this->get_logger(), "Left controller TF stale/lost — left arm unlatched");
+
+    // Stale/lost input unlatches its arm — a frozen latch would teleport on the next
+    // valid frame; re-gripping re-latches with a fresh zero-error capture.
+    bool any_latched = false;
+    for (auto & [side, st] : arm_track_) {
+      if (st.latched && !st.tf_ok) {
+        st.latched = false;
+        st.have_pub_prev = false;
+        if (auto * m = find_arm(side)) publish_arm_tracking(m->group, false);
+        RCLCPP_WARN(this->get_logger(), "%s controller TF stale/lost — %s arm unlatched",
+          side.c_str(), side.c_str());
+      }
+      any_latched = any_latched || st.latched;
     }
-    if (arm_tracking && !right_arm_latched && !left_arm_latched) {
+    if (arm_tracking && !any_latched) {
       arm_tracking = false;
       RCLCPP_INFO(this->get_logger(), "Arm tracking stopped (controller input lost)");
     }
 
-    // Determine arm_control_enabled from the first arm with a valid enable_axis
-    // (both left and right share the same button in the default quest.yaml)
-    for (auto &[name, m] : quest_arm_mappings) {
-      if (m.enable_axis >= 0 && m.enable_axis < static_cast<int>(latest_axes.size())) {
-        arm_control_enabled = (latest_axes[m.enable_axis] > 0.5);
-        break;
-      }
-    }
-
-    // Stop tracking immediately when the grip button is released.
-    if (!arm_control_enabled && arm_tracking) {
+    // Stop tracking immediately when every arm's grip button is released.
+    if (!any_arm_enable_held() && arm_tracking) {
       arm_tracking = false;
-      right_arm_latched = false;
-      left_arm_latched  = false;
-      have_pub_prev_r_ = false;
-      have_pub_prev_l_ = false;
+      for (auto & [side, st] : arm_track_) {
+        st.latched = false;
+        st.have_pub_prev = false;
+      }
       RCLCPP_INFO(this->get_logger(), "Arm tracking stopped");
       for (auto & [name, m] : quest_arm_mappings) {
         publish_arm_tracking(m.group, false);
       }
     }
-    // Per-arm latching is handled inside the per-arm loop below, after the
-    // fresh end-effector TF has been read and the proximity check can be done.
+    // Per-arm latching is handled inside process_arm, after the fresh
+    // end-effector TF has been read and the proximity check can be done.
 
     for (auto &[name, m] : quest_arm_mappings) {
-      if (m.controller == "right" && right_tf_ok && head_tf_ok) {
-        bool ee_r_ok = false;
-        try {
-          tf_msg = tf_buffer->lookupTransform(
-            "base_footprint",
-            m.end_effector_frame_name,
-              tf2::TimePointZero,
-              tf2::Duration(0)
-          );
-          tf2::fromMsg(tf_msg.transform, current_tf_ee_r);
-          ee_r_ok = true;
-        }
-        catch (tf2::TransformException &ex) {
-          RCLCPP_WARN_THROTTLE(this->get_logger(), *get_clock(), 2000,
-            "Right EE TF lookup failed: %s", ex.what());
-        }
-
-        // Compute raw target in base_footprint space (HMD + scaled controller delta from HMD).
-        {
-          tf2::Vector3 hmd_pos_odom = current_tf_hmd_odom.getOrigin();
-          tf2::Vector3 delta_odom   = current_tf_r_odom.getOrigin() - hmd_pos_odom;
-          T_target_r.setOrigin(hmd_pos_odom + delta_odom * m.scale);
-          T_target_r.setRotation(current_tf_r_odom.getRotation());
-        }
-
-        // Per-arm latch on grip: proximity check skipped when thresholds are 0;
-        // the target is re-zeroed onto the EE so tracking starts jump-free.
-        if (arm_control_enabled && !right_arm_latched && ee_r_ok) {
-          bool prox_ok = true;
-          if (m.proximity_threshold > 0.0 || m.proximity_angle_threshold > 0.0) {
-            tf2::Vector3 pos_diff = current_tf_r.getOrigin() - current_tf_ee_r.getOrigin();
-            double pos_err = pos_diff.length();
-            tf2::Quaternion q_diff =
-              current_tf_ee_r.getRotation().inverse() * current_tf_r.getRotation();
-            q_diff.normalize();
-            double angle_err = 2.0 * std::acos(std::clamp(std::abs(q_diff.w()), 0.0, 1.0));
-
-            if (m.proximity_threshold > 0.0 && pos_err > m.proximity_threshold) {
-              RCLCPP_WARN_THROTTLE(this->get_logger(), *get_clock(), 1000,
-                "Right arm: controller %.3f m from EE (threshold %.3f m) — move controller to EE before gripping",
-                pos_err, m.proximity_threshold);
-              prox_ok = false;
-            }
-            if (prox_ok && m.proximity_angle_threshold > 0.0 &&
-                angle_err > m.proximity_angle_threshold) {
-              RCLCPP_WARN_THROTTLE(this->get_logger(), *get_clock(), 1000,
-                "Right arm: controller %.1f deg from EE orientation (threshold %.1f deg) — align controller before gripping",
-                angle_err * 180.0 / M_PI,
-                m.proximity_angle_threshold * 180.0 / M_PI);
-              prox_ok = false;
-            }
-          }
-            if (prox_ok) {
-            right_arm_latched = true;
-            right_arm_just_latched = true;
-            T_ctrl_latch_r = current_tf_r_odom;
-            T_ee_latch_r   = current_tf_ee_r;
-            latch_time_r_  = this->now();
-            have_pub_prev_r_ = false;
-          }
-        }
-
-        // While latched: target = EE_latch + controller-only delta (the HMD term would leak
-        // head sway); a soft-start ramp keeps the grip-squeeze jerk from moving the arm.
-        tf2::Transform T_pub_r = T_target_r;
-        if (right_arm_latched) {
-          const double ramp = std::clamp(
-            (this->now() - latch_time_r_).seconds() / kLatchSoftStartSec, 0.0, 1.0);
-          const tf2::Vector3 dpos =
-            (current_tf_r_odom.getOrigin() - T_ctrl_latch_r.getOrigin()) *
-            static_cast<double>(m.scale) * ramp;
-          T_pub_r.setOrigin(T_ee_latch_r.getOrigin() + dpos);
-          tf2::Quaternion q_delta_r =
-            current_tf_r_odom.getRotation() * T_ctrl_latch_r.getRotation().inverse();
-          q_delta_r = tf2::Quaternion::getIdentity().slerp(q_delta_r.normalized(), ramp);
-          T_pub_r.setRotation((q_delta_r * T_ee_latch_r.getRotation()).normalized());
-
-          // Safety net: rate-limit target motion so upstream faults can only crawl, never jump.
-          if (have_pub_prev_r_) {
-            const double dt_s = 1.0 / teleop_rate_hz;
-            const double max_lin = kMaxTargetLinVel * dt_s;
-            tf2::Vector3 dp = T_pub_r.getOrigin() - T_pub_prev_r_.getOrigin();
-            const double d = dp.length();
-            if (d > max_lin) {
-              T_pub_r.setOrigin(T_pub_prev_r_.getOrigin() + dp * (max_lin / d));
-            }
-            const double max_ang = kMaxTargetAngVel * dt_s;
-            tf2::Quaternion q_step =
-              T_pub_r.getRotation() * T_pub_prev_r_.getRotation().inverse();
-            const double ang = q_step.normalized().getAngleShortestPath();
-            if (ang > max_ang) {
-              T_pub_r.setRotation(T_pub_prev_r_.getRotation()
-                .slerp(T_pub_r.getRotation(), max_ang / ang).normalized());
-            }
-          }
-          T_pub_prev_r_ = T_pub_r;
-          have_pub_prev_r_ = true;
-        }
-
-        // Publish target under base_footprint (visualization — stays fixed in robot space).
-        target_msg_r.header.stamp    = this->now();
-        target_msg_r.header.frame_id = "base_footprint";
-        target_msg_r.child_frame_id  = m.target_frame_name;
-        target_msg_r.transform       = tf2::toMsg(T_pub_r);
-        tf_broadcaster->sendTransform(target_msg_r);
-
-        // Enable tracking only after the first re-zeroed target is on TF, else a
-        // waking backend would plan toward the stale pre-latch target.
-        if (right_arm_just_latched) {
-          right_arm_just_latched = false;
-          const char * prox_note = (m.proximity_threshold <= 0.0 &&
-                                    m.proximity_angle_threshold <= 0.0)
-                                   ? " (calibration skipped)" : "";
-          // Publish on every latch, not just the first (re-latch after unlatch).
-          publish_arm_tracking(m.group, true);
-          if (!arm_tracking) {
-            arm_tracking = true;
-            RCLCPP_INFO(this->get_logger(), "Arm tracking started (right latched%s)", prox_note);
-          } else {
-            RCLCPP_INFO(this->get_logger(), "Right arm latched%s", prox_note);
-          }
-        }
+      auto st_it = arm_track_.find(m.controller);
+      if (st_it == arm_track_.end()) continue;
+      auto & st = st_it->second;
+      if (st.tf_ok && head_tf_ok) {
+        const bool arm_enabled = m.enable_axis >= 0 &&
+          m.enable_axis < static_cast<int>(latest_axes.size()) &&
+          latest_axes[m.enable_axis] > 0.5;
+        process_arm(m, st, head_tf_ok, arm_enabled);
       }
-
-      if (m.controller == "left" && left_tf_ok && head_tf_ok) {
-        bool ee_l_ok = false;
-        try {
-          tf_msg = tf_buffer->lookupTransform(
-            "base_footprint",
-            m.end_effector_frame_name,
-              tf2::TimePointZero,
-              tf2::Duration(0)
-          );
-          tf2::fromMsg(tf_msg.transform, current_tf_ee_l);
-          ee_l_ok = true;
-        }
-        catch (tf2::TransformException &ex) {
-          RCLCPP_WARN_THROTTLE(this->get_logger(), *get_clock(), 2000,
-            "Left EE TF lookup failed: %s", ex.what());
-        }
-
-        // Compute raw target in base_footprint space.
-        {
-          tf2::Vector3 hmd_pos_odom = current_tf_hmd_odom.getOrigin();
-          tf2::Vector3 delta_odom   = current_tf_l_odom.getOrigin() - hmd_pos_odom;
-          T_target_l.setOrigin(hmd_pos_odom + delta_odom * m.scale);
-          T_target_l.setRotation(current_tf_l_odom.getRotation());
-        }
-
-        // Per-arm latch on grip: proximity check skipped when thresholds are 0;
-        // the target is re-zeroed onto the EE so tracking starts jump-free.
-        if (arm_control_enabled && !left_arm_latched && ee_l_ok) {
-          bool prox_ok = true;
-          if (m.proximity_threshold > 0.0 || m.proximity_angle_threshold > 0.0) {
-            tf2::Vector3 pos_diff = current_tf_l.getOrigin() - current_tf_ee_l.getOrigin();
-            double pos_err = pos_diff.length();
-            tf2::Quaternion q_diff =
-              current_tf_ee_l.getRotation().inverse() * current_tf_l.getRotation();
-            q_diff.normalize();
-            double angle_err = 2.0 * std::acos(std::clamp(std::abs(q_diff.w()), 0.0, 1.0));
-
-            if (m.proximity_threshold > 0.0 && pos_err > m.proximity_threshold) {
-              RCLCPP_WARN_THROTTLE(this->get_logger(), *get_clock(), 1000,
-                "Left arm: controller %.3f m from EE (threshold %.3f m) — move controller to EE before gripping",
-                pos_err, m.proximity_threshold);
-              prox_ok = false;
-            }
-            if (prox_ok && m.proximity_angle_threshold > 0.0 &&
-                angle_err > m.proximity_angle_threshold) {
-              RCLCPP_WARN_THROTTLE(this->get_logger(), *get_clock(), 1000,
-                "Left arm: controller %.1f deg from EE orientation (threshold %.1f deg) — align controller before gripping",
-                angle_err * 180.0 / M_PI,
-                m.proximity_angle_threshold * 180.0 / M_PI);
-              prox_ok = false;
-            }
-          }
-          if (prox_ok) {
-            left_arm_latched = true;
-            left_arm_just_latched = true;
-            T_ctrl_latch_l = current_tf_l_odom;
-            T_ee_latch_l   = current_tf_ee_l;
-            latch_time_l_  = this->now();
-            have_pub_prev_l_ = false;
-          }
-        }
-
-        // Re-zero onto the EE while latched: controller-only deltas with a
-        // soft-start ramp (see the matching comment in the right-arm block).
-        tf2::Transform T_pub_l = T_target_l;
-        if (left_arm_latched) {
-          const double ramp = std::clamp(
-            (this->now() - latch_time_l_).seconds() / kLatchSoftStartSec, 0.0, 1.0);
-          const tf2::Vector3 dpos =
-            (current_tf_l_odom.getOrigin() - T_ctrl_latch_l.getOrigin()) *
-            static_cast<double>(m.scale) * ramp;
-          T_pub_l.setOrigin(T_ee_latch_l.getOrigin() + dpos);
-          tf2::Quaternion q_delta_l =
-            current_tf_l_odom.getRotation() * T_ctrl_latch_l.getRotation().inverse();
-          q_delta_l = tf2::Quaternion::getIdentity().slerp(q_delta_l.normalized(), ramp);
-          T_pub_l.setRotation((q_delta_l * T_ee_latch_l.getRotation()).normalized());
-
-          // Safety net: rate-limit the published target's motion (see the
-          // matching comment in the right-arm block).
-          if (have_pub_prev_l_) {
-            const double dt_s = 1.0 / teleop_rate_hz;
-            const double max_lin = kMaxTargetLinVel * dt_s;
-            tf2::Vector3 dp = T_pub_l.getOrigin() - T_pub_prev_l_.getOrigin();
-            const double d = dp.length();
-            if (d > max_lin) {
-              T_pub_l.setOrigin(T_pub_prev_l_.getOrigin() + dp * (max_lin / d));
-            }
-            const double max_ang = kMaxTargetAngVel * dt_s;
-            tf2::Quaternion q_step =
-              T_pub_l.getRotation() * T_pub_prev_l_.getRotation().inverse();
-            const double ang = q_step.normalized().getAngleShortestPath();
-            if (ang > max_ang) {
-              T_pub_l.setRotation(T_pub_prev_l_.getRotation()
-                .slerp(T_pub_l.getRotation(), max_ang / ang).normalized());
-            }
-          }
-          T_pub_prev_l_ = T_pub_l;
-          have_pub_prev_l_ = true;
-        }
-
-        // Publish target under base_footprint (visualization).
-        target_msg_l.header.stamp    = this->now();
-        target_msg_l.header.frame_id = "base_footprint";
-        target_msg_l.child_frame_id  = m.target_frame_name;
-        target_msg_l.transform       = tf2::toMsg(T_pub_l);
-        tf_broadcaster->sendTransform(target_msg_l);
-
-        // Enable tracking only AFTER the first re-zeroed target is on TF (see the
-        // matching comment in the right-arm block).
-        if (left_arm_just_latched) {
-          left_arm_just_latched = false;
-          const char * prox_note = (m.proximity_threshold <= 0.0 &&
-                                    m.proximity_angle_threshold <= 0.0)
-                                   ? " (calibration skipped)" : "";
-          // Publish on every latch, not just the first (see right-arm block).
-          publish_arm_tracking(m.group, true);
-          if (!arm_tracking) {
-            arm_tracking = true;
-            RCLCPP_INFO(this->get_logger(), "Arm tracking started (left latched%s)", prox_note);
-          } else {
-            RCLCPP_INFO(this->get_logger(), "Left arm latched%s", prox_note);
-          }
-        }
-      }
-
     }// Arm
 
     // Gripper — separate loop over hand groups, runs after the arm loop.
