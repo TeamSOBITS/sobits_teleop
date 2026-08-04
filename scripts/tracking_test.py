@@ -17,7 +17,6 @@ Run inside the robot's ROS environment (matching RMW + ROS_DOMAIN_ID):
   python3 tracking_test.py --arms right              # single arm
   python3 tracking_test.py --arms right,left         # both arms
 Prints a JSON summary to stdout; per-waypoint CSVs to --out-prefix_<arm>.csv.
-See TESTING_TRACKING.md for the full procedure and reference numbers.
 """
 import argparse
 import json
