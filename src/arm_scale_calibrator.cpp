@@ -52,7 +52,8 @@ ArmScaleCalibrator::ArmScaleCalibrator(const rclcpp::NodeOptions & options)
 
 void ArmScaleCalibrator::joy_cb(const sensor_msgs::msg::Joy::SharedPtr msg)
 {
-  if (grip_axis_ >= static_cast<int>(msg->axes.size())) return;
+  // Guard against a negative grip_axis config typo, not just out-of-range.
+  if (grip_axis_ < 0 || grip_axis_ >= static_cast<int>(msg->axes.size())) return;
 
   bool grip = (msg->axes[grip_axis_] > 0.5f);
 
