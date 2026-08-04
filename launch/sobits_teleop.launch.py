@@ -1,14 +1,19 @@
-from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, ExecuteProcess, IncludeLaunchDescription
-from launch.conditions import IfCondition
-from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, EqualsSubstitution, AndSubstitution, OrSubstitution, NotSubstitution
-from launch_ros.actions import Node
-from ament_index_python.packages import get_package_share_directory
 import os
 
+from ament_index_python.packages import get_package_share_directory
+from launch import LaunchDescription
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.conditions import IfCondition
+from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch.substitutions import (
+    AndSubstitution, EqualsSubstitution, LaunchConfiguration, NotSubstitution,
+    PathJoinSubstitution,
+)
+from launch_ros.actions import Node
+
+
 def generate_launch_description():
-    pkg_name = "sobits_teleop"
+    pkg_name = 'sobits_teleop'
 
     # Launch arguments
     declare_robot_name_cmd = DeclareLaunchArgument(
@@ -18,7 +23,7 @@ def generate_launch_description():
     )
     declare_device_cmd = DeclareLaunchArgument(
         'device',
-        default_value='ps4', 
+        default_value='ps4',
         description='Input device type: ps4, quest, keyboard'
     )
     declare_joystick_device_cmd = DeclareLaunchArgument(
@@ -60,10 +65,10 @@ def generate_launch_description():
     ros_ip = LaunchConfiguration('ros_ip')
     use_ds4drv = LaunchConfiguration('use_ds4drv')
     robot_config = PathJoinSubstitution([
-        get_package_share_directory(pkg_name), 
+        get_package_share_directory(pkg_name),
         'config',
         robot_name,
-        'robot' 
+        'robot'
     ])
 
     controller_config = PathJoinSubstitution([

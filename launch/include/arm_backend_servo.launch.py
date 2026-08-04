@@ -1,5 +1,6 @@
-"""
-Servo launcher — starts the full MoveIt Servo stack for both arms plus the
+"""Servo launcher.
+
+Starts the full MoveIt Servo stack for both arms plus the
 servo_target_bridge, under the /<robot_name> namespace.
 
 servo_node needs robot_description / robot_description_semantic /
@@ -11,11 +12,11 @@ pattern in moveit_arm_controller.cpp ~lines 185-230) via an OpaqueFunction that
 spins a throwaway rclpy node against move_group's parameter services.
 """
 
+from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
-from ament_index_python.packages import get_package_share_directory
 
 
 MOVE_GROUP_WAIT_TIMEOUT_S = 60.0
@@ -34,8 +35,11 @@ PARAM_TYPE_STRING_ARRAY = 9
 
 
 def _parameter_value_to_python(value):
-    """Converts an rcl_interfaces/ParameterValue to a plain Python value,
-    matching the field selected by its .type (same mapping rclpy.Parameter uses)."""
+    """
+    Convert an rcl_interfaces/ParameterValue to a plain Python value.
+
+    Matches the field selected by its .type (same mapping rclpy.Parameter uses).
+    """
     t = value.type
     if t == PARAM_TYPE_BOOL:
         return value.bool_value
@@ -62,8 +66,9 @@ def _parameter_value_to_python(value):
 
 def _fetch_move_group_params(context, *args, **kwargs):
     """
-    Runs at launch time (after 'robot_name' / 'use_sim_time' substitutions are
-    resolvable). Fetches robot_description, robot_description_semantic, and the
+    Run at launch time, after 'robot_name' / 'use_sim_time' substitutions are resolvable.
+
+    Fetches robot_description, robot_description_semantic, and the
     full robot_description_planning.* subtree from
     /<robot_name>/move_group, then returns the Servo + bridge launch actions
     parameterised with those values.
@@ -100,7 +105,7 @@ def _fetch_move_group_params(context, *args, **kwargs):
            not get_params_client.wait_for_service(timeout_sec=MOVE_GROUP_WAIT_TIMEOUT_S):
             raise RuntimeError(
                 f"arm_backend_servo.launch.py: '{move_group_node_name}' parameter services "
-                f"were not available within {MOVE_GROUP_WAIT_TIMEOUT_S:.0f} s — is "
+                f'were not available within {MOVE_GROUP_WAIT_TIMEOUT_S:.0f} s — is '
                 f"move_group running under namespace '/{robot_name}'? Aborting launch.")
 
         def call_sync(client, request, what):
@@ -109,7 +114,7 @@ def _fetch_move_group_params(context, *args, **kwargs):
             if not future.done() or future.result() is None:
                 raise RuntimeError(
                     f"arm_backend_servo.launch.py: {what} call to '{move_group_node_name}' "
-                    f"timed out or failed. Aborting launch.")
+                    f'timed out or failed. Aborting launch.')
             return future.result()
 
         # move_group returns an EMPTY list for a whole GetParameters batch if any
@@ -137,21 +142,22 @@ def _fetch_move_group_params(context, *args, **kwargs):
 
         if len(base_resp.values) < 1 or not base_resp.values[0].string_value:
             raise RuntimeError(
-                "arm_backend_servo.launch.py: robot_description is empty on move_group — "
-                "aborting launch.")
+                'arm_backend_servo.launch.py: robot_description is empty on move_group — '
+                'aborting launch.')
 
         robot_description_value = base_resp.values[0].string_value
         robot_description_semantic_value = (
             base_resp.values[1].string_value if len(base_resp.values) > 1 else '')
 
         fetch_node.get_logger().info(
-            f"robot_description fetched ({len(robot_description_value)} chars)")
+            f'robot_description fetched ({len(robot_description_value)} chars)')
 
         # ── robot_description_planning.* (recursive list, then get) ────────
         list_req = ListParameters.Request()
         list_req.prefixes = ['robot_description_planning']
         list_req.depth = 0  # recursive
-        list_resp = call_sync(list_params_client, list_req, 'list_parameters(robot_description_planning)')
+        list_resp = call_sync(
+            list_params_client, list_req, 'list_parameters(robot_description_planning)')
 
         planning_params = {}
         names = list(list_resp.result.names)
@@ -166,11 +172,12 @@ def _fetch_move_group_params(context, *args, **kwargs):
                     continue
                 planning_params[name] = py_value
             fetch_node.get_logger().info(
-                f"robot_description_planning: fetched {len(planning_params)} / {len(names)} sub-parameters")
+                f'robot_description_planning: fetched {len(planning_params)} / '
+                f'{len(names)} sub-parameters')
         else:
             fetch_node.get_logger().warn(
-                "robot_description_planning namespace empty on move_group — "
-                "Servo joint-limit awareness may be degraded")
+                'robot_description_planning namespace empty on move_group — '
+                'Servo joint-limit awareness may be degraded')
 
         # ── robot_description_kinematics.* ── without the IK params servo emits
         # zero commands; fetch from move_group the same way as _planning.*.
@@ -193,11 +200,12 @@ def _fetch_move_group_params(context, *args, **kwargs):
                     continue
                 kinematics_params[name] = py_value
             fetch_node.get_logger().info(
-                f"robot_description_kinematics: fetched {len(kinematics_params)} / {len(kin_names)} sub-parameters")
+                f'robot_description_kinematics: fetched {len(kinematics_params)} / '
+                f'{len(kin_names)} sub-parameters')
         else:
             fetch_node.get_logger().warn(
-                "robot_description_kinematics namespace empty on move_group — "
-                "Servo POSE tracking will have no IK solver and emit no commands")
+                'robot_description_kinematics namespace empty on move_group — '
+                'Servo POSE tracking will have no IK solver and emit no commands')
     finally:
         if fetch_node is not None:
             fetch_node.destroy_node()

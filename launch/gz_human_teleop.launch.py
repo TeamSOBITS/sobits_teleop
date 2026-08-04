@@ -1,13 +1,13 @@
+from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.conditions import IfCondition
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, PythonExpression, EqualsSubstitution
+from launch.substitutions import EqualsSubstitution, LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
-from ament_index_python.packages import get_package_share_directory
 
 
 def generate_launch_description():
-    pkg_name = "sobits_teleop"
+    pkg_name = 'sobits_teleop'
 
     # Launch arguments
     declare_namespace_cmd = DeclareLaunchArgument(
@@ -114,7 +114,9 @@ def generate_launch_description():
             {'deadzone': 0.05},
             {'autorepeat_rate': 20.0}
         ],
-        condition=IfCondition(EqualsSubstitution(LaunchConfiguration('device'), 'ps4') or EqualsSubstitution(LaunchConfiguration('device'), 'ps5'))
+        condition=IfCondition(
+            EqualsSubstitution(LaunchConfiguration('device'), 'ps4') or
+            EqualsSubstitution(LaunchConfiguration('device'), 'ps5'))
     )
 
     # keyboard node for keyboard teleop

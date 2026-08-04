@@ -8,12 +8,12 @@ yaml (arm_backend_plan.yaml) carries tuning only.
 
 import os
 
+from ament_index_python.packages import (
+    get_package_share_directory, PackageNotFoundError)
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
-from ament_index_python.packages import (
-    PackageNotFoundError, get_package_share_directory)
 
 
 def _make_nodes(context, *args, **kwargs):
