@@ -469,6 +469,8 @@ ros2 launch sobits_teleop sobits_teleop.launch.py \
 ## マイルストーン
 
 - [ ] 疑似逆運動学の追加
+- [ ] パラメータ読み込みを `generate_parameter_library` に移行（設定ミスを起動時エラーに）
+- [ ] 左腕ハード復帰後に `check_collisions: true` へ戻す（必要なら ACM でペア除外）
 
 現時点のバグや新規機能の依頼は[Issueページ][issues-url]をご覧ください．
 

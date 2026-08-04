@@ -475,6 +475,8 @@ ros2 launch sobits_teleop sobits_teleop.launch.py \
 ## Milestone
 
 - [ ] Add pseudo inverse kinematics
+- [ ] Migrate parameter loading to `generate_parameter_library` (config typos become startup errors)
+- [ ] Restore `check_collisions: true` once left-arm hardware is back (exclude pairs via ACM if needed)
 
 See the [open issues][issues-url] for a full list of proposed features and known issues.
 
