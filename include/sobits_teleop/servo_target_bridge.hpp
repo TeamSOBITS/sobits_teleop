@@ -66,6 +66,10 @@ private:
     std::atomic<bool> enabled{false};
     std::atomic<bool> command_type_set{false};
     std::atomic<bool> initial_pause_set{false};
+
+    // Pause state to reconcile with the servo: -1 none, 0 unpause, 1 pause.
+    // A newer toggle overwrites this before the older one's response lands.
+    std::atomic<int> pending_pause{-1};
   };
 
   void enable_callback(const std::string & arm_name, const std_msgs::msg::Bool::SharedPtr msg);
@@ -73,6 +77,10 @@ private:
   // Fires per arm on a slow timer until the startup POSE switch and pause
   // both succeed, then cancels itself.
   void try_startup_sequence(const std::string & arm_name);
+
+  // Sends pause_servo(pending_pause) if the service is ready; retried by the
+  // startup_retry_timer until the response confirms the latest toggle.
+  void try_send_pause(const std::string & arm_name);
 
   // Shared timer tick: for each enabled arm, TF-lookup + publish PoseStamped.
   void pose_timer_callback();

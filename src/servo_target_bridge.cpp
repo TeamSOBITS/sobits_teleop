@@ -139,7 +139,10 @@ void ServoTargetBridge::try_startup_sequence(const std::string & arm_name)
   if (it == arms_.end()) return;
   auto & arm = *it->second;
 
-  if (arm.command_type_set.load() && arm.initial_pause_set.load()) {
+  try_send_pause(arm_name);
+
+  if (arm.command_type_set.load() && arm.initial_pause_set.load() &&
+      arm.pending_pause.load() == -1) {
     if (arm.startup_retry_timer) {
       arm.startup_retry_timer->cancel();
     }
@@ -228,6 +231,48 @@ void ServoTargetBridge::try_startup_sequence(const std::string & arm_name)
   }
 }
 
+// ── Send the pending pause/unpause, retried by the caller until confirmed ──
+
+void ServoTargetBridge::try_send_pause(const std::string & arm_name)
+{
+  auto it = arms_.find(arm_name);
+  if (it == arms_.end()) return;
+  auto & arm = *it->second;
+
+  const int wanted = arm.pending_pause.load();
+  if (wanted == -1) return;
+
+  if (!arm.pause_servo_client->service_is_ready()) {
+    RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5000,
+      "Arm '%s': pause_servo service not ready — servo stays %s until it returns",
+      arm_name.c_str(), wanted == 1 ? "paused" : "unpaused");
+    return;
+  }
+
+  auto req = std::make_shared<SetBool::Request>();
+  req->data = (wanted == 1);
+  arm.pause_servo_client->async_send_request(
+    req,
+    [this, arm_name, wanted](rclcpp::Client<SetBool>::SharedFuture future) {
+      auto it2 = arms_.find(arm_name);
+      if (it2 == arms_.end()) return;
+      auto & arm2 = *it2->second;
+      auto resp = future.get();
+      if (resp->success) {
+        // Only clear if no newer toggle arrived while this request was in flight.
+        int expected = wanted;
+        if (arm2.pending_pause.compare_exchange_strong(expected, -1)) {
+          RCLCPP_INFO(get_logger(), "Arm '%s': pause_servo(%s) -> ok",
+            arm_name.c_str(), wanted == 1 ? "true" : "false");
+        }
+      } else {
+        RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5000,
+          "Arm '%s': pause_servo(%s) rejected — will retry",
+          arm_name.c_str(), wanted == 1 ? "true" : "false");
+      }
+    });
+}
+
 // ── Enable / disable callback (async only — never blocks the executor) ──
 
 void ServoTargetBridge::enable_callback(
@@ -260,17 +305,10 @@ void ServoTargetBridge::enable_callback(
         arm_name.c_str());
     }
 
-    if (arm.pause_servo_client->service_is_ready()) {
-      auto req = std::make_shared<SetBool::Request>();
-      req->data = false;
-      arm.pause_servo_client->async_send_request(
-        req,
-        [this, arm_name](rclcpp::Client<SetBool>::SharedFuture future) {
-          auto resp = future.get();
-          RCLCPP_INFO(get_logger(), "Arm '%s': pause_servo(false) on enable -> %s",
-            arm_name.c_str(), resp->success ? "ok" : "FAILED");
-        });
-    }
+    // Unpause is retried until confirmed, so it's never silently skipped.
+    arm.pending_pause = 0;
+    try_send_pause(arm_name);
+    if (arm.startup_retry_timer) arm.startup_retry_timer->reset();
 
     arm.enabled = true;
     RCLCPP_INFO(get_logger(), "Servo tracking ENABLED for '%s'", arm_name.c_str());
@@ -278,17 +316,9 @@ void ServoTargetBridge::enable_callback(
     if (!arm.enabled.load()) return;
     arm.enabled = false;
 
-    if (arm.pause_servo_client->service_is_ready()) {
-      auto req = std::make_shared<SetBool::Request>();
-      req->data = true;
-      arm.pause_servo_client->async_send_request(
-        req,
-        [this, arm_name](rclcpp::Client<SetBool>::SharedFuture future) {
-          auto resp = future.get();
-          RCLCPP_INFO(get_logger(), "Arm '%s': pause_servo(true) on disable -> %s",
-            arm_name.c_str(), resp->success ? "ok" : "FAILED");
-        });
-    }
+    arm.pending_pause = 1;
+    try_send_pause(arm_name);
+    if (arm.startup_retry_timer) arm.startup_retry_timer->reset();
 
     RCLCPP_INFO(get_logger(), "Servo tracking DISABLED for '%s'", arm_name.c_str());
   }
