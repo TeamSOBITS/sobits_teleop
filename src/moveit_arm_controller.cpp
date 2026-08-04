@@ -525,7 +525,7 @@ void MoveitArmController::tracking_loop(const std::string & arm_name)
 
   geometry_msgs::msg::Pose last_submitted_target;
   bool first_iter = true;
-  last_heartbeat_sec_ = this->now().seconds();
+  arm.last_heartbeat_sec = this->now().seconds();
 
   // Invalidate any seed left over from a previous enable/disable cycle.
   {
@@ -649,7 +649,7 @@ void MoveitArmController::tracking_loop(const std::string & arm_name)
     // ── 5. Replan decision (when not executing) ───────────────────────────
     if (!first_iter && !arm.executing.load()) {
       auto now_sec = this->now().seconds();
-      bool heartbeat = (now_sec - last_heartbeat_sec_ >= heartbeat_period_sec_);
+      bool heartbeat = (now_sec - arm.last_heartbeat_sec >= heartbeat_period_sec_);
       double target_moved   = pose_distance(target_pose, last_submitted_target);
       double target_rotated = pose_angle(target_pose, last_submitted_target);
       if (!heartbeat &&
@@ -658,7 +658,7 @@ void MoveitArmController::tracking_loop(const std::string & arm_name)
         rate.sleep();
         continue;
       }
-      if (heartbeat) last_heartbeat_sec_ = now_sec;
+      if (heartbeat) arm.last_heartbeat_sec = now_sec;
     }
 
     // ── 6. Clamp step to max_cartesian_step_m_ ────────────────────────────

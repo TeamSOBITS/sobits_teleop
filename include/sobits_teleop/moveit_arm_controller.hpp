@@ -67,6 +67,9 @@ private:
     rclcpp::Time last_sent_time;
     std::mutex last_sent_mutex;
 
+    // Only this arm's own tracking thread touches it.
+    double last_heartbeat_sec{0.0};
+
     ArmData() = default;
     ArmData(const ArmData &) = delete;
     ArmData & operator=(const ArmData &) = delete;
@@ -121,7 +124,6 @@ private:
   int    preempt_settle_ms_;
   bool   use_topic_;
 
-  double last_heartbeat_sec_{0.0};
   static constexpr double heartbeat_period_sec_ = 2.0;
 };
 
