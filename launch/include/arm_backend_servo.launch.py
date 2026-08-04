@@ -1,4 +1,5 @@
-"""Servo launcher.
+"""
+Servo launcher.
 
 Starts the full MoveIt Servo stack for both arms plus the
 servo_target_bridge, under the /<robot_name> namespace.
