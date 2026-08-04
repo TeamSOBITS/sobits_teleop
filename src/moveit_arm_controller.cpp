@@ -262,7 +262,7 @@ void MoveitArmController::init_move_groups()
   }
 
   for (auto & [arm_name, arm_data] : arms_) {
-    if (arm_data->mgi) continue;
+    if (arm_data->mgi_ready.load()) continue;
     try {
       moveit::planning_interface::MoveGroupInterface::Options opts(
         arm_data->config.planning_group,
@@ -317,6 +317,9 @@ void MoveitArmController::init_move_groups()
           arm_data->vel_limits.size(), arm_data->accel_limits.size());
       }
 
+      // Publish mgi to other threads only once it and the limit caches are complete.
+      arm_data->mgi_ready.store(true, std::memory_order_release);
+
     } catch (const std::exception & e) {
       RCLCPP_ERROR(get_logger(),
         "Failed to init MoveGroupInterface for '%s': %s", arm_name.c_str(), e.what());
@@ -346,7 +349,7 @@ void MoveitArmController::enable_callback(
   if (it == arms_.end()) return;
   auto & arm = *it->second;
 
-  if (!arm.mgi) {
+  if (!arm.mgi_ready.load(std::memory_order_acquire)) {
     RCLCPP_WARN(get_logger(),
       "Arm '%s' MoveGroupInterface not ready yet — ignoring enable=true. "
       "Check that move_group is running and robot_description was fetched.",
@@ -456,7 +459,7 @@ void MoveitArmController::cancel_trajectory(ArmData & arm)
   // positions. Uses the joint_states cache, not MGI's state monitor — this
   // may run on the enable_callback/executor thread and must never block it.
   if (use_topic_) {
-    if (!arm.mgi) return;
+    if (!arm.mgi_ready.load(std::memory_order_acquire)) return;
     std::vector<std::string> names = arm.mgi->getJoints();  // cached local call, no service
     std::vector<double> pos;
     pos.reserve(names.size());

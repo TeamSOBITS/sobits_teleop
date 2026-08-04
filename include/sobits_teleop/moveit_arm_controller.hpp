@@ -50,6 +50,8 @@ private:
   struct ArmData {
     ArmTeleopConfig config;
     std::shared_ptr<moveit::planning_interface::MoveGroupInterface> mgi;
+    // Set true only after mgi + limit caches are fully written (release store).
+    std::atomic<bool> mgi_ready{false};
     rclcpp_action::Client<FollowJointTrajectory>::SharedPtr action_client;
     rclcpp::Publisher<trajectory_msgs::msg::JointTrajectory>::SharedPtr traj_pub;
     std::shared_ptr<GoalHandleFJT> goal_handle;  // protected by goal_mutex
