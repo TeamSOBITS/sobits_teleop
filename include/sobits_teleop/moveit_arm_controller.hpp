@@ -57,6 +57,8 @@ private:
     std::atomic<bool> enabled{false};
     std::atomic<bool> thread_active{false};
     std::thread thread;
+    // Serializes the enable decision against the loop's own exit decision.
+    std::mutex lifecycle_mutex;
 
     std::unordered_map<std::string, double> vel_limits;
     std::unordered_map<std::string, double> accel_limits;

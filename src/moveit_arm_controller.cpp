@@ -337,17 +337,18 @@ void MoveitArmController::enable_callback(
   }
 
   if (msg->data) {
+    // Locked for the whole decision so it can't race the loop's own exit check.
+    std::lock_guard<std::mutex> lk(arm.lifecycle_mutex);
     if (arm.enabled.load()) return;
     arm.enabled = true;
 
-    if (arm.thread.joinable() && !arm.thread_active.load()) {
-      arm.thread.join();
-    }
     if (!arm.thread_active.load()) {
+      if (arm.thread.joinable()) arm.thread.join();  // finished thread — immediate
       arm.thread_active = true;
       arm.thread = std::thread([this, arm_name]() { tracking_loop(arm_name); });
       RCLCPP_INFO(get_logger(), "Arm tracking ENABLED for '%s'", arm_name.c_str());
     }
+    // else: a wind-down loop will see enabled=true and restart tracking itself.
   } else {
     if (!arm.enabled.load()) return;
     arm.enabled = false;
@@ -520,9 +521,13 @@ void MoveitArmController::tracking_loop(const std::string & arm_name)
     }
   }
 
-  rclcpp::Rate rate(update_rate_hz_);
   const double lookahead_s = traj_lookahead_ms_ / 1000.0;
 
+  // Outer loop: a re-enable during wind-down restarts tracking here instead of
+  // leaving enabled=true with no loop running (see lifecycle_mutex below).
+  for (;;) {
+
+  rclcpp::Rate rate(update_rate_hz_);
   geometry_msgs::msg::Pose last_submitted_target;
   bool first_iter = true;
   arm.last_heartbeat_sec = this->now().seconds();
@@ -826,7 +831,15 @@ void MoveitArmController::tracking_loop(const std::string & arm_name)
 
   cancel_trajectory(arm);
   mgi->stop();
-  arm.thread_active = false;
+
+  {
+    std::lock_guard<std::mutex> lk(arm.lifecycle_mutex);
+    if (!(rclcpp::ok() && arm.enabled.load())) { arm.thread_active = false; break; }
+  }
+  // re-enabled during wind-down: outer loop restarts tracking in this same thread
+  RCLCPP_INFO(get_logger(), "Arm '%s': re-enabled during wind-down — restarting", arm_name.c_str());
+  }  // for (;;)
+
   RCLCPP_INFO(get_logger(), "Tracking loop ended for arm '%s'", arm_name.c_str());
 }
 
