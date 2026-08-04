@@ -129,11 +129,11 @@ install(TARGETS
   servo_target_bridge
   arm_scale_calibrator
   DESTINATION lib/${PROJECT_NAME})
-  
+
 install(DIRECTORY include/
   DESTINATION include
 )
-  
+
 install(DIRECTORY
   config
   launch
