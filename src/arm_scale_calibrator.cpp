@@ -13,7 +13,7 @@ namespace sobits_teleop
 
 static double dist3(const Sample & a, const Sample & b)
 {
-  return std::sqrt(std::pow(a.x-b.x,2) + std::pow(a.y-b.y,2) + std::pow(a.z-b.z,2));
+  return std::sqrt(std::pow(a.x - b.x, 2) + std::pow(a.y - b.y, 2) + std::pow(a.z - b.z, 2));
 }
 
 ArmScaleCalibrator::ArmScaleCalibrator(const rclcpp::NodeOptions & options)
@@ -22,7 +22,7 @@ ArmScaleCalibrator::ArmScaleCalibrator(const rclcpp::NodeOptions & options)
   tf_listener_(tf_buffer_),
   robot_arm_reach_m_(this->declare_parameter<double>("robot_arm_reach_m", 1.2926)),
   right_frame_(this->declare_parameter<std::string>("right_frame", "right_controller_odom")),
-  left_frame_(this->declare_parameter<std::string>("left_frame",  "left_controller_odom")),
+  left_frame_(this->declare_parameter<std::string>("left_frame", "left_controller_odom")),
   parent_frame_(this->declare_parameter<std::string>("parent_frame", "base_footprint")),
   grip_axis_(this->declare_parameter<int>("grip_axis", 7)),
   state_(State::WAITING_FOR_START),
@@ -53,14 +53,14 @@ ArmScaleCalibrator::ArmScaleCalibrator(const rclcpp::NodeOptions & options)
 void ArmScaleCalibrator::joy_cb(const sensor_msgs::msg::Joy::SharedPtr msg)
 {
   // Guard against a negative grip_axis config typo, not just out-of-range.
-  if (grip_axis_ < 0 || grip_axis_ >= static_cast<int>(msg->axes.size())) return;
+  if (grip_axis_ < 0 || grip_axis_ >= static_cast<int>(msg->axes.size())) {return;}
 
   bool grip = (msg->axes[grip_axis_] > 0.5f);
 
   // Ignore edges until the grip has been seen released, so a grip held at
   // startup doesn't fire both steps at once.
   if (!seen_grip_released_) {
-    if (!grip) seen_grip_released_ = true;
+    if (!grip) {seen_grip_released_ = true;}
     prev_grip_ = grip;
     return;
   }
@@ -75,14 +75,14 @@ void ArmScaleCalibrator::joy_cb(const sensor_msgs::msg::Joy::SharedPtr msg)
       if (!right_frame_.empty()) {
         auto ts_r = tf_buffer_.lookupTransform(parent_frame_, right_frame_, tf2::TimePointZero);
         right_start_ = {ts_r.transform.translation.x,
-                        ts_r.transform.translation.y,
-                        ts_r.transform.translation.z};
+          ts_r.transform.translation.y,
+          ts_r.transform.translation.z};
       }
       if (!left_frame_.empty()) {
-        auto ts_l = tf_buffer_.lookupTransform(parent_frame_, left_frame_,  tf2::TimePointZero);
-        left_start_  = {ts_l.transform.translation.x,
-                        ts_l.transform.translation.y,
-                        ts_l.transform.translation.z};
+        auto ts_l = tf_buffer_.lookupTransform(parent_frame_, left_frame_, tf2::TimePointZero);
+        left_start_ = {ts_l.transform.translation.x,
+          ts_l.transform.translation.y,
+          ts_l.transform.translation.z};
       }
     } catch (const tf2::TransformException & e) {
       RCLCPP_WARN(this->get_logger(), "TF not ready: %s — try again", e.what());
@@ -102,9 +102,8 @@ void ArmScaleCalibrator::joy_cb(const sensor_msgs::msg::Joy::SharedPtr msg)
       "        elbows straight, until you reach a full T-pose.\n"
       "        Press and release RIGHT GRIP when arms are fully sideways.",
       right_start_.x, right_start_.y, right_start_.z,
-      left_start_.x,  left_start_.y,  left_start_.z);
-  }
-  else if (state_ == State::RECORDING && falling_edge) {
+      left_start_.x, left_start_.y, left_start_.z);
+  } else if (state_ == State::RECORDING && falling_edge) {
     auto elapsed = this->now() - recording_start_;
     if (elapsed.seconds() < 2.0) {
       RCLCPP_WARN(this->get_logger(),
@@ -120,28 +119,29 @@ void ArmScaleCalibrator::joy_cb(const sensor_msgs::msg::Joy::SharedPtr msg)
 void ArmScaleCalibrator::sample_cb()
 {
   std::lock_guard<std::mutex> lock(mutex_);
-  if (state_ != State::RECORDING) return;
+  if (state_ != State::RECORDING) {return;}
 
   try {
     if (!right_frame_.empty()) {
       auto ts_r = tf_buffer_.lookupTransform(parent_frame_, right_frame_, tf2::TimePointZero);
       right_samples_.push_back({ts_r.transform.translation.x,
-                                ts_r.transform.translation.y,
-                                ts_r.transform.translation.z});
+          ts_r.transform.translation.y,
+          ts_r.transform.translation.z});
     }
     if (!left_frame_.empty()) {
-      auto ts_l = tf_buffer_.lookupTransform(parent_frame_, left_frame_,  tf2::TimePointZero);
+      auto ts_l = tf_buffer_.lookupTransform(parent_frame_, left_frame_, tf2::TimePointZero);
       left_samples_.push_back({ts_l.transform.translation.x,
-                               ts_l.transform.translation.y,
-                               ts_l.transform.translation.z});
+          ts_l.transform.translation.y,
+          ts_l.transform.translation.z});
     }
-  } catch (const tf2::TransformException &) {}
+  } catch (const tf2::TransformException &) {
+  }
 }
 
 void ArmScaleCalibrator::compute_and_print()
 {
   const bool has_right = !right_frame_.empty() && !right_samples_.empty();
-  const bool has_left  = !left_frame_.empty()  && !left_samples_.empty();
+  const bool has_left = !left_frame_.empty() && !left_samples_.empty();
 
   if (!has_right && !has_left) {
     RCLCPP_ERROR(this->get_logger(), "No samples collected — did the sweep happen?");
@@ -149,10 +149,16 @@ void ArmScaleCalibrator::compute_and_print()
   }
 
   double right_max = 0.0, left_max = 0.0;
-  if (has_right)
-    for (const auto & s : right_samples_) right_max = std::max(right_max, dist3(s, right_start_));
-  if (has_left)
-    for (const auto & s : left_samples_)  left_max  = std::max(left_max,  dist3(s, left_start_));
+  if (has_right) {
+    for (const auto & s : right_samples_) {
+      right_max = std::max(right_max, dist3(s, right_start_));
+    }
+  }
+  if (has_left) {
+    for (const auto & s : left_samples_) {
+      left_max = std::max(left_max, dist3(s, left_start_));
+    }
+  }
 
   double human_reach = std::max(right_max, left_max);
 

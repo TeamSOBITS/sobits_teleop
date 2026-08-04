@@ -25,9 +25,9 @@ inline double pose_angle(
   const geometry_msgs::msg::Pose & b)
 {
   double dot = a.orientation.x * b.orientation.x +
-               a.orientation.y * b.orientation.y +
-               a.orientation.z * b.orientation.z +
-               a.orientation.w * b.orientation.w;
+    a.orientation.y * b.orientation.y +
+    a.orientation.z * b.orientation.z +
+    a.orientation.w * b.orientation.w;
   dot = std::min(1.0, std::max(-1.0, std::abs(dot)));
   return 2.0 * std::acos(dot);
 }

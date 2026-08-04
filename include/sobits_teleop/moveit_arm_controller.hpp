@@ -32,7 +32,8 @@
 namespace sobits_teleop
 {
 
-struct ArmTeleopConfig {
+struct ArmTeleopConfig
+{
   std::string planning_group;
   std::string target_frame;
   std::string base_frame;
@@ -49,7 +50,8 @@ public:
   ~MoveitArmController();
 
 private:
-  struct ArmData {
+  struct ArmData
+  {
     ArmTeleopConfig config;
     std::shared_ptr<moveit::planning_interface::MoveGroupInterface> mgi;
     // Set true only after mgi + limit caches are fully written (release store).

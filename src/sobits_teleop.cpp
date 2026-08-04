@@ -4,11 +4,11 @@ namespace sobits_teleop
 {
 
 SOBITSTeleop::SOBITSTeleop(const rclcpp::NodeOptions & options)
-  : Node(
-      "sobits_teleop",
-      rclcpp::NodeOptions(options)
-        .allow_undeclared_parameters(true)
-        .automatically_declare_parameters_from_overrides(true)),
+: Node(
+    "sobits_teleop",
+    rclcpp::NodeOptions(options)
+    .allow_undeclared_parameters(true)
+    .automatically_declare_parameters_from_overrides(true)),
   wall_clock_(std::make_shared<rclcpp::Clock>(RCL_SYSTEM_TIME)),
   tf_buffer(std::make_shared<tf2_ros::Buffer>(
       wall_clock_,
@@ -40,7 +40,8 @@ SOBITSTeleop::SOBITSTeleop(const rclcpp::NodeOptions & options)
     std::bind(&SOBITSTeleop::robot_tf_static_callback, this, std::placeholders::_1));
 
   robot_description_source_node = "robot_state_publisher";
-  async_param_client = std::make_shared<rclcpp::AsyncParametersClient>(this, robot_description_source_node);
+  async_param_client = std::make_shared<rclcpp::AsyncParametersClient>(this,
+      robot_description_source_node);
 
   urdf_timer = this->create_wall_timer(
     std::chrono::milliseconds(200),
@@ -48,8 +49,9 @@ SOBITSTeleop::SOBITSTeleop(const rclcpp::NodeOptions & options)
 
   load_parameters();
 
-  if (!this->has_parameter("teleop_rate_hz"))
+  if (!this->has_parameter("teleop_rate_hz")) {
     this->declare_parameter("teleop_rate_hz", teleop_rate_hz);
+  }
   this->get_parameter("teleop_rate_hz", teleop_rate_hz);
   if (teleop_rate_hz < 1.0 || teleop_rate_hz > 1000.0) {
     RCLCPP_WARN(get_logger(),
@@ -67,8 +69,8 @@ SOBITSTeleop::SOBITSTeleop(const rclcpp::NodeOptions & options)
 
 void SOBITSTeleop::load_joint_limits()
 {
-  if (!requires_joint_states) return;
-  if (urdf_loaded) return;
+  if (!requires_joint_states) {return;}
+  if (urdf_loaded) {return;}
 
   if (!async_param_client->service_is_ready()) {
     RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 3000,
@@ -95,10 +97,10 @@ void SOBITSTeleop::load_joint_limits()
   }
   robot_desc_requested = false;
 
-  if (params.empty() || params[0].get_type() != rclcpp::ParameterType::PARAMETER_STRING) return;
+  if (params.empty() || params[0].get_type() != rclcpp::ParameterType::PARAMETER_STRING) {return;}
 
   const std::string urdf_xml = params[0].as_string();
-  if (urdf_xml.empty()) return;
+  if (urdf_xml.empty()) {return;}
 
   if (!parse_urdf_limits(urdf_xml)) {
     RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 3000, "Failed to parse URDF limits");
@@ -125,7 +127,7 @@ bool SOBITSTeleop::parse_urdf_limits(const std::string & urdf_xml)
 
     const auto & joint = joint_pair.second;
 
-    if (!joint) continue;
+    if (!joint) {continue;}
 
     if (joint->limits) {
       Limit lim;
@@ -156,7 +158,7 @@ bool SOBITSTeleop::clamp_to_limits_checked(const std::string & joint, double & v
 void SOBITSTeleop::publish_arm_tracking(const std::string & arm, bool enabled)
 {
   auto it = arm_track_pubs_.find(arm);
-  if (it == arm_track_pubs_.end()) return;
+  if (it == arm_track_pubs_.end()) {return;}
   std_msgs::msg::Bool msg;
   msg.data = enabled;
   it->second->publish(msg);
@@ -167,7 +169,8 @@ bool SOBITSTeleop::any_arm_enable_held()
 {
   for (const auto & [name, m] : quest_arm_mappings) {
     if (m.enable_axis >= 0 && m.enable_axis < static_cast<int>(latest_axes.size()) &&
-        latest_axes[m.enable_axis] > 0.5) {
+      latest_axes[m.enable_axis] > 0.5)
+    {
       return true;
     }
   }
@@ -175,7 +178,9 @@ bool SOBITSTeleop::any_arm_enable_held()
 }
 
 // EE lookup, latch, soft-start ramp, rate limiter, and target broadcast for one arm.
-void SOBITSTeleop::process_arm(const QuestArmMap & m, ArmTrackState & st, bool /*head_tf_ok*/, bool arm_enabled)
+void SOBITSTeleop::process_arm(
+  const QuestArmMap & m, ArmTrackState & st, bool /*head_tf_ok*/,
+  bool arm_enabled)
 {
   bool ee_ok = false;
   try {
@@ -187,8 +192,7 @@ void SOBITSTeleop::process_arm(const QuestArmMap & m, ArmTrackState & st, bool /
     );
     tf2::fromMsg(ee_msg.transform, st.current_tf_ee);
     ee_ok = true;
-  }
-  catch (tf2::TransformException &ex) {
+  } catch (tf2::TransformException & ex) {
     RCLCPP_WARN_THROTTLE(this->get_logger(), *get_clock(), 2000,
       "%s EE TF lookup failed: %s", m.controller.c_str(), ex.what());
   }
@@ -197,7 +201,7 @@ void SOBITSTeleop::process_arm(const QuestArmMap & m, ArmTrackState & st, bool /
   tf2::Transform T_target;
   {
     tf2::Vector3 hmd_pos_odom = current_tf_hmd_odom.getOrigin();
-    tf2::Vector3 delta_odom   = st.current_tf_odom.getOrigin() - hmd_pos_odom;
+    tf2::Vector3 delta_odom = st.current_tf_odom.getOrigin() - hmd_pos_odom;
     T_target.setOrigin(hmd_pos_odom + delta_odom * m.scale);
     T_target.setRotation(st.current_tf_odom.getRotation());
   }
@@ -229,7 +233,8 @@ void SOBITSTeleop::process_arm(const QuestArmMap & m, ArmTrackState & st, bool /
         prox_ok = false;
       }
       if (prox_ok && m.proximity_angle_threshold > 0.0 &&
-          angle_err > m.proximity_angle_threshold) {
+        angle_err > m.proximity_angle_threshold)
+      {
         RCLCPP_WARN_THROTTLE(this->get_logger(), *get_clock(), 1000,
           "%s arm: controller %.1f deg from EE orientation (threshold %.1f deg) — align controller before gripping",
           m.controller.c_str(),
@@ -242,8 +247,8 @@ void SOBITSTeleop::process_arm(const QuestArmMap & m, ArmTrackState & st, bool /
       st.latched = true;
       st.just_latched = true;
       st.T_ctrl_latch = st.current_tf_odom;
-      st.T_ee_latch   = st.current_tf_ee;
-      st.latch_time   = this->now();
+      st.T_ee_latch = st.current_tf_ee;
+      st.latch_time = this->now();
       st.have_pub_prev = false;
     }
   }
@@ -287,10 +292,10 @@ void SOBITSTeleop::process_arm(const QuestArmMap & m, ArmTrackState & st, bool /
 
   // Publish target under base_footprint (visualization — stays fixed in robot space).
   geometry_msgs::msg::TransformStamped target_msg;
-  target_msg.header.stamp    = this->now();
+  target_msg.header.stamp = this->now();
   target_msg.header.frame_id = "base_footprint";
-  target_msg.child_frame_id  = m.target_frame_name;
-  target_msg.transform       = tf2::toMsg(T_pub);
+  target_msg.child_frame_id = m.target_frame_name;
+  target_msg.transform = tf2::toMsg(T_pub);
   tf_broadcaster->sendTransform(target_msg);
 
   // Enable tracking only after the first re-zeroed target is on TF, else a
@@ -298,8 +303,8 @@ void SOBITSTeleop::process_arm(const QuestArmMap & m, ArmTrackState & st, bool /
   if (st.just_latched) {
     st.just_latched = false;
     const char * prox_note = (m.proximity_threshold <= 0.0 &&
-                              m.proximity_angle_threshold <= 0.0)
-                             ? " (calibration skipped)" : "";
+      m.proximity_angle_threshold <= 0.0) ?
+      " (calibration skipped)" : "";
     // Publish on every latch, not just the first (re-latch after unlatch).
     publish_arm_tracking(m.group, true);
     if (!arm_tracking) {
@@ -324,20 +329,26 @@ void SOBITSTeleop::load_parameters()
   if (this->has_parameter("control_joints.groups")) {
     this->get_parameter("control_joints.groups", joint_groups);
 
-    for (const auto& joint_group : joint_groups) {
-      if (!this->get_parameter("control_joints." + joint_group + ".names", joint_names)) continue;
-      
-      for (const auto& joint_name : joint_names) {
+    for (const auto & joint_group : joint_groups) {
+      if (!this->get_parameter("control_joints." + joint_group + ".names", joint_names)) {continue;}
+
+      for (const auto & joint_name : joint_names) {
         JointMap jm;
         jm.joint_group = joint_group;
-        jm.joint_name  = joint_name;
-        this->get_parameter("control_joints." + joint_group + "." + joint_name + ".button",      jm.button);
-        this->get_parameter("control_joints." + joint_group + "." + joint_name + ".fast_button", jm.fast_button);
-        this->get_parameter("control_joints." + joint_group + "." + joint_name + ".axis",        jm.axis);
-        this->get_parameter("control_joints." + joint_group + "." + joint_name + ".axis_sign",   jm.axis_sign);
-        this->get_parameter("control_joints." + joint_group + "." + joint_name + ".speed",       jm.speed);
-        this->get_parameter("control_joints." + joint_group + "." + joint_name + ".fast_speed",  jm.fast_speed);
-        this->get_parameter("robot_topic_name.joint_trajectory_topic." + joint_group,            jm.joint_trajectory_topic);
+        jm.joint_name = joint_name;
+        this->get_parameter("control_joints." + joint_group + "." + joint_name + ".button",
+            jm.button);
+        this->get_parameter("control_joints." + joint_group + "." + joint_name + ".fast_button",
+            jm.fast_button);
+        this->get_parameter("control_joints." + joint_group + "." + joint_name + ".axis", jm.axis);
+        this->get_parameter("control_joints." + joint_group + "." + joint_name + ".axis_sign",
+            jm.axis_sign);
+        this->get_parameter("control_joints." + joint_group + "." + joint_name + ".speed",
+            jm.speed);
+        this->get_parameter("control_joints." + joint_group + "." + joint_name + ".fast_speed",
+            jm.fast_speed);
+        this->get_parameter("robot_topic_name.joint_trajectory_topic." + joint_group,
+            jm.joint_trajectory_topic);
 
         joint_mappings[joint_name] = jm;
         joint_pub[jm.joint_trajectory_topic] = this->create_publisher<trajectory_msgs::msg::JointTrajectory>(
@@ -351,10 +362,10 @@ void SOBITSTeleop::load_parameters()
   // pressing the pose button; omit it to bind the pose button on its own.
   if (this->has_parameter("control_poses.pose_list")) {
     this->get_parameter("control_poses.pose_list", pose_list);
-    for (const auto& pose_name : pose_list) {
+    for (const auto & pose_name : pose_list) {
       PoseMap pm{};
       pm.pose_name = pose_name;
-      this->get_parameter("control_poses.trigger",                  pm.trigger);
+      this->get_parameter("control_poses.trigger", pm.trigger);
       this->get_parameter("control_poses." + pose_name + ".button", pm.button);
 
       pose_mappings.push_back(pm);
@@ -364,39 +375,42 @@ void SOBITSTeleop::load_parameters()
 
   // Load cmd_vel parameters. Either button-based or axis-based enable is allowed.
   if (this->has_parameter("control_velocity.button") ||
-      this->has_parameter("control_velocity.axis")) {
-    this->get_parameter("control_velocity.button",             cvm.button);
-    this->get_parameter("control_velocity.fast_button",        cvm.fast_button);
-    this->get_parameter("control_velocity.axis",               cvm.axis);
-    this->get_parameter("control_velocity.fast_axis",          cvm.fast_axis);
-    this->get_parameter("control_velocity.linear_x_axis",      cvm.linear_x_axis);
-    this->get_parameter("control_velocity.linear_y_axis",      cvm.linear_y_axis);
-    this->get_parameter("control_velocity.angular_axis",       cvm.angular_axis);
-    this->get_parameter("control_velocity.axis_sign",          cvm.axis_sign);
-    this->get_parameter("control_velocity.linear_scale",       cvm.linear_scale);
-    this->get_parameter("control_velocity.angular_scale",      cvm.angular_scale);
-    this->get_parameter("control_velocity.fast_linear_scale",  cvm.fast_linear_scale);
+    this->has_parameter("control_velocity.axis"))
+  {
+    this->get_parameter("control_velocity.button", cvm.button);
+    this->get_parameter("control_velocity.fast_button", cvm.fast_button);
+    this->get_parameter("control_velocity.axis", cvm.axis);
+    this->get_parameter("control_velocity.fast_axis", cvm.fast_axis);
+    this->get_parameter("control_velocity.linear_x_axis", cvm.linear_x_axis);
+    this->get_parameter("control_velocity.linear_y_axis", cvm.linear_y_axis);
+    this->get_parameter("control_velocity.angular_axis", cvm.angular_axis);
+    this->get_parameter("control_velocity.axis_sign", cvm.axis_sign);
+    this->get_parameter("control_velocity.linear_scale", cvm.linear_scale);
+    this->get_parameter("control_velocity.angular_scale", cvm.angular_scale);
+    this->get_parameter("control_velocity.fast_linear_scale", cvm.fast_linear_scale);
     this->get_parameter("control_velocity.fast_angular_scale", cvm.fast_angular_scale);
     RCLCPP_INFO(get_logger(), "Loaded control_velocity parameters from rosparam");
   }
   // Load quest parameters
   if (this->has_parameter("quest_control.groups")) {
     this->get_parameter("quest_control.groups", quest_groups);
-    for (const auto& group : quest_groups) {
+    for (const auto & group : quest_groups) {
       if (group == "head") {
-        this->get_parameter("quest_control." + group + ".vertical",        qhm.vertical);
-        this->get_parameter("quest_control." + group + ".horizontal",      qhm.horizontal);
-        this->get_parameter("quest_control." + group + ".enable_axis",     qhm.head_mode);
-        this->get_parameter("quest_control." + group + ".vertical_sign",   qhm.vertical_sign);
+        this->get_parameter("quest_control." + group + ".vertical", qhm.vertical);
+        this->get_parameter("quest_control." + group + ".horizontal", qhm.horizontal);
+        this->get_parameter("quest_control." + group + ".enable_axis", qhm.head_mode);
+        this->get_parameter("quest_control." + group + ".vertical_sign", qhm.vertical_sign);
         this->get_parameter("quest_control." + group + ".horizontal_sign", qhm.horizontal_sign);
-        this->get_parameter("quest_control." + group + ".scale",           qhm.scale);
-        this->get_parameter("robot_topic_name.joint_trajectory_topic." + group, qhm.head_joint_trajectory_topic);
+        this->get_parameter("quest_control." + group + ".scale", qhm.scale);
+        this->get_parameter("robot_topic_name.joint_trajectory_topic." + group,
+            qhm.head_joint_trajectory_topic);
         joint_pub[qhm.head_joint_trajectory_topic] = this->create_publisher<trajectory_msgs::msg::JointTrajectory>(
           qhm.head_joint_trajectory_topic, 10);
 
         if (this->has_parameter("quest_control." + group + ".body_lift")) {
-          this->get_parameter("quest_control." + group + ".body_lift",       qhm.body_lift);
-          this->get_parameter("robot_topic_name.joint_trajectory_topic.body", qhm.body_joint_trajectory_topic);
+          this->get_parameter("quest_control." + group + ".body_lift", qhm.body_lift);
+          this->get_parameter("robot_topic_name.joint_trajectory_topic.body",
+              qhm.body_joint_trajectory_topic);
           joint_pub[qhm.body_joint_trajectory_topic] = this->create_publisher<trajectory_msgs::msg::JointTrajectory>(
             qhm.body_joint_trajectory_topic, 10);
         }
@@ -404,26 +418,31 @@ void SOBITSTeleop::load_parameters()
       }
 
       // Group type is inferred from which fields are present.
-      const bool is_arm  = this->has_parameter("quest_control." + group + ".end_effector_frame_name");
+      const bool is_arm = this->has_parameter("quest_control." + group +
+          ".end_effector_frame_name");
       const bool is_hand = this->has_parameter("quest_control." + group + ".pose_action") ||
-                            this->has_parameter("quest_control." + group + ".adaptive.trigger_axis");
+        this->has_parameter("quest_control." + group + ".adaptive.trigger_axis");
 
       if (is_arm) {
         QuestArmMap am{};
         am.group = group;
-        this->get_parameter("quest_control." + group + ".controller",              am.controller);
-        this->get_parameter("quest_control." + group + ".base_frame_name",         am.base_frame_name);
-        this->get_parameter("quest_control." + group + ".end_effector_frame_name", am.end_effector_frame_name);
-        this->get_parameter("quest_control." + group + ".target_frame_name",       am.target_frame_name);
-        this->get_parameter("quest_control." + group + ".scale",                   am.scale);
-        this->get_parameter("quest_control." + group + ".enable_axis",             am.enable_axis);
-        this->get_parameter("robot_topic_name.joint_trajectory_topic." + group,    am.arm_joint_trajectory_topic);
+        this->get_parameter("quest_control." + group + ".controller", am.controller);
+        this->get_parameter("quest_control." + group + ".base_frame_name", am.base_frame_name);
+        this->get_parameter("quest_control." + group + ".end_effector_frame_name",
+            am.end_effector_frame_name);
+        this->get_parameter("quest_control." + group + ".target_frame_name", am.target_frame_name);
+        this->get_parameter("quest_control." + group + ".scale", am.scale);
+        this->get_parameter("quest_control." + group + ".enable_axis", am.enable_axis);
+        this->get_parameter("robot_topic_name.joint_trajectory_topic." + group,
+            am.arm_joint_trajectory_topic);
         // Optional proximity thresholds — defaults are set in the struct
         if (this->has_parameter("quest_control." + group + ".proximity_threshold")) {
-          this->get_parameter("quest_control." + group + ".proximity_threshold", am.proximity_threshold);
+          this->get_parameter("quest_control." + group + ".proximity_threshold",
+              am.proximity_threshold);
         }
         if (this->has_parameter("quest_control." + group + ".proximity_angle_threshold")) {
-          this->get_parameter("quest_control." + group + ".proximity_angle_threshold", am.proximity_angle_threshold);
+          this->get_parameter("quest_control." + group + ".proximity_angle_threshold",
+              am.proximity_angle_threshold);
         }
 
         joint_pub[am.arm_joint_trajectory_topic] = this->create_publisher<trajectory_msgs::msg::JointTrajectory>(
@@ -435,30 +454,36 @@ void SOBITSTeleop::load_parameters()
         QuestHandMap hm{};
         hm.group = group;
         this->get_parameter("quest_control." + group + ".controller", hm.controller);
-        this->get_parameter("quest_control." + group + ".speed",      hm.speed);
+        this->get_parameter("quest_control." + group + ".speed", hm.speed);
 
         if (this->has_parameter("quest_control." + group + ".single_joint.axis")) {
           this->get_parameter("quest_control." + group + ".single_joint.axis", hm.type_axis);
           this->get_parameter("quest_control." + group + ".single_joint.name", hm.type_joint);
-          if (this->has_parameter("quest_control." + group + ".single_joint.axis_sign"))
+          if (this->has_parameter("quest_control." + group + ".single_joint.axis_sign")) {
             this->get_parameter("quest_control." + group + ".single_joint.axis_sign", hm.type_sign);
-          if (this->has_parameter("quest_control." + group + ".single_joint.min"))
+          }
+          if (this->has_parameter("quest_control." + group + ".single_joint.min")) {
             this->get_parameter("quest_control." + group + ".single_joint.min", hm.type_min);
-          if (this->has_parameter("quest_control." + group + ".single_joint.max"))
+          }
+          if (this->has_parameter("quest_control." + group + ".single_joint.max")) {
             this->get_parameter("quest_control." + group + ".single_joint.max", hm.type_max);
+          }
         }
         if (this->has_parameter("quest_control." + group + ".pose_button")) {
           this->get_parameter("quest_control." + group + ".pose_button", hm.pose_button);
         }
         if (this->has_parameter("quest_control." + group + ".pose_open")) {
-          this->get_parameter("quest_control." + group + ".pose_open",   hm.pose_open);
-          this->get_parameter("quest_control." + group + ".pose_close",  hm.pose_close);
+          this->get_parameter("quest_control." + group + ".pose_open", hm.pose_open);
+          this->get_parameter("quest_control." + group + ".pose_close", hm.pose_close);
           this->get_parameter("quest_control." + group + ".pose_action", hm.pose_action);
         }
         if (this->has_parameter("quest_control." + group + ".adaptive.trigger_axis")) {
-          this->get_parameter("quest_control." + group + ".adaptive.trigger_axis", hm.adaptive_trigger_axis);
-          this->get_parameter("quest_control." + group + ".adaptive.stick_axis",   hm.adaptive_stick_axis);
-          this->get_parameter("quest_control." + group + ".adaptive.axis_sign",    hm.adaptive_close_sign);
+          this->get_parameter("quest_control." + group + ".adaptive.trigger_axis",
+              hm.adaptive_trigger_axis);
+          this->get_parameter("quest_control." + group + ".adaptive.stick_axis",
+              hm.adaptive_stick_axis);
+          this->get_parameter("quest_control." + group + ".adaptive.axis_sign",
+              hm.adaptive_close_sign);
 
           // Load adaptive joint list: adaptive.names is a list of joint names,
           // each with close_pos, open_pos, and optional fixed flag.
@@ -470,7 +495,7 @@ void SOBITSTeleop::load_parameters()
               AdaptiveJointTarget ajt;
               ajt.name = jname;
               this->get_parameter(aj_prefix + "." + jname + ".close_pos", ajt.close_pos);
-              this->get_parameter(aj_prefix + "." + jname + ".open_pos",  ajt.open_pos);
+              this->get_parameter(aj_prefix + "." + jname + ".open_pos", ajt.open_pos);
               if (this->has_parameter(aj_prefix + "." + jname + ".fixed")) {
                 this->get_parameter(aj_prefix + "." + jname + ".fixed", ajt.fixed);
               }
@@ -480,7 +505,8 @@ void SOBITSTeleop::load_parameters()
         }
         quest_hand_mappings[group] = hm;
       } else {
-        RCLCPP_WARN(get_logger(), "Quest group '%s' is neither arm nor hand — skipping", group.c_str());
+        RCLCPP_WARN(get_logger(), "Quest group '%s' is neither arm nor hand — skipping",
+            group.c_str());
       }
     }
     RCLCPP_INFO(get_logger(), "Loaded %zu quest arm and %zu quest hand parameters from rosparam",
@@ -502,11 +528,12 @@ void SOBITSTeleop::load_parameters()
     // Create one hand pose action client per hand group
     for (const auto & [hand_name, hm] : quest_hand_mappings) {
       if (!hm.pose_action.empty() &&
-          hand_pose_clients_.find(hm.group) == hand_pose_clients_.end()) {
+        hand_pose_clients_.find(hm.group) == hand_pose_clients_.end())
+      {
         hand_pose_clients_[hm.group] =
           rclcpp_action::create_client<sobits_interfaces::action::MoveToPose>(
             this, hm.pose_action);
-        hand_open_state_[hm.group]  = true;
+        hand_open_state_[hm.group] = true;
         hand_toggle_time_[hm.group] = rclcpp::Time(0, 0, RCL_ROS_TIME);
         RCLCPP_INFO(get_logger(),
           "Created hand pose client for '%s' → '%s'",
@@ -543,16 +570,16 @@ void SOBITSTeleop::joint_state_callback(const sensor_msgs::msg::JointState::Shar
   for (size_t i = 0; i < n; i++) {
     joint_pos[msg->name[i]] = msg->position[i];
   }
-  if (n > 0) joint_state_initialized = true;
+  if (n > 0) {joint_state_initialized = true;}
 }
 
 void SOBITSTeleop::joy_callback(const sensor_msgs::msg::Joy::SharedPtr msg)
 {
   // previous_buttons is updated at the end of teleop() only, so a press edge
   // survives until the next tick even if several joy messages arrive between ticks.
-  latest_axes      = msg->axes;
-  latest_buttons   = msg->buttons;
-  joy_received     = true;
+  latest_axes = msg->axes;
+  latest_buttons = msg->buttons;
+  joy_received = true;
 }
 
 
@@ -600,19 +627,19 @@ void SOBITSTeleop::robot_tf_static_callback(const tf2_msgs::msg::TFMessage::Shar
 
 void SOBITSTeleop::teleop()
 {
-  if (!joy_received) return;
-  if (requires_joint_states && !joint_state_initialized) return;
+  if (!joy_received) {return;}
+  if (requires_joint_states && !joint_state_initialized) {return;}
 
   std::map<std::string, trajectory_msgs::msg::JointTrajectory> trajs;
 
   for (auto &[name, m] : joint_mappings) {
 
-    if (m.button < 0 || m.button >= static_cast<int>(latest_buttons.size())) continue;
-    if (latest_buttons[m.button] == 0) continue;
+    if (m.button < 0 || m.button >= static_cast<int>(latest_buttons.size())) {continue;}
+    if (latest_buttons[m.button] == 0) {continue;}
 
-    if (m.axis < 0 || m.axis >= static_cast<int>(latest_axes.size())) continue;
+    if (m.axis < 0 || m.axis >= static_cast<int>(latest_axes.size())) {continue;}
     float axis_val = latest_axes[m.axis];
-    if (std::abs(axis_val) < 1e-3) continue;
+    if (std::abs(axis_val) < 1e-3) {continue;}
 
     const bool fast = m.fast_button >= 0 &&
       m.fast_button < static_cast<int>(latest_buttons.size()) &&
@@ -621,36 +648,37 @@ void SOBITSTeleop::teleop()
     // Config speeds are radians per legacy 50 ms tick — scale to the actual loop rate.
     double delta_pos = axis_val * m.axis_sign * (fast ? m.fast_speed : m.speed) * jog_tick_scale_;
     double target = joint_pos[m.joint_name] + delta_pos;
-    if (!clamp_to_limits_checked(m.joint_name, target)) continue;
+    if (!clamp_to_limits_checked(m.joint_name, target)) {continue;}
     joint_pos[m.joint_name] = target;
 
-    auto &traj = trajs[m.joint_trajectory_topic];
+    auto & traj = trajs[m.joint_trajectory_topic];
     traj.joint_names.push_back(m.joint_name);
     if (traj.points.empty()) {
       trajectory_msgs::msg::JointTrajectoryPoint p;
       p.positions = {joint_pos[m.joint_name]};
       p.time_from_start = rclcpp::Duration::from_seconds(dt);
       traj.points.push_back(p);
-    }
-    else traj.points[0].positions.push_back(joint_pos[m.joint_name]);
+    } else {traj.points[0].positions.push_back(joint_pos[m.joint_name]);}
   }
 
-  for (auto &tj : trajs) {
-    const auto &joint_trajectory_topic = tj.first;
-    auto &traj = tj.second;
+  for (auto & tj : trajs) {
+    const auto & joint_trajectory_topic = tj.first;
+    auto & traj = tj.second;
     auto it = joint_pub.find(joint_trajectory_topic);
-    if (it != joint_pub.end() && traj.joint_names.size() > 0) it->second->publish(traj);
+    if (it != joint_pub.end() && traj.joint_names.size() > 0) {it->second->publish(traj);}
   }
 
   // Skip pose buttons while any arm is latched — a pose trajectory would fight tracking.
   bool any_arm_latched = false;
-  for (const auto & kv : arm_track_) any_arm_latched = any_arm_latched || kv.second.latched;
+  for (const auto & kv : arm_track_) {
+    any_arm_latched = any_arm_latched || kv.second.latched;
+  }
 
-  for (const auto &pose_map : pose_mappings) {
+  for (const auto & pose_map : pose_mappings) {
     // A trigger of -1 means no modifier is required; otherwise it must be held.
     if (pose_map.trigger >= 0) {
-      if (pose_map.trigger >= static_cast<int>(latest_buttons.size())) continue;
-      if (latest_buttons[pose_map.trigger] == 0) continue;
+      if (pose_map.trigger >= static_cast<int>(latest_buttons.size())) {continue;}
+      if (latest_buttons[pose_map.trigger] == 0) {continue;}
     }
 
     if (any_arm_latched) {
@@ -660,13 +688,13 @@ void SOBITSTeleop::teleop()
     }
 
     bool button_just_pressed = pose_map.button >= 0 &&
-                              pose_map.button < static_cast<int>(latest_buttons.size()) &&
-                              latest_buttons[pose_map.button] == 1 &&
-                              (previous_buttons.empty() || 
-                               pose_map.button >= static_cast<int>(previous_buttons.size()) || 
-                               previous_buttons[pose_map.button] == 0);
-                               
-    if (!button_just_pressed) continue;
+      pose_map.button < static_cast<int>(latest_buttons.size()) &&
+      latest_buttons[pose_map.button] == 1 &&
+      (previous_buttons.empty() ||
+      pose_map.button >= static_cast < int > (previous_buttons.size()) ||
+      previous_buttons[pose_map.button] == 0);
+
+    if (!button_just_pressed) {continue;}
 
     if (!move_to_pose_client->action_server_is_ready()) {
       RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 3000,
@@ -677,24 +705,26 @@ void SOBITSTeleop::teleop()
     auto goal_msg = sobits_interfaces::action::MoveToPose::Goal();
     goal_msg.pose_name = pose_map.pose_name;
     goal_msg.time_allowance.sec = 10;
-    
-    auto send_goal_options = rclcpp_action::Client<sobits_interfaces::action::MoveToPose>::SendGoalOptions();
-    send_goal_options.result_callback = [this, pose_name = pose_map.pose_name](const auto &result) {
-      switch (result.code) {
-        case rclcpp_action::ResultCode::SUCCEEDED:
-          RCLCPP_INFO(get_logger(), "Pose '%s' succeeded", pose_name.c_str());
-          break;
-        case rclcpp_action::ResultCode::ABORTED:
-          RCLCPP_ERROR(get_logger(), "Pose '%s' aborted", pose_name.c_str());
-          break;
-        case rclcpp_action::ResultCode::CANCELED:
-          RCLCPP_WARN(get_logger(), "Pose '%s' canceled", pose_name.c_str());
-          break;
-        default:
-          RCLCPP_ERROR(get_logger(), "Unknown result code for pose '%s'", pose_name.c_str());
-          break;
-      }
-    };
+
+    auto send_goal_options =
+      rclcpp_action::Client<sobits_interfaces::action::MoveToPose>::SendGoalOptions();
+    send_goal_options.result_callback = [this,
+        pose_name = pose_map.pose_name](const auto & result) {
+        switch (result.code) {
+          case rclcpp_action::ResultCode::SUCCEEDED:
+            RCLCPP_INFO(get_logger(), "Pose '%s' succeeded", pose_name.c_str());
+            break;
+          case rclcpp_action::ResultCode::ABORTED:
+            RCLCPP_ERROR(get_logger(), "Pose '%s' aborted", pose_name.c_str());
+            break;
+          case rclcpp_action::ResultCode::CANCELED:
+            RCLCPP_WARN(get_logger(), "Pose '%s' canceled", pose_name.c_str());
+            break;
+          default:
+            RCLCPP_ERROR(get_logger(), "Unknown result code for pose '%s'", pose_name.c_str());
+            break;
+        }
+      };
     move_to_pose_client->async_send_goal(goal_msg, send_goal_options);
     RCLCPP_INFO(get_logger(), "Sending pose: %s", pose_map.pose_name.c_str());
   }
@@ -708,19 +738,23 @@ void SOBITSTeleop::teleop()
     bool fast_mode = false;
 
     if (cvm.button >= 0 &&
-        cvm.button < static_cast<int>(latest_buttons.size())) {
+      cvm.button < static_cast<int>(latest_buttons.size()))
+    {
       cmd_vel_enabled = (latest_buttons[cvm.button] == 1);
       if (cvm.fast_button >= 0 &&
-          cvm.fast_button < static_cast<int>(latest_buttons.size())) {
+        cvm.fast_button < static_cast<int>(latest_buttons.size()))
+      {
         fast_mode = fast_mode || (latest_buttons[cvm.fast_button] == 1);
       }
     }
     if (cvm.axis >= 0 &&
-        cvm.axis < static_cast<int>(latest_axes.size())) {
+      cvm.axis < static_cast<int>(latest_axes.size()))
+    {
       // OR with the button branch — either enable source is allowed.
       cmd_vel_enabled = cmd_vel_enabled || (latest_axes[cvm.axis] > 0.5);
       if (cvm.fast_axis >= 0 &&
-          cvm.fast_axis < static_cast<int>(latest_axes.size())) {
+        cvm.fast_axis < static_cast<int>(latest_axes.size()))
+      {
         fast_mode = fast_mode || (latest_axes[cvm.fast_axis] > 0.5);
       }
     }
@@ -730,15 +764,18 @@ void SOBITSTeleop::teleop()
       const double angular_scale = fast_mode ? cvm.fast_angular_scale : cvm.angular_scale;
 
       if (cvm.linear_x_axis >= 0 &&
-          cvm.linear_x_axis < static_cast<int>(latest_axes.size())) {
+        cvm.linear_x_axis < static_cast<int>(latest_axes.size()))
+      {
         twist.linear.x = latest_axes[cvm.linear_x_axis] * linear_scale;
       }
       if (cvm.linear_y_axis >= 0 &&
-          cvm.linear_y_axis < static_cast<int>(latest_axes.size())) {
+        cvm.linear_y_axis < static_cast<int>(latest_axes.size()))
+      {
         twist.linear.y = latest_axes[cvm.linear_y_axis] * linear_scale * cvm.axis_sign;
       }
       if (cvm.angular_axis >= 0 &&
-          cvm.angular_axis < static_cast<int>(latest_axes.size())) {
+        cvm.angular_axis < static_cast<int>(latest_axes.size()))
+      {
         twist.angular.z = latest_axes[cvm.angular_axis] * angular_scale * cvm.axis_sign;
       }
 
@@ -756,32 +793,33 @@ void SOBITSTeleop::teleop()
   // out      = T(base_footprint <- quest_frame)  — used for arm target computation
   // out_base = T(base_footprint <- quest_frame)  — used for RViz re-broadcast under base_footprint
   auto lookup_quest_frame = [&](const std::string & quest_frame,
-                                tf2::Transform & out,
-                                tf2::Transform * out_base = nullptr) -> bool {
-    try {
-      auto ts = tf_buffer->lookupTransform("base_footprint", quest_frame, tf2::TimePointZero, tf2::Duration(0));
+    tf2::Transform & out,
+    tf2::Transform * out_base = nullptr) -> bool {
+      try {
+        auto ts = tf_buffer->lookupTransform("base_footprint", quest_frame, tf2::TimePointZero,
+          tf2::Duration(0));
       // Reject stamps far from the wall clock: TimePointZero serves cached transforms
       // forever, so a disconnected headset's last pose would look like live input.
-      const double age = std::abs(
-        (wall_clock_->now() - rclcpp::Time(ts.header.stamp, RCL_SYSTEM_TIME)).seconds());
-      if (age > kQuestTfMaxAgeSec) {
-        RCLCPP_WARN_THROTTLE(this->get_logger(), *wall_clock_, 2000,
+        const double age = std::abs(
+          (wall_clock_->now() - rclcpp::Time(ts.header.stamp, RCL_SYSTEM_TIME)).seconds());
+        if (age > kQuestTfMaxAgeSec) {
+          RCLCPP_WARN_THROTTLE(this->get_logger(), *wall_clock_, 2000,
           "%s TF stamp is %.2f s from now (max %.2f) — treating as absent "
           "(stale cache or clock-skewed source)",
           quest_frame.c_str(), age, kQuestTfMaxAgeSec);
+          return false;
+        }
+        tf2::Transform T_base_quest;
+        tf2::fromMsg(ts.transform, T_base_quest);
+        out = T_base_quest;
+        if (out_base) {*out_base = T_base_quest;}
+        return true;
+      } catch (tf2::TransformException & ex) {
+        RCLCPP_WARN_THROTTLE(this->get_logger(), *get_clock(), 2000,
+        "%s TF lookup failed: %s", quest_frame.c_str(), ex.what());
         return false;
       }
-      tf2::Transform T_base_quest;
-      tf2::fromMsg(ts.transform, T_base_quest);
-      out = T_base_quest;
-      if (out_base) *out_base = T_base_quest;
-      return true;
-    } catch (tf2::TransformException &ex) {
-      RCLCPP_WARN_THROTTLE(this->get_logger(), *get_clock(), 2000,
-        "%s TF lookup failed: %s", quest_frame.c_str(), ex.what());
-      return false;
-    }
-  };
+    };
 
   if (this->has_parameter("quest_control.groups")) {
     // Head / HMD — also used as body reference for arm target scaling
@@ -791,119 +829,123 @@ void SOBITSTeleop::teleop()
       tf2::Transform T_base_hmd;
       head_tf_ok = lookup_quest_frame("hmd_odom", current_tf, &T_base_hmd);
       if (head_tf_ok) {
-        current_tf_hmd      = current_tf;
+        current_tf_hmd = current_tf;
         current_tf_hmd_odom = T_base_hmd;
         // Re-broadcast under base_footprint (RViz visualization).
         geometry_msgs::msg::TransformStamped hmd_msg;
-        hmd_msg.header.stamp    = this->now();
+        hmd_msg.header.stamp = this->now();
         hmd_msg.header.frame_id = "base_footprint";
-        hmd_msg.child_frame_id  = "hmd_link";
-        hmd_msg.transform       = tf2::toMsg(T_base_hmd);
+        hmd_msg.child_frame_id = "hmd_link";
+        hmd_msg.transform = tf2::toMsg(T_base_hmd);
         tf_broadcaster->sendTransform(hmd_msg);
       }
     }
 
     // --- (hold) ---
     if (head_tf_ok) {
-    if (qhm.head_mode >= 0 &&
-        qhm.head_mode < static_cast<int>(latest_axes.size())){
-          head_control_enabled = (latest_axes[qhm.head_mode] > 0.5);
-        }
-
-    if (head_control_enabled && !head_tracking) {
-      last_pan = joint_pos[qhm.horizontal];
-      last_tilt = joint_pos[qhm.vertical];
-      last_tf = current_tf;
-      if (!qhm.body_lift.empty()) last_body_lift = joint_pos[qhm.body_lift];
-      head_tracking = true;
-
-      // RCLCPP_INFO(this->get_logger(), "cur_joint_pos %.2f, %.2f", joint_pos[qhm.horizontal], joint_pos[qhm.vertical]);
-      RCLCPP_INFO(this->get_logger(), "Head tracking started");
-    }
-
-    if (head_tracking) {
-      tf2::Transform T_delta = last_tf.inverse() * current_tf;
-      double roll, pitch, yaw;
-      tf2::Matrix3x3(T_delta.getRotation()).getRPY(roll, pitch, yaw);
-      (void)roll;  // only pitch/yaw drive head tracking
-
-      double pan_target = last_pan + qhm.scale * yaw * qhm.horizontal_sign;
-      double tilt_target = last_tilt + qhm.scale * pitch * -qhm.vertical_sign;
-
-      // RCLCPP_INFO(this->get_logger(), "pub_joint_pos %.2f, %.2f", pan_target, tilt_target);
-      if (clamp_to_limits_checked(qhm.horizontal, pan_target) &&
-          clamp_to_limits_checked(qhm.vertical, tilt_target)) {
-        trajectory_msgs::msg::JointTrajectory traj;
-        traj.joint_names = {qhm.horizontal, qhm.vertical};
-
-        trajectory_msgs::msg::JointTrajectoryPoint p;
-        p.positions = {pan_target, tilt_target};
-        p.time_from_start = rclcpp::Duration::from_seconds(dt);
-        traj.points.push_back(p);
-
-        auto it = joint_pub.find(qhm.head_joint_trajectory_topic);
-        if (it != joint_pub.end() && it->second) {
-          it->second->publish(traj);
-        } else {
-          RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
-                              "Publisher for %s not found", qhm.head_joint_trajectory_topic.c_str());
-        }
+      if (qhm.head_mode >= 0 &&
+        qhm.head_mode < static_cast<int>(latest_axes.size()))
+      {
+        head_control_enabled = (latest_axes[qhm.head_mode] > 0.5);
       }
 
-      if (!qhm.body_lift.empty()) {
-        double dz = T_delta.getOrigin().z();
-        double body_lift_target = last_body_lift + qhm.scale * dz;
-        if (clamp_to_limits_checked(qhm.body_lift, body_lift_target)) {
+      if (head_control_enabled && !head_tracking) {
+        last_pan = joint_pos[qhm.horizontal];
+        last_tilt = joint_pos[qhm.vertical];
+        last_tf = current_tf;
+        if (!qhm.body_lift.empty()) {last_body_lift = joint_pos[qhm.body_lift];}
+        head_tracking = true;
+
+      // RCLCPP_INFO(this->get_logger(), "cur_joint_pos %.2f, %.2f", joint_pos[qhm.horizontal], joint_pos[qhm.vertical]);
+        RCLCPP_INFO(this->get_logger(), "Head tracking started");
+      }
+
+      if (head_tracking) {
+        tf2::Transform T_delta = last_tf.inverse() * current_tf;
+        double roll, pitch, yaw;
+        tf2::Matrix3x3(T_delta.getRotation()).getRPY(roll, pitch, yaw);
+        (void)roll; // only pitch/yaw drive head tracking
+
+        double pan_target = last_pan + qhm.scale * yaw * qhm.horizontal_sign;
+        double tilt_target = last_tilt + qhm.scale * pitch * -qhm.vertical_sign;
+
+      // RCLCPP_INFO(this->get_logger(), "pub_joint_pos %.2f, %.2f", pan_target, tilt_target);
+        if (clamp_to_limits_checked(qhm.horizontal, pan_target) &&
+          clamp_to_limits_checked(qhm.vertical, tilt_target))
+        {
           trajectory_msgs::msg::JointTrajectory traj;
-          traj.joint_names = {qhm.body_lift};
+          traj.joint_names = {qhm.horizontal, qhm.vertical};
 
           trajectory_msgs::msg::JointTrajectoryPoint p;
-          p.positions = {body_lift_target};
+          p.positions = {pan_target, tilt_target};
           p.time_from_start = rclcpp::Duration::from_seconds(dt);
           traj.points.push_back(p);
 
-          auto it = joint_pub.find(qhm.body_joint_trajectory_topic);
+          auto it = joint_pub.find(qhm.head_joint_trajectory_topic);
           if (it != joint_pub.end() && it->second) {
             it->second->publish(traj);
           } else {
             RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
-                                "Publisher for %s not found", qhm.body_joint_trajectory_topic.c_str());
+                              "Publisher for %s not found",
+                qhm.head_joint_trajectory_topic.c_str());
+          }
+        }
+
+        if (!qhm.body_lift.empty()) {
+          double dz = T_delta.getOrigin().z();
+          double body_lift_target = last_body_lift + qhm.scale * dz;
+          if (clamp_to_limits_checked(qhm.body_lift, body_lift_target)) {
+            trajectory_msgs::msg::JointTrajectory traj;
+            traj.joint_names = {qhm.body_lift};
+
+            trajectory_msgs::msg::JointTrajectoryPoint p;
+            p.positions = {body_lift_target};
+            p.time_from_start = rclcpp::Duration::from_seconds(dt);
+            traj.points.push_back(p);
+
+            auto it = joint_pub.find(qhm.body_joint_trajectory_topic);
+            if (it != joint_pub.end() && it->second) {
+              it->second->publish(traj);
+            } else {
+              RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
+                                "Publisher for %s not found",
+                  qhm.body_joint_trajectory_topic.c_str());
+            }
           }
         }
       }
-    }
     // --- (release) ---
-    if (!head_control_enabled && head_tracking) {
-      head_tracking = false;
-      RCLCPP_INFO(this->get_logger(), "Head tracking stopped");
-    }
+      if (!head_control_enabled && head_tracking) {
+        head_tracking = false;
+        RCLCPP_INFO(this->get_logger(), "Head tracking stopped");
+      }
     } // if (head_tf_ok)
 
 
     // Arm. Helper: false if any transform component is NaN/Inf (Quest broadcasts NaN when untracked).
     auto transform_valid = [](const geometry_msgs::msg::Transform & t) {
-      const auto & q = t.rotation;
-      const auto & v = t.translation;
-      return std::isfinite(q.x) && std::isfinite(q.y) &&
-             std::isfinite(q.z) && std::isfinite(q.w) &&
-             std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z) &&
-             (q.x*q.x + q.y*q.y + q.z*q.z + q.w*q.w) > 0.01;
-    };
+        const auto & q = t.rotation;
+        const auto & v = t.translation;
+        return std::isfinite(q.x) && std::isfinite(q.y) &&
+               std::isfinite(q.z) && std::isfinite(q.w) &&
+               std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z) &&
+               (q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w) > 0.01;
+      };
 
     // Controller TF acquisition: one lookup per distinct controller side.
     // Find the arm map for a controller side ("right"/"left").
     auto find_arm = [&](const std::string & side) -> QuestArmMap * {
-      for (auto & [name, m] : quest_arm_mappings) {
-        if (m.controller == side) return &m;
-      }
-      return nullptr;
-    };
+        for (auto & [name, m] : quest_arm_mappings) {
+          if (m.controller == side) {return &m;}
+        }
+        return nullptr;
+      };
 
     for (auto & [side, st] : arm_track_) {
       st.tf_ok = false;
-      if (!base_odom_ok) continue;
+      if (!base_odom_ok) {continue;}
       tf2::Transform T_ctrl, T_base_ctrl;
-      if (!lookup_quest_frame(side + "_controller_odom", T_ctrl, &T_base_ctrl)) continue;
+      if (!lookup_quest_frame(side + "_controller_odom", T_ctrl, &T_base_ctrl)) {continue;}
       geometry_msgs::msg::Transform t_msg = tf2::toMsg(T_ctrl);
       if (!transform_valid(t_msg)) {
         RCLCPP_WARN_THROTTLE(this->get_logger(), *get_clock(), 2000,
@@ -911,15 +953,15 @@ void SOBITSTeleop::teleop()
           side.c_str());
         continue;
       }
-      st.current_tf      = T_ctrl;
+      st.current_tf = T_ctrl;
       st.current_tf_odom = T_base_ctrl;
       st.tf_ok = true;
       // Re-broadcast under base_footprint (RViz visualization).
       geometry_msgs::msg::TransformStamped c_msg;
-      c_msg.header.stamp    = this->now();
+      c_msg.header.stamp = this->now();
       c_msg.header.frame_id = "base_footprint";
-      c_msg.child_frame_id  = side + "_controller_link";
-      c_msg.transform       = tf2::toMsg(T_base_ctrl);
+      c_msg.child_frame_id = side + "_controller_link";
+      c_msg.transform = tf2::toMsg(T_base_ctrl);
       tf_broadcaster->sendTransform(c_msg);
     }
 
@@ -930,7 +972,7 @@ void SOBITSTeleop::teleop()
       if (st.latched && !st.tf_ok) {
         st.latched = false;
         st.have_pub_prev = false;
-        if (auto * m = find_arm(side)) publish_arm_tracking(m->group, false);
+        if (auto * m = find_arm(side)) {publish_arm_tracking(m->group, false);}
         RCLCPP_WARN(this->get_logger(), "%s controller TF stale/lost — %s arm unlatched",
           side.c_str(), side.c_str());
       }
@@ -958,12 +1000,12 @@ void SOBITSTeleop::teleop()
 
     for (auto &[name, m] : quest_arm_mappings) {
       auto st_it = arm_track_.find(m.controller);
-      if (st_it == arm_track_.end()) continue;
+      if (st_it == arm_track_.end()) {continue;}
       auto & st = st_it->second;
       if (st.tf_ok && head_tf_ok) {
         const bool arm_enabled = m.enable_axis >= 0 &&
-          m.enable_axis < static_cast<int>(latest_axes.size()) &&
-          latest_axes[m.enable_axis] > 0.5;
+          m.enable_axis<static_cast<int>(latest_axes.size()) &&
+            latest_axes[m.enable_axis]>0.5;
         process_arm(m, st, head_tf_ok, arm_enabled);
       }
     }// Arm
@@ -972,200 +1014,210 @@ void SOBITSTeleop::teleop()
     for (auto &[name, m] : quest_hand_mappings) {
         // ── 1. Hand pose toggle (open / close) on button press ───────────────
         // Configured via pose_button / pose_open / pose_close / pose_action in quest.yaml.
-        auto hp_client_it = hand_pose_clients_.find(name);
-        if (m.pose_button >= 0 && hp_client_it != hand_pose_clients_.end()) {
-          rclcpp::Time & toggle_time = hand_toggle_time_.at(name);
-          const bool debounce_ok = (this->now() - toggle_time).seconds() > 0.4;
+      auto hp_client_it = hand_pose_clients_.find(name);
+      if (m.pose_button >= 0 && hp_client_it != hand_pose_clients_.end()) {
+        rclcpp::Time & toggle_time = hand_toggle_time_.at(name);
+        const bool debounce_ok = (this->now() - toggle_time).seconds() > 0.4;
 
-          if (m.pose_button < static_cast<int>(latest_buttons.size()) &&
-              latest_buttons[m.pose_button] == 1 &&
-              (previous_buttons.empty() ||
-               m.pose_button >= static_cast<int>(previous_buttons.size()) ||
-               previous_buttons[m.pose_button] == 0) &&
-              debounce_ok)
-          {
-            auto & client = hp_client_it->second;
+        if (m.pose_button < static_cast<int>(latest_buttons.size()) &&
+          latest_buttons[m.pose_button] == 1 &&
+          (previous_buttons.empty() ||
+          m.pose_button >= static_cast<int>(previous_buttons.size()) ||
+          previous_buttons[m.pose_button] == 0) &&
+          debounce_ok)
+        {
+          auto & client = hp_client_it->second;
             // Check server readiness before flipping state, non-blocking.
-            if (client->action_server_is_ready()) {
-              toggle_time = this->now();
-              bool & is_open = hand_open_state_.at(name);
-              is_open = !is_open;
-              const std::string pose_name = is_open ? m.pose_open : m.pose_close;
+          if (client->action_server_is_ready()) {
+            toggle_time = this->now();
+            bool & is_open = hand_open_state_.at(name);
+            is_open = !is_open;
+            const std::string pose_name = is_open ? m.pose_open : m.pose_close;
 
-              auto goal = sobits_interfaces::action::MoveToPose::Goal();
-              goal.pose_name = pose_name;
+            auto goal = sobits_interfaces::action::MoveToPose::Goal();
+            goal.pose_name = pose_name;
               // time_allowance becomes the trajectory's time_from_start, i.e. the motion duration.
-              goal.time_allowance.sec = 1;
+            goal.time_allowance.sec = 1;
               // Suppress this hand's adaptive goal stream until the pose motion
               // completes, so per-tick "hold" goals don't fight the trajectory.
-              m.hand_pose_in_flight = true;
-              m.hand_pose_deadline = this->now() + rclcpp::Duration::from_seconds(2.0);
-              bool * pose_in_flight = &m.hand_pose_in_flight;
-              auto opts = rclcpp_action::Client<sobits_interfaces::action::MoveToPose>::SendGoalOptions();
-              opts.goal_response_callback =
-                [pose_in_flight](rclcpp_action::ClientGoalHandle<sobits_interfaces::action::MoveToPose>::SharedPtr h) {
-                  if (!h) *pose_in_flight = false;  // rejected: resume adaptive
-                };
-              opts.result_callback = [this, pose_name, pose_in_flight](const auto & result) {
-                *pose_in_flight = false;
-                if (result.code == rclcpp_action::ResultCode::SUCCEEDED)
-                  RCLCPP_INFO(get_logger(), "Hand pose '%s' succeeded", pose_name.c_str());
-                else
-                  RCLCPP_WARN(get_logger(), "Hand pose '%s' failed", pose_name.c_str());
+            m.hand_pose_in_flight = true;
+            m.hand_pose_deadline = this->now() + rclcpp::Duration::from_seconds(2.0);
+            bool * pose_in_flight = &m.hand_pose_in_flight;
+            auto opts =
+              rclcpp_action::Client<sobits_interfaces::action::MoveToPose>::SendGoalOptions();
+            opts.goal_response_callback =
+              [pose_in_flight](rclcpp_action::ClientGoalHandle<sobits_interfaces::action::MoveToPose>::SharedPtr h) {
+                if (!h) {*pose_in_flight = false;}  // rejected: resume adaptive
               };
-              client->async_send_goal(goal, opts);
-              RCLCPP_INFO(get_logger(), "%s hand → %s", name.c_str(), pose_name.c_str());
-            } else {
-              RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
+            opts.result_callback = [this, pose_name, pose_in_flight](const auto & result) {
+                *pose_in_flight = false;
+                if (result.code == rclcpp_action::ResultCode::SUCCEEDED) {
+                  RCLCPP_INFO(get_logger(), "Hand pose '%s' succeeded", pose_name.c_str());
+                } else {
+                  RCLCPP_WARN(get_logger(), "Hand pose '%s' failed", pose_name.c_str());
+                }
+              };
+            client->async_send_goal(goal, opts);
+            RCLCPP_INFO(get_logger(), "%s hand → %s", name.c_str(), pose_name.c_str());
+          } else {
+            RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
                 "'%s' hand pose action server not available", name.c_str());
-            }
           }
         }
+      }
 
         // ── 2. Adaptive gripper control (trigger held + thumbstick) ──────────
         // A pose toggle still executing takes precedence over the adaptive stream.
-        if (m.hand_pose_in_flight && this->now() >= m.hand_pose_deadline) {
-          m.hand_pose_in_flight = false;
-        }
-        if (m.adaptive_trigger_axis >= 0 && !m.adaptive_joints.empty() &&
-            !m.hand_pose_in_flight &&
-            m.adaptive_trigger_axis < static_cast<int>(latest_axes.size()) &&
-            m.adaptive_stick_axis   < static_cast<int>(latest_axes.size()) &&
-            latest_axes[m.adaptive_trigger_axis] > 0.1)
-        {
-          float raw_stick  = latest_axes[m.adaptive_stick_axis];
-          float close_frac = std::clamp( raw_stick * m.adaptive_close_sign, 0.0f, 1.0f);
-          float open_frac  = std::clamp(-raw_stick * m.adaptive_close_sign, 0.0f, 1.0f);
-          float deflection = std::max(close_frac, open_frac);
+      if (m.hand_pose_in_flight && this->now() >= m.hand_pose_deadline) {
+        m.hand_pose_in_flight = false;
+      }
+      if (m.adaptive_trigger_axis >= 0 && !m.adaptive_joints.empty() &&
+        !m.hand_pose_in_flight &&
+        m.adaptive_trigger_axis < static_cast<int>(latest_axes.size()) &&
+        m.adaptive_stick_axis < static_cast<int>(latest_axes.size()) &&
+        latest_axes[m.adaptive_trigger_axis] > 0.1)
+      {
+        float raw_stick = latest_axes[m.adaptive_stick_axis];
+        float close_frac = std::clamp(raw_stick * m.adaptive_close_sign, 0.0f, 1.0f);
+        float open_frac = std::clamp(-raw_stick * m.adaptive_close_sign, 0.0f, 1.0f);
+        float deflection = std::max(close_frac, open_frac);
 
           // Vertical stick rotates the grip-type knuckle while the trigger is held.
           // Small deadzone rejects noise; rescaled past it so the step ramps from zero.
-          constexpr float kVjogDeadzone = 0.15f;
-          float vjog_stick = 0.0f;
-          if (m.type_axis >= 0 && m.type_axis < static_cast<int>(latest_axes.size())) {
-            const float raw = latest_axes[m.type_axis];
-            if (std::abs(raw) > kVjogDeadzone) {
-              vjog_stick = std::copysign(
-                (std::abs(raw) - kVjogDeadzone) / (1.0f - kVjogDeadzone), raw);
-            }
+        constexpr float kVjogDeadzone = 0.15f;
+        float vjog_stick = 0.0f;
+        if (m.type_axis >= 0 && m.type_axis < static_cast<int>(latest_axes.size())) {
+          const float raw = latest_axes[m.type_axis];
+          if (std::abs(raw) > kVjogDeadzone) {
+            vjog_stick = std::copysign(
+              (std::abs(raw) - kVjogDeadzone) / (1.0f - kVjogDeadzone), raw);
           }
+        }
 
           // Endpoint-swing mode (single_joint.min/max set): the servo can't break the gear
           // spring with small errors, so one flick = one full swing; recenter stick to re-arm.
-          const bool vjog_has_range = (m.type_min > -1e8f && m.type_max < 1e8f);
+        const bool vjog_has_range = (m.type_min > -1e8f && m.type_max < 1e8f);
           // Fire only on a decisive, dominantly-vertical push — the same stick's horizontal
           // axis drives open/close and must not flip the 2f/3f pose mid-grasp.
-          constexpr float kFlickThreshold = 0.6f;
-          float vjog_h = 0.0f;
-          if (m.adaptive_stick_axis >= 0 &&
-              m.adaptive_stick_axis < static_cast<int>(latest_axes.size())) {
-            vjog_h = latest_axes[m.adaptive_stick_axis];
-          }
-          const float vjog_raw =
-            (m.type_axis >= 0 && m.type_axis < static_cast<int>(latest_axes.size()))
-              ? latest_axes[m.type_axis] : 0.0f;
-          const bool vjog_decisive = std::abs(vjog_raw) > kFlickThreshold &&
-                                     std::abs(vjog_raw) > std::abs(vjog_h);
-          const bool vjog_fire = vjog_has_range && vjog_decisive && m.vjog_armed;
-          if (vjog_has_range && vjog_stick == 0.0f) m.vjog_armed = true;
+        constexpr float kFlickThreshold = 0.6f;
+        float vjog_h = 0.0f;
+        if (m.adaptive_stick_axis >= 0 &&
+          m.adaptive_stick_axis < static_cast<int>(latest_axes.size()))
+        {
+          vjog_h = latest_axes[m.adaptive_stick_axis];
+        }
+        const float vjog_raw =
+          (m.type_axis >= 0 && m.type_axis < static_cast<int>(latest_axes.size())) ?
+          latest_axes[m.type_axis] : 0.0f;
+        const bool vjog_decisive = std::abs(vjog_raw) > kFlickThreshold &&
+          std::abs(vjog_raw) > std::abs(vjog_h);
+        const bool vjog_fire = vjog_has_range && vjog_decisive && m.vjog_armed;
+        if (vjog_has_range && vjog_stick == 0.0f) {m.vjog_armed = true;}
           // Keep goals flowing while a swing is in progress even with the stick
           // released — the endpoint command must persist until arrival.
-          const bool vjog_request =
-            vjog_has_range ? (vjog_fire || m.vjog_swing_active) : (vjog_stick != 0.0f);
+        const bool vjog_request =
+          vjog_has_range ? (vjog_fire || m.vjog_swing_active) : (vjog_stick != 0.0f);
 
-          if (deflection >= 0.1f || vjog_request) {
-            const bool closing = (close_frac >= open_frac);
+        if (deflection >= 0.1f || vjog_request) {
+          const bool closing = (close_frac >= open_frac);
             // Config speeds are radians per legacy 50 ms tick — scale to the actual loop rate.
-            float step = m.speed * deflection * static_cast<float>(jog_tick_scale_);
-            float vjog_step = m.speed * vjog_stick * static_cast<float>(m.type_sign) * static_cast<float>(jog_tick_scale_);
+          float step = m.speed * deflection * static_cast<float>(jog_tick_scale_);
+          float vjog_step = m.speed * vjog_stick * static_cast<float>(m.type_sign) *
+            static_cast<float>(jog_tick_scale_);
 
             // A flick starts a persistent swing: every goal re-commands the endpoint until
             // arrival, so open/close rides in the same goals instead of blocking behind one.
-            if (vjog_fire) {
-              m.vjog_armed = false;
-              m.vjog_swing_active = true;
-              m.vjog_swing_target = (vjog_step > 0.0f) ? m.type_max : m.type_min;
-              m.vjog_swing_deadline = this->now() + rclcpp::Duration::from_seconds(2.5);
-            }
-            if (m.vjog_swing_active) {
+          if (vjog_fire) {
+            m.vjog_armed = false;
+            m.vjog_swing_active = true;
+            m.vjog_swing_target = (vjog_step > 0.0f) ? m.type_max : m.type_min;
+            m.vjog_swing_deadline = this->now() + rclcpp::Duration::from_seconds(2.5);
+          }
+          if (m.vjog_swing_active) {
               // Only check arrival if the joint is known; else rely on the deadline.
-              const bool arrived = joint_pos.count(m.type_joint) &&
-                std::abs(static_cast<float>(joint_pos.at(m.type_joint)) - m.vjog_swing_target) < 0.08f;
-              if (arrived || this->now() >= m.vjog_swing_deadline) {
-                m.vjog_swing_active = false;
-              }
+            const bool arrived = joint_pos.count(m.type_joint) &&
+              std::abs(static_cast<float>(joint_pos.at(m.type_joint)) - m.vjog_swing_target) <
+              0.08f;
+            if (arrived || this->now() >= m.vjog_swing_deadline) {
+              m.vjog_swing_active = false;
             }
+          }
 
-            auto clamp_to_limits = [&](const std::string & jname, float value) -> float {
-              if (!joint_limits.count(jname)) return value;
+          auto clamp_to_limits = [&](const std::string & jname, float value) -> float {
+              if (!joint_limits.count(jname)) {return value;}
               return std::clamp(value,
-                static_cast<float>(std::min(joint_limits.at(jname).lower, joint_limits.at(jname).upper)),
-                static_cast<float>(std::max(joint_limits.at(jname).lower, joint_limits.at(jname).upper)));
+                static_cast<float>(std::min(joint_limits.at(jname).lower,
+                joint_limits.at(jname).upper)),
+                static_cast<float>(std::max(joint_limits.at(jname).lower,
+                joint_limits.at(jname).upper)));
             };
 
-            auto step_toward = [&](const std::string & jname, float target) -> float {
-              if (joint_pos.find(jname) == joint_pos.end()) return target;
+          auto step_toward = [&](const std::string & jname, float target) -> float {
+              if (joint_pos.find(jname) == joint_pos.end()) {return target;}
               float cur = static_cast<float>(joint_pos.at(jname));
               float dir = (target > cur) ? 1.0f : -1.0f;
               float next = cur + dir * step;
-              if ((dir > 0 && next > target) || (dir < 0 && next < target)) next = target;
+              if ((dir > 0 && next > target) || (dir < 0 && next < target)) {next = target;}
               return clamp_to_limits(jname, next);
             };
 
-            auto goal = sobits_interfaces::action::MoveJoint::Goal();
-            float max_delta = 0.f;
-            for (const auto & ajt : m.adaptive_joints) {
-              goal.target_joint_names.push_back(ajt.name);
-              float cur = joint_pos.count(ajt.name)
-                ? static_cast<float>(joint_pos.at(ajt.name)) : ajt.close_pos;
-              float tgt;
-              if (ajt.fixed) {
+          auto goal = sobits_interfaces::action::MoveJoint::Goal();
+          float max_delta = 0.f;
+          for (const auto & ajt : m.adaptive_joints) {
+            goal.target_joint_names.push_back(ajt.name);
+            float cur = joint_pos.count(ajt.name) ?
+              static_cast<float>(joint_pos.at(ajt.name)) : ajt.close_pos;
+            float tgt;
+            if (ajt.fixed) {
                 // Fixed joints hold position — except the grip-type knuckle, driven by the stick.
-                tgt = cur;
-                if (ajt.name == m.type_joint) {
-                  if (m.vjog_swing_active) {
+              tgt = cur;
+              if (ajt.name == m.type_joint) {
+                if (m.vjog_swing_active) {
                     // Swing in progress: command the endpoint (large sustained
                     // error) in every goal until the knuckle arrives.
-                    tgt = clamp_to_limits(ajt.name, m.vjog_swing_target);
-                  } else if (!vjog_has_range && vjog_stick != 0.0f) {
-                    tgt = clamp_to_limits(ajt.name, cur + vjog_step);
-                  }
+                  tgt = clamp_to_limits(ajt.name, m.vjog_swing_target);
+                } else if (!vjog_has_range && vjog_stick != 0.0f) {
+                  tgt = clamp_to_limits(ajt.name, cur + vjog_step);
                 }
-                goal.target_joint_rad.push_back(tgt);
-              } else if (deflection >= 0.1f) {
-                tgt = closing ? ajt.close_pos : ajt.open_pos;
-                tgt = step_toward(ajt.name, tgt);
-                goal.target_joint_rad.push_back(tgt);
-              } else {
-                tgt = cur;
-                goal.target_joint_rad.push_back(cur);  // vertical-only: hold curl
               }
-              max_delta = std::max(max_delta, std::abs(tgt - cur));
+              goal.target_joint_rad.push_back(tgt);
+            } else if (deflection >= 0.1f) {
+              tgt = closing ? ajt.close_pos : ajt.open_pos;
+              tgt = step_toward(ajt.name, tgt);
+              goal.target_joint_rad.push_back(tgt);
+            } else {
+              tgt = cur;
+              goal.target_joint_rad.push_back(cur);    // vertical-only: hold curl
             }
+            max_delta = std::max(max_delta, std::abs(tgt - cur));
+          }
             // Scale duration to the largest excursion so a swing isn't ballistic.
-            constexpr double kMaxHandJointVel = 3.0;  // rad/s — hand servo jog ceiling
-            const double goal_sec = std::max(1.0 / teleop_rate_hz, max_delta / kMaxHandJointVel);
-            goal.time_allowance = rclcpp::Duration::from_seconds(goal_sec);
+          constexpr double kMaxHandJointVel = 3.0;    // rad/s — hand servo jog ceiling
+          const double goal_sec = std::max(1.0 / teleop_rate_hz, max_delta / kMaxHandJointVel);
+          goal.time_allowance = rclcpp::Duration::from_seconds(goal_sec);
 
             // One jog goal in flight per hand (server runs goals unpreempted on detached
             // threads; a global gate made hands block each other). Deadline backstops a lost result.
-            if (move_joint_client->action_server_is_ready() &&
-                (!m.jog_goal_in_flight || this->now() >= m.jog_goal_deadline)) {
-              m.jog_goal_in_flight = true;
+          if (move_joint_client->action_server_is_ready() &&
+            (!m.jog_goal_in_flight || this->now() >= m.jog_goal_deadline))
+          {
+            m.jog_goal_in_flight = true;
               // Backstop must outlive the goal's own allowance.
-              m.jog_goal_deadline = this->now() +
-                rclcpp::Duration::from_seconds(std::max(1.0, goal_sec + 0.5));
-              bool * in_flight = &m.jog_goal_in_flight;
-              auto opts = rclcpp_action::Client<sobits_interfaces::action::MoveJoint>::SendGoalOptions();
-              opts.goal_response_callback =
-                [in_flight](rclcpp_action::ClientGoalHandle<sobits_interfaces::action::MoveJoint>::SharedPtr h) {
-                  if (!h) *in_flight = false;  // rejected: free the slot
-                };
-              opts.result_callback = [in_flight](const auto &) { *in_flight = false; };
-              move_joint_client->async_send_goal(goal, opts);
-            }
+            m.jog_goal_deadline = this->now() +
+              rclcpp::Duration::from_seconds(std::max(1.0, goal_sec + 0.5));
+            bool * in_flight = &m.jog_goal_in_flight;
+            auto opts =
+              rclcpp_action::Client<sobits_interfaces::action::MoveJoint>::SendGoalOptions();
+            opts.goal_response_callback =
+              [in_flight](rclcpp_action::ClientGoalHandle<sobits_interfaces::action::MoveJoint>::
+              SharedPtr h) {
+                if (!h) {*in_flight = false;}  // rejected: free the slot
+              };
+            opts.result_callback = [in_flight](const auto &) {*in_flight = false;};
+            move_joint_client->async_send_goal(goal, opts);
           }
         }
+      }
     }// Gripper
   }// Quest controllers
 

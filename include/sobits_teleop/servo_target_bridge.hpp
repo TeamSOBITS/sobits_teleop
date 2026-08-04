@@ -23,7 +23,8 @@
 namespace sobits_teleop
 {
 
-struct ServoBridgeArmConfig {
+struct ServoBridgeArmConfig
+{
   // Same frame vocabulary as the quest_control blocks in quest.yaml:
   // target_frame_name / base_frame_name / end_effector_frame_name.
   std::string target_frame;
@@ -51,7 +52,8 @@ private:
   using ServoCommandType = moveit_msgs::srv::ServoCommandType;
   using SetBool = std_srvs::srv::SetBool;
 
-  struct ArmBridgeData {
+  struct ArmBridgeData
+  {
     ServoBridgeArmConfig config;
 
     rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pose_pub;

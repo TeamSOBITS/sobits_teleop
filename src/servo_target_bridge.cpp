@@ -14,22 +14,25 @@ ServoTargetBridge::ServoTargetBridge(const rclcpp::NodeOptions & options)
     "servo_target_bridge",
     rclcpp::NodeOptions(options).automatically_declare_parameters_from_overrides(true))
 {
-  tf_buffer_   = std::make_shared<tf2_ros::Buffer>(this->get_clock());
+  tf_buffer_ = std::make_shared<tf2_ros::Buffer>(this->get_clock());
   tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 
-  if (!this->has_parameter("servo_bridge.pose_rate_hz"))
+  if (!this->has_parameter("servo_bridge.pose_rate_hz")) {
     this->declare_parameter("servo_bridge.pose_rate_hz", 100.0);
+  }
   pose_rate_hz_ = this->get_parameter("servo_bridge.pose_rate_hz").as_double();
 
-  if (!this->has_parameter("servo_bridge.arms"))
+  if (!this->has_parameter("servo_bridge.arms")) {
     this->declare_parameter("servo_bridge.arms",
       std::vector<std::string>{"arm_right", "arm_left"});
+  }
 
   auto arm_names = this->get_parameter("servo_bridge.arms").as_string_array();
 
   // Shared default for the per-arm reach clamp; per-arm max_reach overrides it.
-  if (!this->has_parameter("servo_bridge.max_reach"))
+  if (!this->has_parameter("servo_bridge.max_reach")) {
     this->declare_parameter("servo_bridge.max_reach", 0.0);
+  }
   const double shared_max_reach =
     this->get_parameter("servo_bridge.max_reach").as_double();
 
@@ -39,41 +42,49 @@ ServoTargetBridge::ServoTargetBridge(const rclcpp::NodeOptions & options)
     const std::string side =
       arm_name.rfind("arm_", 0) == 0 ? arm_name.substr(4) : arm_name;
 
-    auto tf_key   = "servo_bridge." + arm_name + ".target_frame_name";
-    auto bf_key   = "servo_bridge." + arm_name + ".base_frame_name";
-    auto ee_key   = "servo_bridge." + arm_name + ".end_effector_frame_name";
-    auto se_key   = "servo_bridge." + arm_name + ".servo_ee_frame";
-    auto sn_key   = "servo_bridge." + arm_name + ".servo_node";
-    auto en_key   = "servo_bridge." + arm_name + ".enable_topic";
-    auto ro_key   = "servo_bridge." + arm_name + ".reach_origin_frame";
-    auto mr_key   = "servo_bridge." + arm_name + ".max_reach";
+    auto tf_key = "servo_bridge." + arm_name + ".target_frame_name";
+    auto bf_key = "servo_bridge." + arm_name + ".base_frame_name";
+    auto ee_key = "servo_bridge." + arm_name + ".end_effector_frame_name";
+    auto se_key = "servo_bridge." + arm_name + ".servo_ee_frame";
+    auto sn_key = "servo_bridge." + arm_name + ".servo_node";
+    auto en_key = "servo_bridge." + arm_name + ".enable_topic";
+    auto ro_key = "servo_bridge." + arm_name + ".reach_origin_frame";
+    auto mr_key = "servo_bridge." + arm_name + ".max_reach";
 
-    if (!this->has_parameter(tf_key))
+    if (!this->has_parameter(tf_key)) {
       this->declare_parameter(tf_key, side + "_target_link");
-    if (!this->has_parameter(bf_key))
+    }
+    if (!this->has_parameter(bf_key)) {
       this->declare_parameter(bf_key, "base_footprint");
-    if (!this->has_parameter(ee_key))
+    }
+    if (!this->has_parameter(ee_key)) {
       this->declare_parameter(ee_key, "hand_" + side + "_end_effector_link");
-    if (!this->has_parameter(se_key))
+    }
+    if (!this->has_parameter(se_key)) {
       this->declare_parameter(se_key, std::string(""));
-    if (!this->has_parameter(sn_key))
+    }
+    if (!this->has_parameter(sn_key)) {
       this->declare_parameter(sn_key, std::string("servo_") + arm_name);
-    if (!this->has_parameter(en_key))
+    }
+    if (!this->has_parameter(en_key)) {
       this->declare_parameter(en_key, arm_name + "/moveit_track_enabled");
-    if (!this->has_parameter(ro_key))
+    }
+    if (!this->has_parameter(ro_key)) {
       this->declare_parameter(ro_key, arm_name + "_shoulder_tilt_link");
-    if (!this->has_parameter(mr_key))
+    }
+    if (!this->has_parameter(mr_key)) {
       this->declare_parameter(mr_key, shared_max_reach);
+    }
 
     ServoBridgeArmConfig cfg;
-    cfg.target_frame       = this->get_parameter(tf_key).as_string();
-    cfg.base_frame         = this->get_parameter(bf_key).as_string();
+    cfg.target_frame = this->get_parameter(tf_key).as_string();
+    cfg.base_frame = this->get_parameter(bf_key).as_string();
     cfg.end_effector_frame = this->get_parameter(ee_key).as_string();
-    cfg.servo_ee_frame     = this->get_parameter(se_key).as_string();
-    cfg.servo_node         = this->get_parameter(sn_key).as_string();
-    cfg.enable_topic       = this->get_parameter(en_key).as_string();
+    cfg.servo_ee_frame = this->get_parameter(se_key).as_string();
+    cfg.servo_node = this->get_parameter(sn_key).as_string();
+    cfg.enable_topic = this->get_parameter(en_key).as_string();
     cfg.reach_origin_frame = this->get_parameter(ro_key).as_string();
-    cfg.max_reach          = this->get_parameter(mr_key).as_double();
+    cfg.max_reach = this->get_parameter(mr_key).as_double();
 
     auto arm_data = std::make_unique<ArmBridgeData>();
     arm_data->config = cfg;
@@ -115,7 +126,7 @@ ServoTargetBridge::ServoTargetBridge(const rclcpp::NodeOptions & options)
     // retried on a slow timer (servo_node's services come up concurrently).
     arms_[arm_name]->startup_retry_timer = this->create_wall_timer(
       std::chrono::seconds(2),
-      [this, arm_name]() { try_startup_sequence(arm_name); });
+      [this, arm_name]() {try_startup_sequence(arm_name);});
     // Fire once immediately too, in case services are already up.
     try_startup_sequence(arm_name);
   }
@@ -124,7 +135,7 @@ ServoTargetBridge::ServoTargetBridge(const rclcpp::NodeOptions & options)
   auto period = std::chrono::duration<double>(1.0 / pose_rate_hz_);
   pose_timer_ = this->create_wall_timer(
     std::chrono::duration_cast<std::chrono::nanoseconds>(period),
-    [this]() { pose_timer_callback(); });
+    [this]() {pose_timer_callback();});
 
   RCLCPP_INFO(get_logger(),
     "ServoTargetBridge: %zu arm(s), pose_rate=%.1f Hz",
@@ -136,13 +147,14 @@ ServoTargetBridge::ServoTargetBridge(const rclcpp::NodeOptions & options)
 void ServoTargetBridge::try_startup_sequence(const std::string & arm_name)
 {
   auto it = arms_.find(arm_name);
-  if (it == arms_.end()) return;
+  if (it == arms_.end()) {return;}
   auto & arm = *it->second;
 
   try_send_pause(arm_name);
 
   if (arm.command_type_set.load() && arm.initial_pause_set.load() &&
-      arm.pending_pause.load() == -1) {
+    arm.pending_pause.load() == -1)
+  {
     if (arm.startup_retry_timer) {
       arm.startup_retry_timer->cancel();
     }
@@ -157,7 +169,7 @@ void ServoTargetBridge::try_startup_sequence(const std::string & arm_name)
         req,
         [this, arm_name](rclcpp::Client<ServoCommandType>::SharedFuture future) {
           auto it2 = arms_.find(arm_name);
-          if (it2 == arms_.end()) return;
+          if (it2 == arms_.end()) {return;}
           auto & arm2 = *it2->second;
           auto resp = future.get();
           if (resp->success) {
@@ -192,7 +204,7 @@ void ServoTargetBridge::try_startup_sequence(const std::string & arm_name)
         req,
         [this, arm_name](rclcpp::Client<SetBool>::SharedFuture future) {
           auto it2 = arms_.find(arm_name);
-          if (it2 == arms_.end()) return;
+          if (it2 == arms_.end()) {return;}
           auto & arm2 = *it2->second;
           auto resp = future.get();
           if (resp->success) {
@@ -236,11 +248,11 @@ void ServoTargetBridge::try_startup_sequence(const std::string & arm_name)
 void ServoTargetBridge::try_send_pause(const std::string & arm_name)
 {
   auto it = arms_.find(arm_name);
-  if (it == arms_.end()) return;
+  if (it == arms_.end()) {return;}
   auto & arm = *it->second;
 
   const int wanted = arm.pending_pause.load();
-  if (wanted == -1) return;
+  if (wanted == -1) {return;}
 
   if (!arm.pause_servo_client->service_is_ready()) {
     RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5000,
@@ -255,7 +267,7 @@ void ServoTargetBridge::try_send_pause(const std::string & arm_name)
     req,
     [this, arm_name, wanted](rclcpp::Client<SetBool>::SharedFuture future) {
       auto it2 = arms_.find(arm_name);
-      if (it2 == arms_.end()) return;
+      if (it2 == arms_.end()) {return;}
       auto & arm2 = *it2->second;
       auto resp = future.get();
       if (resp->success) {
@@ -280,11 +292,11 @@ void ServoTargetBridge::enable_callback(
   const std_msgs::msg::Bool::SharedPtr msg)
 {
   auto it = arms_.find(arm_name);
-  if (it == arms_.end()) return;
+  if (it == arms_.end()) {return;}
   auto & arm = *it->second;
 
   if (msg->data) {
-    if (arm.enabled.load()) return;
+    if (arm.enabled.load()) {return;}
 
     // No waiting on responses — Servo tolerates early pose commands while paused.
     // Re-request POSE mode in case servo_node restarted, then unpause.
@@ -308,17 +320,17 @@ void ServoTargetBridge::enable_callback(
     // Unpause is retried until confirmed, so it's never silently skipped.
     arm.pending_pause = 0;
     try_send_pause(arm_name);
-    if (arm.startup_retry_timer) arm.startup_retry_timer->reset();
+    if (arm.startup_retry_timer) {arm.startup_retry_timer->reset();}
 
     arm.enabled = true;
     RCLCPP_INFO(get_logger(), "Servo tracking ENABLED for '%s'", arm_name.c_str());
   } else {
-    if (!arm.enabled.load()) return;
+    if (!arm.enabled.load()) {return;}
     arm.enabled = false;
 
     arm.pending_pause = 1;
     try_send_pause(arm_name);
-    if (arm.startup_retry_timer) arm.startup_retry_timer->reset();
+    if (arm.startup_retry_timer) {arm.startup_retry_timer->reset();}
 
     RCLCPP_INFO(get_logger(), "Servo tracking DISABLED for '%s'", arm_name.c_str());
   }
@@ -330,7 +342,7 @@ void ServoTargetBridge::pose_timer_callback()
 {
   for (auto & [arm_name, arm_ptr] : arms_) {
     auto & arm = *arm_ptr;
-    if (!arm.enabled.load()) continue;
+    if (!arm.enabled.load()) {continue;}
 
     geometry_msgs::msg::TransformStamped tf_stamped;
     try {
@@ -383,8 +395,8 @@ void ServoTargetBridge::pose_timer_callback()
     // T(base->cmd) = T(base->target) * T(ee->servo_ee). Looked up per tick, not cached.
     tf2::Transform base_to_cmd = base_to_target;
     if (!arm.config.servo_ee_frame.empty() &&
-        !arm.config.end_effector_frame.empty() &&
-        arm.config.servo_ee_frame != arm.config.end_effector_frame)
+      !arm.config.end_effector_frame.empty() &&
+      arm.config.servo_ee_frame != arm.config.end_effector_frame)
     {
       try {
         auto ee_se = tf_buffer_->lookupTransform(
@@ -408,7 +420,7 @@ void ServoTargetBridge::pose_timer_callback()
 
     geometry_msgs::msg::PoseStamped pose_msg;
     pose_msg.header.frame_id = arm.config.base_frame;
-    pose_msg.header.stamp    = this->now();
+    pose_msg.header.stamp = this->now();
     pose_msg.pose.position.x = base_to_cmd.getOrigin().x();
     pose_msg.pose.position.y = base_to_cmd.getOrigin().y();
     pose_msg.pose.position.z = base_to_cmd.getOrigin().z();

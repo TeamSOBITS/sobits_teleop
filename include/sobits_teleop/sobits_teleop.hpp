@@ -28,12 +28,14 @@
 namespace sobits_teleop
 {
 
-struct Limit {
+struct Limit
+{
   double lower = 0.0;
   double upper = 0.0;
 };
 
-struct JointMap {
+struct JointMap
+{
   std::string joint_group;
   std::string joint_name;
   std::string joint_trajectory_topic;
@@ -47,13 +49,15 @@ struct JointMap {
   double max_pos = 0.0;
 };
 
-struct PoseMap {
+struct PoseMap
+{
   std::string pose_name;
   int trigger = -1;   // optional modifier button; -1 = no modifier required
   int button = -1;
 };
 
-struct CmdVelMap {
+struct CmdVelMap
+{
   std::string topic;
   int button = -1;
   int fast_button = -1;
@@ -69,7 +73,8 @@ struct CmdVelMap {
   double fast_angular_scale = 0.0;
 };
 
-struct QuestHeadMap {
+struct QuestHeadMap
+{
 
   std::string head_joint_trajectory_topic;
   std::string body_joint_trajectory_topic;
@@ -84,7 +89,8 @@ struct QuestHeadMap {
 
 // Per-joint adaptive gripper target (close and open positions).
 // Joints omitted from this list are not commanded by the adaptive gripper.
-struct AdaptiveJointTarget {
+struct AdaptiveJointTarget
+{
   std::string name;
   float close_pos;
   float open_pos;
@@ -92,7 +98,8 @@ struct AdaptiveJointTarget {
 };
 
 // One per arm_* group (planning group tracked by an arm controller).
-struct QuestArmMap {
+struct QuestArmMap
+{
   std::string group;        // planning group, e.g. "arm_left"
   std::string controller;   // "left" or "right"
   std::string base_frame_name;
@@ -108,7 +115,8 @@ struct QuestArmMap {
 };
 
 // One per hand_* group (gripper controlled by a hand controller).
-struct QuestHandMap {
+struct QuestHandMap
+{
   std::string group;        // e.g. "hand_left"
   std::string controller;   // "left" or "right"
   int pose_button = -1;    // button to toggle open/close hand pose
@@ -117,8 +125,8 @@ struct QuestHandMap {
   std::string pose_action; // action server name for hand pose (e.g. "move_left_hand_to_pose")
   float speed = 0.2f;
   int adaptive_trigger_axis = -1;   // trigger axis that enables adaptive grip
-  int adaptive_stick_axis   = -1;   // stick axis that controls open/close
-  int adaptive_close_sign   = 1;    // +1: positive stick = close, -1: negative stick = close
+  int adaptive_stick_axis = -1;     // stick axis that controls open/close
+  int adaptive_close_sign = 1;      // +1: positive stick = close, -1: negative stick = close
   std::vector<AdaptiveJointTarget> adaptive_joints;  // per-joint targets for adaptive grip
   std::string type_joint;
   int type_axis = -1;   // single_joint.axis: -1 = feature off
@@ -126,7 +134,7 @@ struct QuestHandMap {
   // Functional range for the vjog joint (single_joint.min/max) — the
   // switching-gear mechanism can jam outside it.
   float type_min = -1e9f;
-  float type_max =  1e9f;
+  float type_max = 1e9f;
   // Endpoint-swing state: one swing per stick flick, re-armed at stick center;
   // the endpoint is re-commanded every goal until arrival (beats the gear spring).
   bool vjog_armed = true;
@@ -143,7 +151,8 @@ struct QuestHandMap {
 };
 
 // Per-controller-side arm tracking state (one entry per "left"/"right" etc.).
-struct ArmTrackState {
+struct ArmTrackState
+{
   bool latched = false;
   bool just_latched = false;
   bool have_pub_prev = false;
@@ -186,11 +195,11 @@ private:
   rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_pub;
   std::map<std::string,
     rclcpp::Publisher<trajectory_msgs::msg::JointTrajectory>::SharedPtr>
-    joint_pub;
+  joint_pub;
   // Publishers to enable/disable MoveIt arm tracking per planning group
   // Key = planning_group name (e.g. "arm_left"), topic = <key>/moveit_track_enabled
   std::map<std::string, rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr>
-    arm_track_pubs_;
+  arm_track_pubs_;
 
   rclcpp_action::Client<sobits_interfaces::action::MoveToPose>::SharedPtr move_to_pose_client;
   rclcpp_action::Client<sobits_interfaces::action::MoveJoint>::SharedPtr move_joint_client;
@@ -198,7 +207,7 @@ private:
   // Created at startup from pose_action in each hand group's config.
   std::map<std::string,
     rclcpp_action::Client<sobits_interfaces::action::MoveToPose>::SharedPtr>
-    hand_pose_clients_;
+  hand_pose_clients_;
 
   rclcpp::TimerBase::SharedPtr timer;
 
@@ -259,8 +268,8 @@ private:
   static constexpr double kMaxTargetAngVel = 1.5;  // rad/s
 
   // Hand pose toggle state per controller: true = open, false = closed
-  std::map<std::string, bool>          hand_open_state_;    // keyed by hand group name
-  std::map<std::string, rclcpp::Time>  hand_toggle_time_;   // debounce timestamp per hand group
+  std::map<std::string, bool> hand_open_state_;             // keyed by hand group name
+  std::map<std::string, rclcpp::Time> hand_toggle_time_;    // debounce timestamp per hand group
 
   // Head tracking latch state: pose captured at latch, delta computed against it every tick.
   tf2::Transform last_tf;
