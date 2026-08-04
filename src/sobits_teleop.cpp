@@ -408,9 +408,11 @@ void SOBITSTeleop::robot_tf_callback(const tf2_msgs::msg::TFMessage::SharedPtr m
   // Quest up to ~4 min ahead), so "newest" must mean "most recently received".
   const rclcpp::Time now_wall = wall_clock_->now();
 
+  // Offset each transform by i ns so repeated frames in one message don't collide.
+  uint32_t i = 0;
   for (const auto & t : msg->transforms) {
     geometry_msgs::msg::TransformStamped ts = t;
-    ts.header.stamp = now_wall;
+    ts.header.stamp = now_wall + rclcpp::Duration(0, i++);
     try {
       tf_buffer->setTransform(ts, "tf", false);
     } catch (tf2::TransformException & ex) {
