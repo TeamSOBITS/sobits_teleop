@@ -13,10 +13,15 @@
     quest_control:
       groups:
         - head
-        # - arm_right   # disabled: hardware off
-        # - hand_right  # disabled: hardware off
+        - arm_right
+        - hand_right
         - arm_left
         - hand_left
+
+      # controllers: MoveIt/servo backends read only these entries
+      controllers:
+        - arm_right 
+        - arm_left
 
       head:
         enable_axis: 2        # left trigger
@@ -25,9 +30,10 @@
         vertical_sign: 1
         horizontal_sign: 1
         scale: 1.0
-        # body_lift: "body_lift_joint"  # disabled: hardware off
+        body_lift: "body_lift_joint"
 
       arm_right:
+        arm: "arm_right"       # MoveIt planning group name
         controller: "right"
         enable_axis: 7        # right grip
         scale: 2.0            # anatomical ratio is 1.41; raised to 2.0 for reach
@@ -82,6 +88,7 @@
           max: 1.575  # margin covers servo overshoot past the clamp
 
       arm_left:
+        arm: "arm_left"        # MoveIt planning group name
         controller: "left"
         enable_axis: 7        # right grip
         scale: 2.0            # anatomical ratio is 1.41; raised to 2.0 for reach
