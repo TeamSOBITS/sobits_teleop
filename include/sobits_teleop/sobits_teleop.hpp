@@ -202,6 +202,15 @@ private:
   bool any_arm_enable_held();
   // Runs the latch/ramp/rate-limit/publish pipeline for one arm controller.
   void process_arm(const QuestArmMap & m, ArmTrackState & st, bool head_tf_ok, bool arm_enabled);
+  void process_joints();
+  void process_poses();
+  void process_cmd_vel();
+  void process_head(bool head_tf_ok, const tf2::Transform & current_tf);
+  void process_hand(const std::string & name, QuestHandMap & m);
+  // Looks up a Quest frame under base_footprint; rejects stale/invalid TF.
+  bool lookup_quest_frame(
+    const std::string & quest_frame, tf2::Transform & out,
+    tf2::Transform * out_base = nullptr);
 
   rclcpp::Subscription<sensor_msgs::msg::Joy>::SharedPtr joy_sub;
   rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr joint_state_sub;
