@@ -443,7 +443,7 @@ QuestのTFが途切れている間でも離せば必ず追従が停止します�
 quest_control:
   groups: [head, body, ...]
   body:
-    enable_axis: -1                 # 空いている軸を指定すると有効化
+    enable_axis: 2                  # 左トリガ．headと共用
     target_frame_name: "hmd_odom"   # このフレームのz移動量で昇降する
     joint: "body_lift_joint"
     axis_sign: 1
@@ -451,8 +451,9 @@ quest_control:
 ```
 
 軌道トピックは`robot_topic_name.joint_trajectory_topic.body`から取得します．
-Questコントローラの軸はすべて割り当て済みのため，既定では無効
-（`enable_axis: -1`）です．有効化する前にいずれかの軸を空けてください．
+Questコントローラの軸はすべて割り当て済みのため，既定では頭部と同じトリガを
+共用し，1回の押下で両方が動きます．ラッチは別々に保持されるため，`body`に
+専用の`enable_axis`を与えればコード変更なしで分離できます．
 
 <p align="right">(<a href="#readme-top">上に戻る</a>)</p>
 

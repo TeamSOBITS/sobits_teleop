@@ -449,7 +449,7 @@ independently. The z travel of `target_frame_name` drives the joint:
 quest_control:
   groups: [head, body, ...]
   body:
-    enable_axis: -1                 # set to a free axis to enable
+    enable_axis: 2                  # left trigger, shared with head
     target_frame_name: "hmd_odom"   # z travel of this frame drives the lift
     joint: "body_lift_joint"
     axis_sign: 1
@@ -457,8 +457,9 @@ quest_control:
 ```
 
 The trajectory topic comes from `robot_topic_name.joint_trajectory_topic.body`.
-It ships disabled (`enable_axis: -1`) because every axis is already bound on
-the Quest controllers — free one before enabling it.
+It shares the head's trigger by default, since every Quest axis is already
+bound — one hold drives both. The latches stay separate, so giving `body` its
+own `enable_axis` splits them with no code change.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
