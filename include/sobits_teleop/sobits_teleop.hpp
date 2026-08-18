@@ -200,6 +200,14 @@ private:
   void publish_arm_tracking(const std::string & arm, bool enabled);
   // True if any arm mapping's own enable axis is currently held.
   bool any_arm_enable_held();
+  // True if the button index is valid and currently down.
+  bool button_down(int idx) const;
+  // True on the rising edge of a button (down now, up on the previous tick).
+  bool button_pressed(int idx) const;
+  // True if the axis index is valid and past the hold threshold.
+  bool axis_held(int idx) const;
+  // Axis value, or 0.0 when the index is out of range.
+  double axis_value(int idx) const;
   // Runs the latch/ramp/rate-limit/publish pipeline for one arm controller.
   void process_arm(const QuestArmMap & m, ArmTrackState & st, bool head_tf_ok, bool arm_enabled);
   void process_joints();

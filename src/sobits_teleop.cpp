@@ -3,6 +3,9 @@
 namespace sobits_teleop
 {
 
+// Axis value above which a hold-style axis (trigger/mode switch) reads as "on".
+constexpr double kAxisHoldThreshold = 0.5;
+
 SOBITSTeleop::SOBITSTeleop(const rclcpp::NodeOptions & options)
 : Node(
     "sobits_teleop",
@@ -170,13 +173,35 @@ void SOBITSTeleop::publish_arm_tracking(const std::string & arm, bool enabled)
 bool SOBITSTeleop::any_arm_enable_held()
 {
   for (const auto & [name, m] : quest_arm_mappings) {
-    if (m.enable_axis >= 0 && m.enable_axis < static_cast<int>(latest_axes.size()) &&
-      latest_axes[m.enable_axis] > 0.5)
-    {
+    if (axis_held(m.enable_axis)) {
       return true;
     }
   }
   return false;
+}
+
+bool SOBITSTeleop::button_down(int idx) const
+{
+  return idx >= 0 && idx < static_cast<int>(latest_buttons.size()) && latest_buttons[idx] == 1;
+}
+
+bool SOBITSTeleop::button_pressed(int idx) const
+{
+  return button_down(idx) &&
+         (previous_buttons.empty() ||
+         idx >= static_cast<int>(previous_buttons.size()) ||
+         previous_buttons[idx] == 0);
+}
+
+bool SOBITSTeleop::axis_held(int idx) const
+{
+  return idx >= 0 && idx < static_cast<int>(latest_axes.size()) &&
+         latest_axes[idx] > kAxisHoldThreshold;
+}
+
+double SOBITSTeleop::axis_value(int idx) const
+{
+  return (idx >= 0 && idx < static_cast<int>(latest_axes.size())) ? latest_axes[idx] : 0.0;
 }
 
 // EE lookup, latch, soft-start ramp, rate limiter, and target broadcast for one arm.
@@ -785,16 +810,12 @@ void SOBITSTeleop::process_joints()
 
   for (auto &[name, m] : joint_mappings) {
 
-    if (m.button < 0 || m.button >= static_cast<int>(latest_buttons.size())) {continue;}
-    if (latest_buttons[m.button] == 0) {continue;}
+    if (!button_down(m.button)) {continue;}
 
-    if (m.axis < 0 || m.axis >= static_cast<int>(latest_axes.size())) {continue;}
-    float axis_val = latest_axes[m.axis];
+    float axis_val = axis_value(m.axis);
     if (std::abs(axis_val) < 1e-3) {continue;}
 
-    const bool fast = m.fast_button >= 0 &&
-      m.fast_button < static_cast<int>(latest_buttons.size()) &&
-      latest_buttons[m.fast_button] == 1;
+    const bool fast = button_down(m.fast_button);
 
     // Config speeds are radians per legacy 50 ms tick — scale to the actual loop rate.
     double delta_pos = axis_val * m.axis_sign * (fast ? m.fast_speed : m.speed) * jog_tick_scale_;
@@ -830,10 +851,7 @@ void SOBITSTeleop::process_poses()
 
   for (const auto & pose_map : pose_mappings) {
     // A trigger of -1 means no modifier is required; otherwise it must be held.
-    if (pose_map.trigger >= 0) {
-      if (pose_map.trigger >= static_cast<int>(latest_buttons.size())) {continue;}
-      if (latest_buttons[pose_map.trigger] == 0) {continue;}
-    }
+    if (pose_map.trigger >= 0 && !button_down(pose_map.trigger)) {continue;}
 
     if (any_arm_latched) {
       RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 3000,
@@ -841,14 +859,7 @@ void SOBITSTeleop::process_poses()
       continue;
     }
 
-    bool button_just_pressed = pose_map.button >= 0 &&
-      pose_map.button < static_cast<int>(latest_buttons.size()) &&
-      latest_buttons[pose_map.button] == 1 &&
-      (previous_buttons.empty() ||
-      pose_map.button >= static_cast < int > (previous_buttons.size()) ||
-      previous_buttons[pose_map.button] == 0);
-
-    if (!button_just_pressed) {continue;}
+    if (!button_pressed(pose_map.button)) {continue;}
 
     send_pose(pose_map);
   }
@@ -867,22 +878,22 @@ void SOBITSTeleop::process_cmd_vel()
     if (cvm.button >= 0 &&
       cvm.button < static_cast<int>(latest_buttons.size()))
     {
-      cmd_vel_enabled = (latest_buttons[cvm.button] == 1);
+      cmd_vel_enabled = button_down(cvm.button);
       if (cvm.fast_button >= 0 &&
         cvm.fast_button < static_cast<int>(latest_buttons.size()))
       {
-        fast_mode = fast_mode || (latest_buttons[cvm.fast_button] == 1);
+        fast_mode = fast_mode || button_down(cvm.fast_button);
       }
     }
     if (cvm.axis >= 0 &&
       cvm.axis < static_cast<int>(latest_axes.size()))
     {
       // OR with the button branch — either enable source is allowed.
-      cmd_vel_enabled = cmd_vel_enabled || (latest_axes[cvm.axis] > 0.5);
+      cmd_vel_enabled = cmd_vel_enabled || axis_held(cvm.axis);
       if (cvm.fast_axis >= 0 &&
         cvm.fast_axis < static_cast<int>(latest_axes.size()))
       {
-        fast_mode = fast_mode || (latest_axes[cvm.fast_axis] > 0.5);
+        fast_mode = fast_mode || axis_held(cvm.fast_axis);
       }
     }
 
@@ -893,17 +904,17 @@ void SOBITSTeleop::process_cmd_vel()
       if (cvm.linear_x_axis >= 0 &&
         cvm.linear_x_axis < static_cast<int>(latest_axes.size()))
       {
-        twist.linear.x = latest_axes[cvm.linear_x_axis] * linear_scale;
+        twist.linear.x = axis_value(cvm.linear_x_axis) * linear_scale;
       }
       if (cvm.linear_y_axis >= 0 &&
         cvm.linear_y_axis < static_cast<int>(latest_axes.size()))
       {
-        twist.linear.y = latest_axes[cvm.linear_y_axis] * linear_scale * cvm.axis_sign;
+        twist.linear.y = axis_value(cvm.linear_y_axis) * linear_scale * cvm.axis_sign;
       }
       if (cvm.angular_axis >= 0 &&
         cvm.angular_axis < static_cast<int>(latest_axes.size()))
       {
-        twist.angular.z = latest_axes[cvm.angular_axis] * angular_scale * cvm.axis_sign;
+        twist.angular.z = axis_value(cvm.angular_axis) * angular_scale * cvm.axis_sign;
       }
 
       cmd_vel_pub->publish(twist);
@@ -922,7 +933,7 @@ void SOBITSTeleop::process_head(bool head_tf_ok, const tf2::Transform & current_
   if (qhm.head_mode >= 0 &&
     qhm.head_mode < static_cast<int>(latest_axes.size()))
   {
-    head_control_enabled = (latest_axes[qhm.head_mode] > 0.5);
+    head_control_enabled = axis_held(qhm.head_mode);
   }
 
   // --- (hold) ---
@@ -1128,10 +1139,7 @@ void SOBITSTeleop::teleop()
       if (st_it == arm_track_.end()) {continue;}
       auto & st = st_it->second;
       if (st.tf_ok && head_tf_ok) {
-        const bool arm_enabled = m.enable_axis >= 0 &&
-          m.enable_axis<static_cast<int>(latest_axes.size()) &&
-            latest_axes[m.enable_axis]>0.5;
-        process_arm(m, st, head_tf_ok, arm_enabled);
+        process_arm(m, st, head_tf_ok, axis_held(m.enable_axis));
       }
     }// Arm
 
@@ -1154,13 +1162,7 @@ void SOBITSTeleop::process_hand(const std::string & name, QuestHandMap & m)
     rclcpp::Time & toggle_time = hand_toggle_time_.at(name);
     const bool debounce_ok = (this->now() - toggle_time).seconds() > 0.4;
 
-    if (m.pose_button < static_cast<int>(latest_buttons.size()) &&
-      latest_buttons[m.pose_button] == 1 &&
-      (previous_buttons.empty() ||
-      m.pose_button >= static_cast<int>(previous_buttons.size()) ||
-      previous_buttons[m.pose_button] == 0) &&
-      debounce_ok)
-    {
+    if (button_pressed(m.pose_button) && debounce_ok) {
       auto & client = hp_client_it->second;
             // Check server readiness before flipping state, non-blocking.
       if (client->action_server_is_ready()) {
