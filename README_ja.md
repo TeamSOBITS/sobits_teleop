@@ -426,34 +426,45 @@ Servoバックエンドには`ros-$ROS_DISTRO-moveit-servo`（`install.sh`でイ
 | トリガ + スティック左右 | アダプティブ開閉 |
 | トリガ + スティック上下 | 把持タイプ関節（`single_joint.name`）を回転 |
 
-#### 頭部操作（Quest）
+#### 追従関節グループ（Quest）
 
-`quest_control.head.enable_axis`を押している間，頭部追従がラッチされ，頭部がHMDの
-姿勢に追従します．ラッチはHMDのTFではなく`/joy`のトリガ状態で駆動されるため，
-QuestのTFが途切れている間でも離せば必ず追従が停止します．TFが復帰した際は
-現在の姿勢で再アンカーするため，途切れていた分の差分が一度にジャンプとして
-現れることはありません．
-
-#### 昇降軸の操作（Quest）
-
-`body`は独立したラッチを持つ別グループのため，頭部と昇降は互いに影響しません．
-`target_frame_name`のz方向の移動量が関節を駆動します．
+`joints`マップを持つ`quest_control`グループはTFフレームに追従します．各関節は
+ラッチ以降のフレーム移動量のうち1成分を受け取ります．グループ名は自由で
+（`head`、`neck`、`torso`など），それぞれ独立したラッチを持ち，いくつでも
+定義できます．
 
 ```yaml
 quest_control:
   groups: [head, body, ...]
-  body:
-    enable_axis: 2                  # 左トリガ．headと共用
-    target_frame_name: "hmd_odom"   # このフレームのz移動量で昇降する
-    joint: "body_lift_joint"
-    axis_sign: 1
+  head:
+    enable_axis: 2                  # 押している間ラッチ
+    target_frame_name: "hmd_odom"   # 追従するフレーム
     motion_scale: 1.0
+    joints:
+      head_pan_joint:  { type: rotation, axis: yaw,   sign:  1 }
+      head_tilt_joint: { type: rotation, axis: pitch, sign: -1 }
+  body:
+    enable_axis: 2                  # headと同じトリガ．ラッチは別
+    target_frame_name: "hmd_odom"
+    motion_scale: 1.0
+    joints:
+      body_lift_joint: { type: prismatic, axis: z, sign: 1 }
 ```
 
-軌道トピックは`robot_topic_name.joint_trajectory_topic.body`から取得します．
-Questコントローラの軸はすべて割り当て済みのため，既定では頭部と同じトリガを
-共用し，1回の押下で両方が動きます．ラッチは別々に保持されるため，`body`に
-専用の`enable_axis`を与えればコード変更なしで分離できます．
+| キー | 意味 |
+|---|---|
+| `type` | `rotation`（roll/pitch/yaw）または`prismatic`（x/y/z） |
+| `axis` | フレーム差分のどの成分で関節を駆動するか |
+| `sign` | 反転する場合は`-1`．既定は`1` |
+
+1つのグループ内でrotationとprismaticを混在させられます．グループの関節は
+すべて`robot_topic_name.joint_trajectory_topic.<group>`にまとめて配信されます．
+
+ラッチはTFではなく`/joy`のトリガ状態で駆動されるため，QuestのTFが途切れている
+間でも離せば必ず追従が停止します．TFが復帰した際は現在の姿勢で再アンカーする
+ため，途切れていた分の差分が一度にジャンプとして現れることはありません．
+不正な`type`，その`type`に存在しない`axis`，使用可能な関節が1つも残らない
+グループは，起動時に報告してスキップします．
 
 <p align="right">(<a href="#readme-top">上に戻る</a>)</p>
 

@@ -432,34 +432,46 @@ fetches the robot model from it at startup.
 | Trigger + stick left/right | Adaptive open/close curl |
 | Trigger + stick up/down | Rotate the grip-type joint (`single_joint.name`) |
 
-#### Head controls (Quest)
+#### Tracked joint groups (Quest)
 
-Hold `quest_control.head.enable_axis` to latch head tracking; the head then
-follows the HMD pose. The latch is driven by the trigger state from `/joy`, not
-by the HMD transform, so releasing always stops tracking even while the Quest
-TF is stale. When the TF recovers after a dropout the latch re-anchors on the
-current pose rather than replaying the whole gap as one jump.
-
-#### Body lift (Quest)
-
-`body` is a separate group with its own latch, so the lift and the head track
-independently. The z travel of `target_frame_name` drives the joint:
+A `quest_control` group that carries a `joints` map follows a TF frame: each
+joint takes one component of that frame's movement since the latch. The group
+name is free — `head`, `neck`, `torso` — and any number of groups may exist,
+each with its own latch.
 
 ```yaml
 quest_control:
   groups: [head, body, ...]
-  body:
-    enable_axis: 2                  # left trigger, shared with head
-    target_frame_name: "hmd_odom"   # z travel of this frame drives the lift
-    joint: "body_lift_joint"
-    axis_sign: 1
+  head:
+    enable_axis: 2                  # hold to latch
+    target_frame_name: "hmd_odom"   # frame whose motion is followed
     motion_scale: 1.0
+    joints:
+      head_pan_joint:  { type: rotation, axis: yaw,   sign:  1 }
+      head_tilt_joint: { type: rotation, axis: pitch, sign: -1 }
+  body:
+    enable_axis: 2                  # same trigger as head; latches separately
+    target_frame_name: "hmd_odom"
+    motion_scale: 1.0
+    joints:
+      body_lift_joint: { type: prismatic, axis: z, sign: 1 }
 ```
 
-The trajectory topic comes from `robot_topic_name.joint_trajectory_topic.body`.
-It shares the head's trigger by default, since every Quest axis is already
-bound — one hold drives both. The latches stay separate, so giving `body` its
-own `enable_axis` splits them with no code change.
+| Key | Meaning |
+|---|---|
+| `type` | `rotation` (roll/pitch/yaw) or `prismatic` (x/y/z) |
+| `axis` | which component of the frame delta drives the joint |
+| `sign` | `-1` to invert; defaults to `1` |
+
+One group may mix rotation and prismatic joints. All of a group's joints are
+published together on `robot_topic_name.joint_trajectory_topic.<group>`.
+
+The latch is driven by the trigger state from `/joy`, not by the TF, so
+releasing always stops tracking even while the Quest TF is stale. When the TF
+recovers after a dropout the latch re-anchors on the current pose rather than
+replaying the whole gap as one jump. An unknown `type`, an `axis` that does not
+belong to its type, or a group left with no usable joints is reported at
+startup and skipped.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
