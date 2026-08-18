@@ -46,10 +46,11 @@ def _make_nodes(context, *args, **kwargs):
     quest_control = quest_params['quest_control']
     arm_params = {}
     arms = []
-    for ctrl_name in quest_control.get('controllers', quest_control.get('controller', [])):
-        block = quest_control.get(ctrl_name, {})
-        if isinstance(block, dict) and 'arm' in block:
-            arm = block['arm']
+    # An arm group is one that names an end effector; the group name IS the
+    # planning group, matching how the node itself identifies an arm.
+    for arm in quest_control.get('groups', []):
+        block = quest_control.get(arm, {})
+        if isinstance(block, dict) and 'end_effector_frame_name' in block:
             arms.append(arm)
             arm_params[f'arm_teleop.{arm}.planning_group'] = arm
             arm_params[f'arm_teleop.{arm}.target_frame'] = block['target_frame_name']
