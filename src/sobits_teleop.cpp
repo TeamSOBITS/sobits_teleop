@@ -60,6 +60,8 @@ SOBITSTeleop::SOBITSTeleop(const rclcpp::NodeOptions & options)
   }
   // Config speeds are radians per legacy 50 ms tick; scale so teleop_rate_hz doesn't change jog speed.
   jog_tick_scale_ = (1.0 / teleop_rate_hz) / 0.05;
+  // Two ticks of headroom: one tick stalls the controller on any timer jitter.
+  dt = 2.0 / teleop_rate_hz;
 
   timer = create_wall_timer(
     std::chrono::duration<double>(1.0 / teleop_rate_hz),
