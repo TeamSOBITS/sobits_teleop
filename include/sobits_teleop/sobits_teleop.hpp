@@ -125,9 +125,8 @@ struct AdaptiveJointTarget
 struct QuestArmMap
 {
   std::string group;        // planning group, e.g. "arm_left"
-  // Identifies the physical VR controller and keys the per-side latch state.
-  std::string controller;   // "left" or "right"
-  // TF the arm follows. Defaults from controller if unset, for older configs.
+  std::string controller;   // log label only; set from the group name
+  // TF the arm follows, and the frame it is re-broadcast as for RViz.
   std::string controller_frame_name;
   std::string controller_echo_frame_name;
   std::string end_effector_frame_name;

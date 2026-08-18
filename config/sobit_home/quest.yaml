@@ -71,11 +71,6 @@
         - arm_left
         - hand_left
 
-      # controllers: MoveIt/servo backends read only these entries
-      controllers:
-        - arm_right 
-        - arm_left
-
       head:
         enable_axis: 2        # left trigger
         vertical: "head_tilt_joint"
@@ -94,8 +89,6 @@
         motion_scale: 1.0
 
       arm_right:
-        arm: "arm_right"       # MoveIt planning group name
-        controller: "right"     # which VR controller; keys the per-side latch
         controller_frame_name: "right_controller_odom"
         controller_echo_frame_name: "right_controller_link"
         enable_axis: 7        # right grip
@@ -149,8 +142,6 @@
           max: 1.575  # margin covers servo overshoot past the clamp
 
       arm_left:
-        arm: "arm_left"        # MoveIt planning group name
-        controller: "left"     # which VR controller; keys the per-side latch
         controller_frame_name: "left_controller_odom"
         controller_echo_frame_name: "left_controller_link"
         enable_axis: 7        # right grip

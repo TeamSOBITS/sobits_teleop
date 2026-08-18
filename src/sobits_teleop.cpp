@@ -557,7 +557,6 @@ void SOBITSTeleop::load_parameters()
       if (is_arm) {
         QuestArmMap am{};
         am.group = group;
-        get_param("quest_control." + group + ".controller", am.controller);
         get_param("quest_control." + group + ".end_effector_frame_name",
             am.end_effector_frame_name);
         get_param("quest_control." + group + ".target_frame_name", am.target_frame_name);
@@ -580,18 +579,21 @@ void SOBITSTeleop::load_parameters()
             am.controller_frame_name);
         get_param("quest_control." + group + ".controller_echo_frame_name",
             am.controller_echo_frame_name);
-        if (am.controller_frame_name.empty()) {
-          am.controller_frame_name = am.controller + "_controller_odom";
-        }
-        if (am.controller_echo_frame_name.empty()) {
-          am.controller_echo_frame_name = am.controller + "_controller_link";
+        // Log label only; the frames below carry the real identity.
+        am.controller = group;
+
+        if (am.controller_frame_name.empty() || am.controller_echo_frame_name.empty()) {
+          RCLCPP_ERROR(get_logger(),
+            "Quest arm '%s' needs controller_frame_name and "
+            "controller_echo_frame_name — skipping", group.c_str());
+          continue;
         }
 
         joint_pub[am.arm_joint_trajectory_topic] = this->create_publisher<trajectory_msgs::msg::JointTrajectory>(
           am.arm_joint_trajectory_topic, 10);
         quest_arm_mappings[group] = am;
         // One tracking-state entry per distinct controller side.
-        auto & st = arm_track_[am.controller];
+        auto & st = arm_track_[am.controller_frame_name];
         st.controller_frame_name = am.controller_frame_name;
         st.controller_echo_frame_name = am.controller_echo_frame_name;
       } else if (is_hand) {
@@ -1204,11 +1206,10 @@ void SOBITSTeleop::teleop()
                (q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w) > 0.01;
       };
 
-    // Controller TF acquisition: one lookup per distinct controller side.
-    // Find the arm map for a controller side ("right"/"left").
-    auto find_arm = [&](const std::string & side) -> QuestArmMap * {
+    // One TF lookup per distinct controller frame, shared by the arms using it.
+    auto find_arm = [&](const std::string & frame) -> QuestArmMap * {
         for (auto & [name, m] : quest_arm_mappings) {
-          if (m.controller == side) {return &m;}
+          if (m.controller_frame_name == frame) {return &m;}
         }
         return nullptr;
       };
@@ -1271,7 +1272,7 @@ void SOBITSTeleop::teleop()
     // end-effector TF has been read and the proximity check can be done.
 
     for (auto &[name, m] : quest_arm_mappings) {
-      auto st_it = arm_track_.find(m.controller);
+      auto st_it = arm_track_.find(m.controller_frame_name);
       if (st_it == arm_track_.end()) {continue;}
       auto & st = st_it->second;
       if (st.tf_ok && head_tf_ok) {

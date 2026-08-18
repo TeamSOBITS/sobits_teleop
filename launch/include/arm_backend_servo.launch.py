@@ -235,14 +235,17 @@ def _fetch_move_group_params(context, *args, **kwargs):
 
     quest_control = quest_params['quest_control']
     arm_entries = []  # (planning_group, quest controller block)
-    for ctrl_name in quest_control.get('controllers', quest_control.get('controller', [])):
-        block = quest_control.get(ctrl_name, {})
-        if isinstance(block, dict) and 'arm' in block:
-            arm_entries.append((block['arm'], block))
+    # An arm group is one that names an end effector; the group name IS the
+    # planning group, so no separate list or 'arm' key is needed.
+    for group in quest_control.get('groups', []):
+        block = quest_control.get(group, {})
+        if isinstance(block, dict) and 'end_effector_frame_name' in block:
+            arm_entries.append((group, block))
     if not arm_entries:
         raise RuntimeError(
-            "arm_backend_servo.launch.py: no quest_control entries with an 'arm' key "
-            f"found in quest.yaml for robot '{robot_name}' — nothing to servo.")
+            'arm_backend_servo.launch.py: no quest_control group defines '
+            f"end_effector_frame_name in quest.yaml for robot '{robot_name}' — "
+            'nothing to servo.')
 
     servo_nodes = []
     bridge_arm_params = {'servo_bridge.arms': [a for a, _ in arm_entries]}
