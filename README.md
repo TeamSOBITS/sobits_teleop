@@ -180,12 +180,26 @@ robot-independent.
           fast_speed:  0.5  # Speed when fast_button pressed
 
     control_poses:        # Move to predefined poses
-      trigger: 8
+      trigger: 8            # Optional modifier button; omit for none
+      time_from_start: 3.0  # Default seconds to reach a pose
       pose_list:
         - initial_pose
         - pre_manipulation_pose
       initial_pose:
         button: 2
+        # Listing `groups` defines the pose HERE and publishes joint
+        # trajectories; omit it to resolve pose_name via the MoveToPose action.
+        groups:
+          - head
+          - arm_left
+        head:
+          joints:    [ head_pan_joint, head_tilt_joint ]
+          positions: [ 0.0,            0.0             ]
+        arm_left:
+          joints:    [ arm_left_elbow_joint ]
+          positions: [ 2.5 ]
+      pre_manipulation_pose:
+        button: 3           # No `groups` -> MoveToPose action backend
 
     control_velocity:     # Mobile base control
       button:             5
@@ -201,6 +215,22 @@ robot-independent.
 ```
 
 </details>
+
+#### Pose backends
+
+`control_poses` entries resolve one of two ways, chosen per pose:
+
+| Pose defines `groups` | Backend | Behaviour |
+|---|---|---|
+| Yes | Joint trajectory topics | Joints/positions come straight from the YAML and are published to each group's controller. No action server needed. |
+| No | `MoveToPose` action | Only `pose_name` is sent; the pose is resolved server-side. |
+
+Each name under `groups` must be a joint group declared in `robot.yaml`, which
+supplies the trajectory topic (override per group with `joint_trajectory_topic`).
+`joints` and `positions` must be the same length — a mismatched group is skipped
+with an error at startup instead of moving the robot. Joints not listed are not
+commanded, so they hold whatever the controller last had. For a single-group
+pose you may put `joints`/`positions` directly under the pose and drop `groups`.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -333,8 +363,36 @@ servo_bridge:
 ```
 
 The bridge clamps targets to the `max_reach` sphere so an out-of-reach hand
-cannot drag the arm into its full-extension singularity. Per-arm frames and
-topics default by convention from the arm name (`arm_right` →
+cannot drag the arm into its full-extension singularity.
+
+##### Singularity halt recovery
+
+`hard_stop_singularity_threshold` latches a servo e-stop
+(`HALT_FOR_SINGULARITY`) and servo then ignores pose commands, so retargeting
+alone cannot recover — without help the operator must release the grip and
+re-latch. The bridge watches each servo's `~/status` and recovers automatically:
+
+```yaml
+servo_bridge:
+  reset_on_halt: true           # run the recovery below on a latched halt
+  reset_cooldown_s: 2.0         # min gap between attempts
+  joint_escape_time_s: 1.0      # escape trajectory duration; 0 disables
+  joint_escape_lookback_s: 1.0  # escape to where the arm was this far back
+  escape_step: 0.005            # Cartesian nudge per tick [m]; 0 disables
+  escape_timeout_s: 2.0         # then give up and ask for a re-latch
+```
+
+Recovery pauses servo, drives the arm out **in jointspace** — no Jacobian is
+involved, so the singularity cannot block it — then resumes servo once the
+escape trajectory has had time to run. The escape target is the arm's joint
+configuration `joint_escape_lookback_s` ago, not the newest one: the last
+command before a halt sits right next to the singularity and would land back
+in it. `escape_step` additionally walks the Cartesian command back toward the
+last healthy EE pose, which only helps before the arm parks *on* the singular
+pose. If a halt outlives `escape_timeout_s` the override is released and the
+operator is told to re-latch, so a persistent halt cannot pin the arm forever.
+
+Per-arm frames and topics default by convention from the arm name (`arm_right` →
 `right_target_link`, `hand_right_end_effector_link`,
 `arm_right_shoulder_tilt_link`, ...); override any key under
 `servo_bridge.{arm_name}.*` if your robot names differ.
@@ -351,6 +409,14 @@ fetches the robot model from it at startup.
 | Pose button (`pose_button`) | Toggle `pose_open` / `pose_close` |
 | Trigger + stick left/right | Adaptive open/close curl |
 | Trigger + stick up/down | Rotate the grip-type joint (`single_joint.name`) |
+
+#### Head controls (Quest)
+
+Hold `quest_control.head.head_mode` to latch head tracking; the head then
+follows the HMD pose. The latch is driven by the trigger state from `/joy`, not
+by the HMD transform, so releasing always stops tracking even while the Quest
+TF is stale. When the TF recovers after a dropout the latch re-anchors on the
+current pose rather than replaying the whole gap as one jump.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 

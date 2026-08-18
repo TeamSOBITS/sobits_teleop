@@ -177,12 +177,26 @@ configは同梱済みで，新しいロボットへの移植はこのディレ�
           fast_speed:  0.5  # 高速モード時の速度
 
     control_poses:        # 定義済みポーズへの移動
-      trigger: 8
+      trigger: 8            # 任意の修飾ボタン．不要なら省略
+      time_from_start: 3.0  # ポーズ到達までの既定秒数
       pose_list:
         - initial_pose
         - pre_manipulation_pose
       initial_pose:
         button: 2
+        # `groups`を書くとポーズをこの場で定義し，関節軌道として配信する．
+        # 省略した場合はpose_nameをMoveToPoseアクションで解決する．
+        groups:
+          - head
+          - arm_left
+        head:
+          joints:    [ head_pan_joint, head_tilt_joint ]
+          positions: [ 0.0,            0.0             ]
+        arm_left:
+          joints:    [ arm_left_elbow_joint ]
+          positions: [ 2.5 ]
+      pre_manipulation_pose:
+        button: 3           # `groups`なし -> MoveToPoseアクションを使用
 
     control_velocity:     # 台車制御
       button:             5
@@ -198,6 +212,23 @@ configは同梱済みで，新しいロボットへの移植はこのディレ�
 ```
 
 </details>
+
+#### ポーズのバックエンド
+
+`control_poses`の各エントリは，ポーズごとに次の2通りのいずれかで解決されます．
+
+| `groups`の記述 | バックエンド | 動作 |
+|---|---|---|
+| あり | 関節軌道トピック | YAMLに書いた関節と目標値をそのまま各グループのコントローラへ配信する．アクションサーバは不要． |
+| なし | `MoveToPose`アクション | `pose_name`のみを送り，ポーズはサーバ側で解決される． |
+
+`groups`に並べる名前は`robot.yaml`で定義した関節グループである必要があり，
+そこから軌道トピックが決まります（グループごとに`joint_trajectory_topic`で
+上書き可）．`joints`と`positions`は同じ要素数でなければならず，不一致の
+グループはロボットを動かす前に起動時エラーとしてスキップされます．記載しない
+関節には指令を出さないため，コントローラが最後に保持した値のままになります．
+単一グループのポーズなら`groups`を省略し，`joints`/`positions`をポーズ直下に
+書くこともできます．
 
 <p align="right">(<a href="#readme-top">上に戻る</a>)</p>
 
@@ -329,7 +360,35 @@ servo_bridge:
 ```
 
 bridgeは目標を`max_reach`球にクランプするため，届かない位置の手をアームが追いかけて
-完全伸展の特異点に陥ることを防ぎます．アームごとのフレームやトピックはアーム名から
+完全伸展の特異点に陥ることを防ぎます．
+
+##### 特異点ハルトからの復帰
+
+`hard_stop_singularity_threshold`を超えるとServoは非常停止をラッチし
+（`HALT_FOR_SINGULARITY`），以降はポーズ指令を無視します．そのため目標を
+与え直すだけでは復帰できず，本来はグリップを離して特異点から離れた位置で
+握り直す必要があります．bridgeは各Servoの`~/status`を監視し，自動で復帰します．
+
+```yaml
+servo_bridge:
+  reset_on_halt: true           # ラッチされたハルトで下記の復帰処理を実行
+  reset_cooldown_s: 2.0         # 復帰試行の最小間隔
+  joint_escape_time_s: 1.0      # 脱出軌道の所要時間．0で無効
+  joint_escape_lookback_s: 1.0  # この秒数だけ遡った姿勢へ脱出する
+  escape_step: 0.005            # 1周期あたりのデカルト移動量 [m]．0で無効
+  escape_timeout_s: 2.0         # これを超えたら諦めて握り直しを促す
+```
+
+復帰処理はServoを一時停止し，**関節空間で**アームを脱出させてから，脱出軌道が
+実行される時間を待ってServoを再開します．関節空間の指令はヤコビアンを使わない
+ため，特異点に阻まれません．脱出先は最新の姿勢ではなく`joint_escape_lookback_s`
+だけ遡った関節配置です — ハルト直前の指令は特異点のすぐ隣にあり，そこへ戻ると
+再びハルトするためです．`escape_step`はデカルト指令を最後に正常だったEE姿勢へ
+向けて戻しますが，これはアームが特異点上に停止する前にしか効果がありません．
+ハルトが`escape_timeout_s`を超えて続く場合は上書きを解除して握り直しを促すため，
+復帰不能なハルトがアームを永久に拘束することはありません．
+
+アームごとのフレームやトピックはアーム名から
 規約で導出されます（`arm_right` → `right_target_link`、
 `hand_right_end_effector_link`、`arm_right_shoulder_tilt_link`など）．
 ロボットの命名が異なる場合は`servo_bridge.{arm_name}.*`のキーで上書きしてください．
@@ -346,6 +405,14 @@ Servoバックエンドには`ros-$ROS_DISTRO-moveit-servo`（`install.sh`でイ
 | ポーズボタン（`pose_button`） | `pose_open`/`pose_close`をトグル |
 | トリガ + スティック左右 | アダプティブ開閉 |
 | トリガ + スティック上下 | 把持タイプ関節（`single_joint.name`）を回転 |
+
+#### 頭部操作（Quest）
+
+`quest_control.head.head_mode`を押している間，頭部追従がラッチされ，頭部がHMDの
+姿勢に追従します．ラッチはHMDのTFではなく`/joy`のトリガ状態で駆動されるため，
+QuestのTFが途切れている間でも離せば必ず追従が停止します．TFが復帰した際は
+現在の姿勢で再アンカーするため，途切れていた分の差分が一度にジャンプとして
+現れることはありません．
 
 <p align="right">(<a href="#readme-top">上に戻る</a>)</p>
 
