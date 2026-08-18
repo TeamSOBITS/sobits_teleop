@@ -1,6 +1,19 @@
 /**:
   ros__parameters:
 
+    # Mobile base. Hold left grip to enable; sticks drive. No fast_axis: right
+    # grip (7) is taken by both arms' enable_axis.
+    control_velocity:
+      axis : 3              # left grip
+      linear_x_axis : 1     # left stick up/down
+      linear_y_axis : 0     # left stick left/right
+      angular_axis : 4      # right stick left/right
+      axis_sign : -1
+      linear_scale : 0.1
+      angular_scale : 0.3
+      fast_linear_scale : 0.2
+      fast_angular_scale : 0.6
+
     # X sends the pose below. "groups" = publish joint trajectories; omit them to
     # resolve pose_name via MoveToPose. Unlisted joints hold position.
     control_poses:
