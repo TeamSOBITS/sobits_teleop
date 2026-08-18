@@ -200,6 +200,8 @@ private:
   void publish_arm_tracking(const std::string & arm, bool enabled);
   // True if any arm mapping's own enable axis is currently held.
   bool any_arm_enable_held();
+  // Logs which optional config blocks are present/absent at startup.
+  void report_config_summary();
   // True if the button index is valid and currently down.
   bool button_down(int idx) const;
   // True on the rising edge of a button (down now, up on the previous tick).

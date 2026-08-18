@@ -180,6 +180,31 @@ bool SOBITSTeleop::any_arm_enable_held()
   return false;
 }
 
+// Reports which optional config blocks this device.yaml supplies, so a block
+// missing on one robot is visible at startup instead of silently doing nothing.
+void SOBITSTeleop::report_config_summary()
+{
+  const std::pair<const char *, bool> blocks[] = {
+    {"control_joints", !joint_mappings.empty()},
+    {"control_poses", !pose_mappings.empty()},
+    {"control_velocity", cvm.button >= 0 || cvm.axis >= 0},
+    {"quest_control", has_quest_controls},
+  };
+
+  std::string configured, absent;
+  for (const auto & [name, present] : blocks) {
+    std::string & dst = present ? configured : absent;
+    if (!dst.empty()) {dst += ", ";}
+    dst += name;
+  }
+
+  RCLCPP_INFO(get_logger(), "Config: %s",
+    configured.empty() ? "no control blocks configured" : configured.c_str());
+  if (!absent.empty()) {
+    RCLCPP_INFO(get_logger(), "Config: not configured — %s", absent.c_str());
+  }
+}
+
 bool SOBITSTeleop::button_down(int idx) const
 {
   return idx >= 0 && idx < static_cast<int>(latest_buttons.size()) && latest_buttons[idx] == 1;
@@ -630,6 +655,8 @@ void SOBITSTeleop::load_parameters()
   }
 
   requires_joint_states = !joint_mappings.empty() || has_quest_controls;
+
+  report_config_summary();
 
   if (requires_joint_states && joint_states_topic.empty()) {
     RCLCPP_ERROR(
