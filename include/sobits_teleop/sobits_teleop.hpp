@@ -235,6 +235,8 @@ private:
   bool any_arm_enable_held();
   // Logs which optional config blocks are present/absent at startup.
   void report_config_summary();
+  // robot.yaml topic for a group; empty (and reported) if the group has none.
+  std::string group_trajectory_topic(const std::string & group);
   // True if the button index is valid and currently down.
   bool button_down(int idx) const;
   // True on the rising edge of a button (down now, up on the previous tick).

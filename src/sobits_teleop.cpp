@@ -180,6 +180,18 @@ bool SOBITSTeleop::any_arm_enable_held()
 
 // Reports which optional config blocks this device.yaml supplies, so a block
 // missing on one robot is visible at startup instead of silently doing nothing.
+std::string SOBITSTeleop::group_trajectory_topic(const std::string & group)
+{
+  std::string topic;
+  get_param("robot_topic_name.joint_trajectory_topic." + group, topic);
+  if (topic.empty()) {
+    RCLCPP_ERROR(get_logger(),
+      "Group '%s' has no robot_topic_name.joint_trajectory_topic entry — skipping",
+      group.c_str());
+  }
+  return topic;
+}
+
 void SOBITSTeleop::report_config_summary()
 {
   const std::pair<const char *, bool> blocks[] = {
@@ -403,8 +415,8 @@ void SOBITSTeleop::load_parameters()
             jm.speed);
         get_param("control_joints." + joint_group + "." + joint_name + ".fast_speed",
             jm.fast_speed);
-        get_param("robot_topic_name.joint_trajectory_topic." + joint_group,
-            jm.joint_trajectory_topic);
+        jm.joint_trajectory_topic = group_trajectory_topic(joint_group);
+        if (jm.joint_trajectory_topic.empty()) {continue;}
 
         joint_mappings[joint_name] = jm;
         joint_pub[jm.joint_trajectory_topic] = this->create_publisher<trajectory_msgs::msg::JointTrajectory>(
@@ -519,8 +531,8 @@ void SOBITSTeleop::load_parameters()
         get_param("quest_control." + group + ".vertical_sign", qhm.vertical_sign);
         get_param("quest_control." + group + ".horizontal_sign", qhm.horizontal_sign);
         get_param("quest_control." + group + ".motion_scale", qhm.motion_scale);
-        get_param("robot_topic_name.joint_trajectory_topic." + group,
-            qhm.head_joint_trajectory_topic);
+        qhm.head_joint_trajectory_topic = group_trajectory_topic(group);
+        if (qhm.head_joint_trajectory_topic.empty()) {continue;}
         joint_pub[qhm.head_joint_trajectory_topic] = this->create_publisher<trajectory_msgs::msg::JointTrajectory>(
           qhm.head_joint_trajectory_topic, 10);
 
@@ -533,12 +545,12 @@ void SOBITSTeleop::load_parameters()
         get_param("quest_control." + group + ".target_frame_name", qbm.target_frame_name);
         get_param("quest_control." + group + ".axis_sign", qbm.axis_sign);
         get_param("quest_control." + group + ".motion_scale", qbm.motion_scale);
-        get_param("robot_topic_name.joint_trajectory_topic." + group,
-            qbm.joint_trajectory_topic);
+        qbm.joint_trajectory_topic = group_trajectory_topic(group);
 
         if (qbm.joint.empty() || qbm.joint_trajectory_topic.empty()) {
-          RCLCPP_ERROR(get_logger(),
-            "Quest group 'body' needs a joint and a robot_topic_name entry — skipping");
+          if (qbm.joint.empty()) {
+            RCLCPP_ERROR(get_logger(), "Quest group 'body' needs a joint — skipping");
+          }
           qbm.joint.clear();
           continue;
         }
@@ -562,8 +574,8 @@ void SOBITSTeleop::load_parameters()
         get_param("quest_control." + group + ".target_frame_name", am.target_frame_name);
         get_param("quest_control." + group + ".motion_scale", am.motion_scale);
         get_param("quest_control." + group + ".enable_axis", am.enable_axis);
-        get_param("robot_topic_name.joint_trajectory_topic." + group,
-            am.arm_joint_trajectory_topic);
+        am.arm_joint_trajectory_topic = group_trajectory_topic(group);
+        if (am.arm_joint_trajectory_topic.empty()) {continue;}
         // Optional proximity thresholds — defaults are set in the struct
         if (has_param("quest_control." + group + ".proximity_threshold")) {
           get_param("quest_control." + group + ".proximity_threshold",
