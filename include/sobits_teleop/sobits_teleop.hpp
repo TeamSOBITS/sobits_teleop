@@ -270,10 +270,11 @@ private:
   std::map<std::string, QuestArmMap> quest_arm_mappings;
   std::map<std::string, QuestHandMap> quest_hand_mappings;
   std::map<std::string, double> joint_pos;
-  // Trajectory horizon. Must track the loop period: a horizon longer than the
-  // tick leaves each goal unfinished, so the head lags and jumps on release.
-  double dt = 0.1;
   double teleop_rate_hz = 100.0;
+  double tick_period() const {return 1.0 / teleop_rate_hz;}
+  // Trajectory horizon, always two ticks: one tick stalls the controller on any
+  // timer jitter, and a horizon past the tick leaves every goal unfinished.
+  double dt() const {return 2.0 * tick_period();}
   // Scales legacy per-50ms-tick config speeds to the actual loop period.
   double jog_tick_scale_ = 1.0;
 

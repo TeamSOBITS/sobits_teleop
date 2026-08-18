@@ -63,8 +63,6 @@ SOBITSTeleop::SOBITSTeleop(const rclcpp::NodeOptions & options)
   }
   // Config speeds are radians per legacy 50 ms tick; scale so teleop_rate_hz doesn't change jog speed.
   jog_tick_scale_ = (1.0 / teleop_rate_hz) / 0.05;
-  // Two ticks of headroom: one tick stalls the controller on any timer jitter.
-  dt = 2.0 / teleop_rate_hz;
 
   timer = create_wall_timer(
     std::chrono::duration<double>(1.0 / teleop_rate_hz),
@@ -322,7 +320,7 @@ void SOBITSTeleop::process_arm(
 
     // Safety net: rate-limit target motion so upstream faults can only crawl, never jump.
     if (st.have_pub_prev) {
-      const double dt_s = 1.0 / teleop_rate_hz;
+      const double dt_s = tick_period();
       const double max_lin = kMaxTargetLinVel * dt_s;
       tf2::Vector3 dp = T_pub.getOrigin() - st.T_pub_prev.getOrigin();
       const double d = dp.length();
@@ -855,7 +853,7 @@ void SOBITSTeleop::process_joints()
     if (traj.points.empty()) {
       trajectory_msgs::msg::JointTrajectoryPoint p;
       p.positions = {joint_pos[m.joint_name]};
-      p.time_from_start = rclcpp::Duration::from_seconds(dt);
+      p.time_from_start = rclcpp::Duration::from_seconds(dt());
       traj.points.push_back(p);
     } else {traj.points[0].positions.push_back(joint_pos[m.joint_name]);}
   }
@@ -1003,7 +1001,7 @@ void SOBITSTeleop::process_head(bool head_tf_ok, const tf2::Transform & current_
 
         trajectory_msgs::msg::JointTrajectoryPoint p;
         p.positions = {pan_target, tilt_target};
-        p.time_from_start = rclcpp::Duration::from_seconds(dt);
+        p.time_from_start = rclcpp::Duration::from_seconds(dt());
         traj.points.push_back(p);
 
         auto it = joint_pub.find(qhm.head_joint_trajectory_topic);
@@ -1025,7 +1023,7 @@ void SOBITSTeleop::process_head(bool head_tf_ok, const tf2::Transform & current_
 
           trajectory_msgs::msg::JointTrajectoryPoint p;
           p.positions = {body_lift_target};
-          p.time_from_start = rclcpp::Duration::from_seconds(dt);
+          p.time_from_start = rclcpp::Duration::from_seconds(dt());
           traj.points.push_back(p);
 
           auto it = joint_pub.find(qhm.body_joint_trajectory_topic);
