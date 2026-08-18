@@ -428,11 +428,31 @@ Servoバックエンドには`ros-$ROS_DISTRO-moveit-servo`（`install.sh`でイ
 
 #### 頭部操作（Quest）
 
-`quest_control.head.head_mode`を押している間，頭部追従がラッチされ，頭部がHMDの
+`quest_control.head.enable_axis`を押している間，頭部追従がラッチされ，頭部がHMDの
 姿勢に追従します．ラッチはHMDのTFではなく`/joy`のトリガ状態で駆動されるため，
 QuestのTFが途切れている間でも離せば必ず追従が停止します．TFが復帰した際は
 現在の姿勢で再アンカーするため，途切れていた分の差分が一度にジャンプとして
 現れることはありません．
+
+#### 昇降軸の操作（Quest）
+
+`body`は独立したラッチを持つ別グループのため，頭部と昇降は互いに影響しません．
+`target_frame_name`のz方向の移動量が関節を駆動します．
+
+```yaml
+quest_control:
+  groups: [head, body, ...]
+  body:
+    enable_axis: -1                 # 空いている軸を指定すると有効化
+    target_frame_name: "hmd_odom"   # このフレームのz移動量で昇降する
+    joint: "body_lift_joint"
+    axis_sign: 1
+    motion_scale: 1.0
+```
+
+軌道トピックは`robot_topic_name.joint_trajectory_topic.body`から取得します．
+Questコントローラの軸はすべて割り当て済みのため，既定では無効
+（`enable_axis: -1`）です．有効化する前にいずれかの軸を空けてください．
 
 <p align="right">(<a href="#readme-top">上に戻る</a>)</p>
 

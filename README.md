@@ -434,11 +434,31 @@ fetches the robot model from it at startup.
 
 #### Head controls (Quest)
 
-Hold `quest_control.head.head_mode` to latch head tracking; the head then
+Hold `quest_control.head.enable_axis` to latch head tracking; the head then
 follows the HMD pose. The latch is driven by the trigger state from `/joy`, not
 by the HMD transform, so releasing always stops tracking even while the Quest
 TF is stale. When the TF recovers after a dropout the latch re-anchors on the
 current pose rather than replaying the whole gap as one jump.
+
+#### Body lift (Quest)
+
+`body` is a separate group with its own latch, so the lift and the head track
+independently. The z travel of `target_frame_name` drives the joint:
+
+```yaml
+quest_control:
+  groups: [head, body, ...]
+  body:
+    enable_axis: -1                 # set to a free axis to enable
+    target_frame_name: "hmd_odom"   # z travel of this frame drives the lift
+    joint: "body_lift_joint"
+    axis_sign: 1
+    motion_scale: 1.0
+```
+
+The trajectory topic comes from `robot_topic_name.joint_trajectory_topic.body`.
+It ships disabled (`enable_axis: -1`) because every axis is already bound on
+the Quest controllers — free one before enabling it.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
