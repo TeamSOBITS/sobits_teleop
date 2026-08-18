@@ -115,7 +115,6 @@ struct QuestArmMap
 {
   std::string group;        // planning group, e.g. "arm_left"
   std::string controller;   // "left" or "right"
-  std::string base_frame_name;
   std::string end_effector_frame_name;
   std::string target_frame_name;
   std::string arm_joint_trajectory_topic;

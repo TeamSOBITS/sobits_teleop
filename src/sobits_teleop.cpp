@@ -537,7 +537,6 @@ void SOBITSTeleop::load_parameters()
         QuestArmMap am{};
         am.group = group;
         this->get_parameter("quest_control." + group + ".controller", am.controller);
-        this->get_parameter("quest_control." + group + ".base_frame_name", am.base_frame_name);
         this->get_parameter("quest_control." + group + ".end_effector_frame_name",
             am.end_effector_frame_name);
         this->get_parameter("quest_control." + group + ".target_frame_name", am.target_frame_name);
