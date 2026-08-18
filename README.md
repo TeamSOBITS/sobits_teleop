@@ -168,7 +168,7 @@ robot-independent.
         - head
         - arm_left
       head:
-        names:
+        joints_name:
           - head_tilt_joint
           - head_pan_joint
         head_tilt_joint:
@@ -434,7 +434,7 @@ fetches the robot model from it at startup.
 
 #### Tracked joint groups (Quest)
 
-A `quest_control` group that carries a `joints` map follows a TF frame: each
+A `quest_control` group that lists `joints_name` follows a TF frame: each
 joint takes one component of that frame's movement since the latch. The group
 name is free — `head`, `neck`, `torso` — and any number of groups may exist,
 each with its own latch.
@@ -446,15 +446,15 @@ quest_control:
     enable_axis: 2                  # hold to latch
     target_frame_name: "hmd_odom"   # frame whose motion is followed
     motion_scale: 1.0
-    joints:
-      head_pan_joint:  { type: rotation, axis: yaw,   sign:  1 }
-      head_tilt_joint: { type: rotation, axis: pitch, sign: -1 }
+    joints_name: [head_pan_joint, head_tilt_joint]
+    head_pan_joint:  { type: rotation, axis: yaw,   sign:  1 }
+    head_tilt_joint: { type: rotation, axis: pitch, sign: -1 }
   body:
     enable_axis: 2                  # same trigger as head; latches separately
     target_frame_name: "hmd_odom"
     motion_scale: 1.0
-    joints:
-      body_lift_joint: { type: prismatic, axis: z, sign: 1 }
+    joints_name: [body_lift_joint]
+    body_lift_joint: { type: prismatic, axis: z, sign: 1 }
 ```
 
 | Key | Meaning |

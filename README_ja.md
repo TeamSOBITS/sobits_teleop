@@ -165,7 +165,7 @@ configは同梱済みで，新しいロボットへの移植はこのディレ�
         - head
         - arm_left
       head:
-        names:
+        joints_name:
           - head_tilt_joint
           - head_pan_joint
         head_tilt_joint:
@@ -428,7 +428,7 @@ Servoバックエンドには`ros-$ROS_DISTRO-moveit-servo`（`install.sh`でイ
 
 #### 追従関節グループ（Quest）
 
-`joints`マップを持つ`quest_control`グループはTFフレームに追従します．各関節は
+`joints_name`を持つ`quest_control`グループはTFフレームに追従します．各関節は
 ラッチ以降のフレーム移動量のうち1成分を受け取ります．グループ名は自由で
 （`head`、`neck`、`torso`など），それぞれ独立したラッチを持ち，いくつでも
 定義できます．
@@ -440,15 +440,15 @@ quest_control:
     enable_axis: 2                  # 押している間ラッチ
     target_frame_name: "hmd_odom"   # 追従するフレーム
     motion_scale: 1.0
-    joints:
-      head_pan_joint:  { type: rotation, axis: yaw,   sign:  1 }
-      head_tilt_joint: { type: rotation, axis: pitch, sign: -1 }
+    joints_name: [head_pan_joint, head_tilt_joint]
+    head_pan_joint:  { type: rotation, axis: yaw,   sign:  1 }
+    head_tilt_joint: { type: rotation, axis: pitch, sign: -1 }
   body:
     enable_axis: 2                  # headと同じトリガ．ラッチは別
     target_frame_name: "hmd_odom"
     motion_scale: 1.0
-    joints:
-      body_lift_joint: { type: prismatic, axis: z, sign: 1 }
+    joints_name: [body_lift_joint]
+    body_lift_joint: { type: prismatic, axis: z, sign: 1 }
 ```
 
 | キー | 意味 |
