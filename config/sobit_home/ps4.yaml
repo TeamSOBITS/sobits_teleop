@@ -2,7 +2,6 @@
   ros__parameters:
 
     control_velocity:
-      control : "button"  # "button" or "axis"
       button : 5            # R1
       fast_button : 7       # R2
       linear_x_axis : 1     # 左スティック上下

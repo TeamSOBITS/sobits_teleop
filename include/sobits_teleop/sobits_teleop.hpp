@@ -15,6 +15,7 @@
 
 #include <string>
 #include <map>
+#include <set>
 #include <vector>
 #include <cmath>
 #include <urdf/model.h>
@@ -182,6 +183,24 @@ public:
   explicit SOBITSTeleop(const rclcpp::NodeOptions & options = rclcpp::NodeOptions());
 
 private:
+  // Records the key, then forwards to get_parameter.
+  template<typename T>
+  bool get_param(const std::string & key, T & out)
+  {
+    read_keys_.insert(key);
+    return this->get_parameter(key, out);
+  }
+  bool has_param(const std::string & key)
+  {
+    read_keys_.insert(key);
+    return this->has_parameter(key);
+  }
+  // Marks a config subtree as entered even if left empty, so a group the code
+  // chose not to populate isn't flagged the same as one never looked at.
+  void mark_visited(const std::string & prefix) {visited_prefixes_.insert(prefix);}
+  // Warns for unread keys under the known config prefixes; see .cpp for rules.
+  void warn_unknown_parameters();
+
   bool parse_urdf_limits(const std::string & urdf_xml);
   void load_joint_limits();
   void load_parameters();
@@ -260,6 +279,11 @@ private:
   bool robot_desc_requested = false;
 
   std::unordered_map<std::string, Limit> joint_limits;
+
+  // Config keys read via get_param/has_param, for warn_unknown_parameters().
+  std::set<std::string> read_keys_;
+  // Subtree roots entered via mark_visited(), for warn_unknown_parameters().
+  std::set<std::string> visited_prefixes_;
 
   std::string robot_name;
   std::string joint_states_topic;

@@ -38,10 +38,8 @@ ServoTargetBridge::ServoTargetBridge(const rclcpp::NodeOptions & options)
   const double shared_joint_escape_lookback =
     declare_param("servo_bridge.joint_escape_lookback_s", 1.0);
 
-  // Naming templates: {arm}/{side} expanded per arm below. YAML may override
-  // any of these under servo_bridge.naming; defaults reproduce sobit_home.
-  // No default for the target/EE frames: quest.yaml owns them and the launcher
-  // forwards them, so guessing here would hide a broken launch.
+  // Naming templates: {arm}/{side} expanded per arm below. Target/EE frames get
+  // no default — quest.yaml owns them, so guessing would hide a broken launch.
   const std::string tmpl_target_frame =
     declare_param("servo_bridge.naming.target_frame_name", std::string(""));
   const std::string tmpl_end_effector_frame = declare_param(

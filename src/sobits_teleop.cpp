@@ -20,7 +20,7 @@ SOBITSTeleop::SOBITSTeleop(const rclcpp::NodeOptions & options)
   // Action server name is configurable so this works for any robot exposing a
   // MoveToPose server under a different name; defaults to "move_to_pose".
   std::string pose_action_name = "move_to_pose";
-  this->get_parameter("control_poses.pose_action", pose_action_name);
+  get_param("control_poses.pose_action", pose_action_name);
   move_to_pose_client = rclcpp_action::create_client<sobits_interfaces::action::MoveToPose>(
       this, pose_action_name);
   move_joint_client = rclcpp_action::create_client<sobits_interfaces::action::MoveJoint>(
@@ -369,35 +369,41 @@ void SOBITSTeleop::process_arm(
 
 void SOBITSTeleop::load_parameters()
 {
-  this->get_parameter("robot_topic_name.joint_states_topic", joint_states_topic);
+  get_param("robot_topic_name.joint_states_topic", joint_states_topic);
 
-  this->get_parameter("robot_topic_name.cmd_vel_topic", cvm.topic);
+  // robot.yaml lists every group's topic; a device.yaml only uses a subset.
+  mark_visited("robot_topic_name.joint_trajectory_topic");
+
+  get_param("robot_topic_name.cmd_vel_topic", cvm.topic);
   cmd_vel_pub = this->create_publisher<geometry_msgs::msg::Twist>(
     cvm.topic, 10);
 
   // Load joint parameters
-  if (this->has_parameter("control_joints.groups")) {
-    this->get_parameter("control_joints.groups", joint_groups);
+  if (has_param("control_joints.groups")) {
+    get_param("control_joints.groups", joint_groups);
 
     for (const auto & joint_group : joint_groups) {
-      if (!this->get_parameter("control_joints." + joint_group + ".names", joint_names)) {continue;}
+      if (!get_param("control_joints." + joint_group + ".names", joint_names)) {
+        mark_visited("control_joints." + joint_group);
+        continue;
+      }
 
       for (const auto & joint_name : joint_names) {
         JointMap jm;
         jm.joint_group = joint_group;
         jm.joint_name = joint_name;
-        this->get_parameter("control_joints." + joint_group + "." + joint_name + ".button",
+        get_param("control_joints." + joint_group + "." + joint_name + ".button",
             jm.button);
-        this->get_parameter("control_joints." + joint_group + "." + joint_name + ".fast_button",
+        get_param("control_joints." + joint_group + "." + joint_name + ".fast_button",
             jm.fast_button);
-        this->get_parameter("control_joints." + joint_group + "." + joint_name + ".axis", jm.axis);
-        this->get_parameter("control_joints." + joint_group + "." + joint_name + ".axis_sign",
+        get_param("control_joints." + joint_group + "." + joint_name + ".axis", jm.axis);
+        get_param("control_joints." + joint_group + "." + joint_name + ".axis_sign",
             jm.axis_sign);
-        this->get_parameter("control_joints." + joint_group + "." + joint_name + ".speed",
+        get_param("control_joints." + joint_group + "." + joint_name + ".speed",
             jm.speed);
-        this->get_parameter("control_joints." + joint_group + "." + joint_name + ".fast_speed",
+        get_param("control_joints." + joint_group + "." + joint_name + ".fast_speed",
             jm.fast_speed);
-        this->get_parameter("robot_topic_name.joint_trajectory_topic." + joint_group,
+        get_param("robot_topic_name.joint_trajectory_topic." + joint_group,
             jm.joint_trajectory_topic);
 
         joint_mappings[joint_name] = jm;
@@ -410,34 +416,35 @@ void SOBITSTeleop::load_parameters()
 
   // Load pose parameters. "trigger" is an optional modifier button held while
   // pressing the pose button; omit it to bind the pose button on its own.
-  if (this->has_parameter("control_poses.pose_list")) {
-    this->get_parameter("control_poses.pose_list", pose_list);
+  if (has_param("control_poses.pose_list")) {
+    get_param("control_poses.pose_list", pose_list);
     for (const auto & pose_name : pose_list) {
       PoseMap pm{};
       pm.pose_name = pose_name;
-      this->get_parameter("control_poses.trigger", pm.trigger);
-      this->get_parameter("control_poses." + pose_name + ".button", pm.button);
+      get_param("control_poses.trigger", pm.trigger);
+      get_param("control_poses." + pose_name + ".button", pm.button);
 
       const std::string base = "control_poses." + pose_name;
       // Shared default first, then the per-pose override.
-      this->get_parameter("control_poses.time_from_start", pm.time_from_start);
-      this->get_parameter(base + ".time_from_start", pm.time_from_start);
+      get_param("control_poses.time_from_start", pm.time_from_start);
+      get_param(base + ".time_from_start", pm.time_from_start);
 
       // A pose defined in YAML lists the groups it drives; each group names the
       // robot.yaml joint group whose trajectory topic carries it.
       std::vector<std::string> groups;
-      this->get_parameter(base + ".groups", groups);
+      get_param(base + ".groups", groups);
 
       // Single-group shorthand: joints/positions directly under the pose.
-      if (groups.empty() && this->has_parameter(base + ".joints")) {
+      if (groups.empty() && has_param(base + ".joints")) {
         groups.push_back("");
       }
 
       for (const auto & g : groups) {
         const std::string gbase = g.empty() ? base : base + "." + g;
+        mark_visited(gbase);
         PoseJointGroup pg{};
-        this->get_parameter(gbase + ".joints", pg.joint_names);
-        this->get_parameter(gbase + ".positions", pg.positions);
+        get_param(gbase + ".joints", pg.joint_names);
+        get_param(gbase + ".positions", pg.positions);
 
         if (pg.joint_names.empty()) {
           RCLCPP_ERROR(get_logger(),
@@ -453,9 +460,9 @@ void SOBITSTeleop::load_parameters()
         }
 
         // Topic: explicit override, else the joint group's robot.yaml topic.
-        this->get_parameter(gbase + ".joint_trajectory_topic", pg.joint_trajectory_topic);
+        get_param(gbase + ".joint_trajectory_topic", pg.joint_trajectory_topic);
         if (pg.joint_trajectory_topic.empty() && !g.empty()) {
-          this->get_parameter("robot_topic_name.joint_trajectory_topic." + g,
+          get_param("robot_topic_name.joint_trajectory_topic." + g,
               pg.joint_trajectory_topic);
         }
         if (pg.joint_trajectory_topic.empty()) {
@@ -484,42 +491,42 @@ void SOBITSTeleop::load_parameters()
   }
 
   // Load cmd_vel parameters. Either button-based or axis-based enable is allowed.
-  if (this->has_parameter("control_velocity.button") ||
-    this->has_parameter("control_velocity.axis"))
+  if (has_param("control_velocity.button") ||
+    has_param("control_velocity.axis"))
   {
-    this->get_parameter("control_velocity.button", cvm.button);
-    this->get_parameter("control_velocity.fast_button", cvm.fast_button);
-    this->get_parameter("control_velocity.axis", cvm.axis);
-    this->get_parameter("control_velocity.fast_axis", cvm.fast_axis);
-    this->get_parameter("control_velocity.linear_x_axis", cvm.linear_x_axis);
-    this->get_parameter("control_velocity.linear_y_axis", cvm.linear_y_axis);
-    this->get_parameter("control_velocity.angular_axis", cvm.angular_axis);
-    this->get_parameter("control_velocity.axis_sign", cvm.axis_sign);
-    this->get_parameter("control_velocity.linear_scale", cvm.linear_scale);
-    this->get_parameter("control_velocity.angular_scale", cvm.angular_scale);
-    this->get_parameter("control_velocity.fast_linear_scale", cvm.fast_linear_scale);
-    this->get_parameter("control_velocity.fast_angular_scale", cvm.fast_angular_scale);
+    get_param("control_velocity.button", cvm.button);
+    get_param("control_velocity.fast_button", cvm.fast_button);
+    get_param("control_velocity.axis", cvm.axis);
+    get_param("control_velocity.fast_axis", cvm.fast_axis);
+    get_param("control_velocity.linear_x_axis", cvm.linear_x_axis);
+    get_param("control_velocity.linear_y_axis", cvm.linear_y_axis);
+    get_param("control_velocity.angular_axis", cvm.angular_axis);
+    get_param("control_velocity.axis_sign", cvm.axis_sign);
+    get_param("control_velocity.linear_scale", cvm.linear_scale);
+    get_param("control_velocity.angular_scale", cvm.angular_scale);
+    get_param("control_velocity.fast_linear_scale", cvm.fast_linear_scale);
+    get_param("control_velocity.fast_angular_scale", cvm.fast_angular_scale);
     RCLCPP_INFO(get_logger(), "Loaded control_velocity parameters from rosparam");
   }
   // Load quest parameters
-  if (this->has_parameter("quest_control.groups")) {
-    this->get_parameter("quest_control.groups", quest_groups);
+  if (has_param("quest_control.groups")) {
+    get_param("quest_control.groups", quest_groups);
     for (const auto & group : quest_groups) {
       if (group == "head") {
-        this->get_parameter("quest_control." + group + ".vertical", qhm.vertical);
-        this->get_parameter("quest_control." + group + ".horizontal", qhm.horizontal);
-        this->get_parameter("quest_control." + group + ".enable_axis", qhm.head_mode);
-        this->get_parameter("quest_control." + group + ".vertical_sign", qhm.vertical_sign);
-        this->get_parameter("quest_control." + group + ".horizontal_sign", qhm.horizontal_sign);
-        this->get_parameter("quest_control." + group + ".motion_scale", qhm.motion_scale);
-        this->get_parameter("robot_topic_name.joint_trajectory_topic." + group,
+        get_param("quest_control." + group + ".vertical", qhm.vertical);
+        get_param("quest_control." + group + ".horizontal", qhm.horizontal);
+        get_param("quest_control." + group + ".enable_axis", qhm.head_mode);
+        get_param("quest_control." + group + ".vertical_sign", qhm.vertical_sign);
+        get_param("quest_control." + group + ".horizontal_sign", qhm.horizontal_sign);
+        get_param("quest_control." + group + ".motion_scale", qhm.motion_scale);
+        get_param("robot_topic_name.joint_trajectory_topic." + group,
             qhm.head_joint_trajectory_topic);
         joint_pub[qhm.head_joint_trajectory_topic] = this->create_publisher<trajectory_msgs::msg::JointTrajectory>(
           qhm.head_joint_trajectory_topic, 10);
 
-        if (this->has_parameter("quest_control." + group + ".body_lift")) {
-          this->get_parameter("quest_control." + group + ".body_lift", qhm.body_lift);
-          this->get_parameter("robot_topic_name.joint_trajectory_topic.body",
+        if (has_param("quest_control." + group + ".body_lift")) {
+          get_param("quest_control." + group + ".body_lift", qhm.body_lift);
+          get_param("robot_topic_name.joint_trajectory_topic.body",
               qhm.body_joint_trajectory_topic);
           joint_pub[qhm.body_joint_trajectory_topic] = this->create_publisher<trajectory_msgs::msg::JointTrajectory>(
             qhm.body_joint_trajectory_topic, 10);
@@ -528,29 +535,29 @@ void SOBITSTeleop::load_parameters()
       }
 
       // Group type is inferred from which fields are present.
-      const bool is_arm = this->has_parameter("quest_control." + group +
+      const bool is_arm = has_param("quest_control." + group +
           ".end_effector_frame_name");
-      const bool is_hand = this->has_parameter("quest_control." + group + ".pose_action") ||
-        this->has_parameter("quest_control." + group + ".adaptive.trigger_axis");
+      const bool is_hand = has_param("quest_control." + group + ".pose_action") ||
+        has_param("quest_control." + group + ".adaptive.trigger_axis");
 
       if (is_arm) {
         QuestArmMap am{};
         am.group = group;
-        this->get_parameter("quest_control." + group + ".controller", am.controller);
-        this->get_parameter("quest_control." + group + ".end_effector_frame_name",
+        get_param("quest_control." + group + ".controller", am.controller);
+        get_param("quest_control." + group + ".end_effector_frame_name",
             am.end_effector_frame_name);
-        this->get_parameter("quest_control." + group + ".target_frame_name", am.target_frame_name);
-        this->get_parameter("quest_control." + group + ".motion_scale", am.motion_scale);
-        this->get_parameter("quest_control." + group + ".enable_axis", am.enable_axis);
-        this->get_parameter("robot_topic_name.joint_trajectory_topic." + group,
+        get_param("quest_control." + group + ".target_frame_name", am.target_frame_name);
+        get_param("quest_control." + group + ".motion_scale", am.motion_scale);
+        get_param("quest_control." + group + ".enable_axis", am.enable_axis);
+        get_param("robot_topic_name.joint_trajectory_topic." + group,
             am.arm_joint_trajectory_topic);
         // Optional proximity thresholds — defaults are set in the struct
-        if (this->has_parameter("quest_control." + group + ".proximity_threshold")) {
-          this->get_parameter("quest_control." + group + ".proximity_threshold",
+        if (has_param("quest_control." + group + ".proximity_threshold")) {
+          get_param("quest_control." + group + ".proximity_threshold",
               am.proximity_threshold);
         }
-        if (this->has_parameter("quest_control." + group + ".proximity_angle_threshold")) {
-          this->get_parameter("quest_control." + group + ".proximity_angle_threshold",
+        if (has_param("quest_control." + group + ".proximity_angle_threshold")) {
+          get_param("quest_control." + group + ".proximity_angle_threshold",
               am.proximity_angle_threshold);
         }
 
@@ -562,51 +569,52 @@ void SOBITSTeleop::load_parameters()
       } else if (is_hand) {
         QuestHandMap hm{};
         hm.group = group;
-        this->get_parameter("quest_control." + group + ".controller", hm.controller);
-        this->get_parameter("quest_control." + group + ".speed", hm.speed);
+        get_param("quest_control." + group + ".controller", hm.controller);
+        get_param("quest_control." + group + ".speed", hm.speed);
 
-        if (this->has_parameter("quest_control." + group + ".single_joint.axis")) {
-          this->get_parameter("quest_control." + group + ".single_joint.axis", hm.type_axis);
-          this->get_parameter("quest_control." + group + ".single_joint.name", hm.type_joint);
-          if (this->has_parameter("quest_control." + group + ".single_joint.axis_sign")) {
-            this->get_parameter("quest_control." + group + ".single_joint.axis_sign", hm.type_sign);
+        if (has_param("quest_control." + group + ".single_joint.axis")) {
+          get_param("quest_control." + group + ".single_joint.axis", hm.type_axis);
+          get_param("quest_control." + group + ".single_joint.name", hm.type_joint);
+          if (has_param("quest_control." + group + ".single_joint.axis_sign")) {
+            get_param("quest_control." + group + ".single_joint.axis_sign", hm.type_sign);
           }
-          if (this->has_parameter("quest_control." + group + ".single_joint.min")) {
-            this->get_parameter("quest_control." + group + ".single_joint.min", hm.type_min);
+          if (has_param("quest_control." + group + ".single_joint.min")) {
+            get_param("quest_control." + group + ".single_joint.min", hm.type_min);
           }
-          if (this->has_parameter("quest_control." + group + ".single_joint.max")) {
-            this->get_parameter("quest_control." + group + ".single_joint.max", hm.type_max);
+          if (has_param("quest_control." + group + ".single_joint.max")) {
+            get_param("quest_control." + group + ".single_joint.max", hm.type_max);
           }
         }
-        if (this->has_parameter("quest_control." + group + ".pose_button")) {
-          this->get_parameter("quest_control." + group + ".pose_button", hm.pose_button);
+        if (has_param("quest_control." + group + ".pose_button")) {
+          get_param("quest_control." + group + ".pose_button", hm.pose_button);
         }
-        if (this->has_parameter("quest_control." + group + ".pose_open")) {
-          this->get_parameter("quest_control." + group + ".pose_open", hm.pose_open);
-          this->get_parameter("quest_control." + group + ".pose_close", hm.pose_close);
-          this->get_parameter("quest_control." + group + ".pose_action", hm.pose_action);
+        if (has_param("quest_control." + group + ".pose_open")) {
+          get_param("quest_control." + group + ".pose_open", hm.pose_open);
+          get_param("quest_control." + group + ".pose_close", hm.pose_close);
+          get_param("quest_control." + group + ".pose_action", hm.pose_action);
         }
-        if (this->has_parameter("quest_control." + group + ".adaptive.trigger_axis")) {
-          this->get_parameter("quest_control." + group + ".adaptive.trigger_axis",
+        if (has_param("quest_control." + group + ".adaptive.trigger_axis")) {
+          get_param("quest_control." + group + ".adaptive.trigger_axis",
               hm.adaptive_trigger_axis);
-          this->get_parameter("quest_control." + group + ".adaptive.stick_axis",
+          get_param("quest_control." + group + ".adaptive.stick_axis",
               hm.adaptive_stick_axis);
-          this->get_parameter("quest_control." + group + ".adaptive.axis_sign",
+          get_param("quest_control." + group + ".adaptive.axis_sign",
               hm.adaptive_close_sign);
 
           // Load adaptive joint list: adaptive.names is a list of joint names,
           // each with close_pos, open_pos, and optional fixed flag.
           const std::string aj_prefix = "quest_control." + group + ".adaptive";
-          if (this->has_parameter(aj_prefix + ".names")) {
+          if (has_param(aj_prefix + ".names")) {
             std::vector<std::string> aj_names;
-            this->get_parameter(aj_prefix + ".names", aj_names);
+            get_param(aj_prefix + ".names", aj_names);
             for (const auto & jname : aj_names) {
+              mark_visited(aj_prefix + "." + jname);
               AdaptiveJointTarget ajt;
               ajt.name = jname;
-              this->get_parameter(aj_prefix + "." + jname + ".close_pos", ajt.close_pos);
-              this->get_parameter(aj_prefix + "." + jname + ".open_pos", ajt.open_pos);
-              if (this->has_parameter(aj_prefix + "." + jname + ".fixed")) {
-                this->get_parameter(aj_prefix + "." + jname + ".fixed", ajt.fixed);
+              get_param(aj_prefix + "." + jname + ".close_pos", ajt.close_pos);
+              get_param(aj_prefix + "." + jname + ".open_pos", ajt.open_pos);
+              if (has_param(aj_prefix + "." + jname + ".fixed")) {
+                get_param(aj_prefix + "." + jname + ".fixed", ajt.fixed);
               }
               hm.adaptive_joints.push_back(ajt);
             }
@@ -614,6 +622,7 @@ void SOBITSTeleop::load_parameters()
         }
         quest_hand_mappings[group] = hm;
       } else {
+        mark_visited("quest_control." + group);
         RCLCPP_WARN(get_logger(), "Quest group '%s' is neither arm nor hand — skipping",
             group.c_str());
       }
@@ -671,6 +680,48 @@ void SOBITSTeleop::load_parameters()
     joint_state_sub = create_subscription<sensor_msgs::msg::JointState>(
       joint_states_topic, 10,
       std::bind(&SOBITSTeleop::joint_state_callback, this, std::placeholders::_1));
+  }
+
+  warn_unknown_parameters();
+}
+
+// Warn about config keys nothing read. A key is accepted if the code entered
+// its subtree (visited_prefixes_) — those are groups left deliberately empty.
+void SOBITSTeleop::warn_unknown_parameters()
+{
+  static const char * kPrefixes[] = {
+    "control_joints.", "control_poses.", "control_velocity.",
+    "quest_control.", "robot_topic_name."
+  };
+  // Read by arm_backend_servo.launch.py to pick the servo'd arms, not by us.
+  static const char * kLauncherKeys[] = {"controllers", "controller", "arm"};
+
+  const auto & overrides = this->get_node_parameters_interface()->get_parameter_overrides();
+  for (const auto & [name, value] : overrides) {
+    (void)value;
+    bool matches_prefix = false;
+    for (const char * prefix : kPrefixes) {
+      if (name.rfind(prefix, 0) == 0) {matches_prefix = true; break;}
+    }
+    if (!matches_prefix) {continue;}
+    if (read_keys_.count(name)) {continue;}
+
+    const auto leaf_dot = name.find_last_of('.');
+    const std::string leaf = (leaf_dot == std::string::npos) ? name : name.substr(leaf_dot + 1);
+    bool launcher_key = false;
+    for (const char * key : kLauncherKeys) {
+      if (leaf == key) {launcher_key = true; break;}
+    }
+    if (launcher_key) {continue;}
+
+    bool under_visited = false;
+    for (const auto & prefix : visited_prefixes_) {
+      if (name.rfind(prefix + ".", 0) == 0) {under_visited = true; break;}
+    }
+    if (under_visited) {continue;}
+
+    RCLCPP_WARN(get_logger(),
+      "Unknown parameter '%s' - check for a typo; it has no effect", name.c_str());
   }
 }
 
