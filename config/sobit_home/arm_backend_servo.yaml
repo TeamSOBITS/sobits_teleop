@@ -56,6 +56,16 @@
       # Physical reach at near-straight elbow: 1.11 m.
       max_reach: 1.10
 
+      # Halt recovery. Pause servo, drive out in jointspace (no Jacobian, so the
+      # singularity cannot block it), then resume servo.
+      reset_on_halt: true
+      reset_cooldown_s: 2.0   # min gap between recovery attempts
+      joint_escape_time_s: 1.0      # escape trajectory duration; 0 disables
+      joint_escape_lookback_s: 1.0  # escape to where the arm was this far back
+      # Cartesian nudge, only useful before the arm parks ON the singularity.
+      escape_step: 0.005      # m per tick toward last healthy pose; 0 disables
+      escape_timeout_s: 2.0   # give up after this and tell the operator to re-latch
+
       # Per-arm keys default by convention from the arm name; set here only to override.
 
       # servo_ee_frame stays EMPTY: the group's last link already is the EE link.

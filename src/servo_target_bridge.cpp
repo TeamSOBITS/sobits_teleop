@@ -7,6 +7,9 @@
 namespace sobits_teleop
 {
 
+// Servo's command output rate (publish_period 0.02 s); sizes the escape history.
+constexpr double kServoCmdRateHz = 50.0;
+
 // ── Constructor ──
 
 ServoTargetBridge::ServoTargetBridge(const rclcpp::NodeOptions & options)
@@ -36,6 +39,37 @@ ServoTargetBridge::ServoTargetBridge(const rclcpp::NodeOptions & options)
   const double shared_max_reach =
     this->get_parameter("servo_bridge.max_reach").as_double();
 
+  // Shared singularity-escape defaults; per-arm keys override.
+  if (!this->has_parameter("servo_bridge.escape_step")) {
+    this->declare_parameter("servo_bridge.escape_step", 0.0);
+  }
+  const double shared_escape_step =
+    this->get_parameter("servo_bridge.escape_step").as_double();
+
+  if (!this->has_parameter("servo_bridge.escape_timeout_s")) {
+    this->declare_parameter("servo_bridge.escape_timeout_s", 2.0);
+  }
+  const double shared_escape_timeout =
+    this->get_parameter("servo_bridge.escape_timeout_s").as_double();
+
+  if (!this->has_parameter("servo_bridge.reset_on_halt")) {
+    this->declare_parameter("servo_bridge.reset_on_halt", true);
+  }
+  const bool shared_reset_on_halt =
+    this->get_parameter("servo_bridge.reset_on_halt").as_bool();
+
+  if (!this->has_parameter("servo_bridge.reset_cooldown_s")) {
+    this->declare_parameter("servo_bridge.reset_cooldown_s", 1.0);
+  }
+  const double shared_reset_cooldown =
+    this->get_parameter("servo_bridge.reset_cooldown_s").as_double();
+
+  if (!this->has_parameter("servo_bridge.joint_escape_time_s")) {
+    this->declare_parameter("servo_bridge.joint_escape_time_s", 0.0);
+  }
+  const double shared_joint_escape_time =
+    this->get_parameter("servo_bridge.joint_escape_time_s").as_double();
+
   for (const auto & arm_name : arm_names) {
     // Frames/topics default from the arm name (arm_right -> side "right");
     // the YAML only carries values that break the convention.
@@ -50,6 +84,14 @@ ServoTargetBridge::ServoTargetBridge(const rclcpp::NodeOptions & options)
     auto en_key = "servo_bridge." + arm_name + ".enable_topic";
     auto ro_key = "servo_bridge." + arm_name + ".reach_origin_frame";
     auto mr_key = "servo_bridge." + arm_name + ".max_reach";
+    auto es_key = "servo_bridge." + arm_name + ".escape_step";
+    auto et_key = "servo_bridge." + arm_name + ".escape_timeout_s";
+    auto st_key = "servo_bridge." + arm_name + ".status_topic";
+    auto rh_key = "servo_bridge." + arm_name + ".reset_on_halt";
+    auto rc_key = "servo_bridge." + arm_name + ".reset_cooldown_s";
+    auto jt_key = "servo_bridge." + arm_name + ".joint_traj_topic";
+    auto je_key = "servo_bridge." + arm_name + ".joint_escape_time_s";
+    auto jl_key = "servo_bridge." + arm_name + ".joint_escape_lookback_s";
 
     if (!this->has_parameter(tf_key)) {
       this->declare_parameter(tf_key, side + "_target_link");
@@ -75,6 +117,33 @@ ServoTargetBridge::ServoTargetBridge(const rclcpp::NodeOptions & options)
     if (!this->has_parameter(mr_key)) {
       this->declare_parameter(mr_key, shared_max_reach);
     }
+    if (!this->has_parameter(es_key)) {
+      this->declare_parameter(es_key, shared_escape_step);
+    }
+    if (!this->has_parameter(et_key)) {
+      this->declare_parameter(et_key, shared_escape_timeout);
+    }
+    if (!this->has_parameter(rh_key)) {
+      this->declare_parameter(rh_key, shared_reset_on_halt);
+    }
+    if (!this->has_parameter(rc_key)) {
+      this->declare_parameter(rc_key, shared_reset_cooldown);
+    }
+    // Same controller topic servo commands, so the escape reaches the same JTC.
+    if (!this->has_parameter(jt_key)) {
+      this->declare_parameter(jt_key, arm_name + "_position_controller/joint_trajectory");
+    }
+    if (!this->has_parameter(je_key)) {
+      this->declare_parameter(je_key, shared_joint_escape_time);
+    }
+    if (!this->has_parameter(jl_key)) {
+      this->declare_parameter(jl_key, 1.0);
+    }
+    // servo publishes status on "~/status" relative to its own node name.
+    if (!this->has_parameter(st_key)) {
+      this->declare_parameter(st_key,
+        this->get_parameter(sn_key).as_string() + "/status");
+    }
 
     ServoBridgeArmConfig cfg;
     cfg.target_frame = this->get_parameter(tf_key).as_string();
@@ -85,6 +154,14 @@ ServoTargetBridge::ServoTargetBridge(const rclcpp::NodeOptions & options)
     cfg.enable_topic = this->get_parameter(en_key).as_string();
     cfg.reach_origin_frame = this->get_parameter(ro_key).as_string();
     cfg.max_reach = this->get_parameter(mr_key).as_double();
+    cfg.escape_step = this->get_parameter(es_key).as_double();
+    cfg.escape_timeout_s = this->get_parameter(et_key).as_double();
+    cfg.reset_on_halt = this->get_parameter(rh_key).as_bool();
+    cfg.reset_cooldown_s = this->get_parameter(rc_key).as_double();
+    cfg.joint_traj_topic = this->get_parameter(jt_key).as_string();
+    cfg.joint_escape_time_s = this->get_parameter(je_key).as_double();
+    cfg.joint_escape_lookback_s = this->get_parameter(jl_key).as_double();
+    const std::string status_topic = this->get_parameter(st_key).as_string();
 
     auto arm_data = std::make_unique<ArmBridgeData>();
     arm_data->config = cfg;
@@ -109,6 +186,25 @@ ServoTargetBridge::ServoTargetBridge(const rclcpp::NodeOptions & options)
       cfg.enable_topic, enable_qos,
       [this, arm_name](const std_msgs::msg::Bool::SharedPtr msg) {
         enable_callback(arm_name, msg);
+      });
+
+    arm_data->joint_traj_pub = this->create_publisher<trajectory_msgs::msg::JointTrajectory>(
+      cfg.joint_traj_topic, rclcpp::SystemDefaultsQoS());
+
+    // Snoop servo's command stream to learn the group's joint names and their
+    // last healthy positions; the bridge has no robot model of its own.
+    arm_data->servo_cmd_sub = this->create_subscription<trajectory_msgs::msg::JointTrajectory>(
+      cfg.joint_traj_topic, rclcpp::QoS(1),
+      [this, arm_name](const trajectory_msgs::msg::JointTrajectory::SharedPtr msg) {
+        servo_cmd_callback(arm_name, msg);
+      });
+
+    // Must be RELIABLE to match servo_node's status publisher; depth 1 since
+    // only the latest code matters.
+    arm_data->status_sub = this->create_subscription<moveit_msgs::msg::ServoStatus>(
+      status_topic, rclcpp::QoS(1).reliable(),
+      [this, arm_name](const moveit_msgs::msg::ServoStatus::SharedPtr msg) {
+        status_callback(arm_name, msg);
       });
 
     arms_[arm_name] = std::move(arm_data);
@@ -328,12 +424,191 @@ void ServoTargetBridge::enable_callback(
     if (!arm.enabled.load()) {return;}
     arm.enabled = false;
 
+    // Drop the escape anchor: the next latch starts from a new EE pose, and a
+    // stale one would drag the arm to wherever it was healthy last session.
+    arm.have_last_good = false;
+    arm.escape_gave_up = false;
+    arm.escaping = false;
+    arm.reset_in_flight = false;
+    arm.joint_history.clear();
+    arm.have_escape_joints = false;
+
     arm.pending_pause = 1;
     try_send_pause(arm_name);
     if (arm.startup_retry_timer) {arm.startup_retry_timer->reset();}
 
     RCLCPP_INFO(get_logger(), "Servo tracking DISABLED for '%s'", arm_name.c_str());
   }
+}
+
+// ── Servo status: latch/clear the singularity halt ──
+
+void ServoTargetBridge::status_callback(
+  const std::string & arm_name,
+  const moveit_msgs::msg::ServoStatus::SharedPtr msg)
+{
+  auto it = arms_.find(arm_name);
+  if (it == arms_.end()) {return;}
+  auto & arm = *it->second;
+
+  const bool halted = (msg->code == moveit_msgs::msg::ServoStatus::HALT_FOR_SINGULARITY);
+  const bool was_halted = arm.singularity_halt.exchange(halted);
+
+  if (halted && !was_halted) {
+    arm.halt_start = this->now();
+    arm.escape_gave_up = false;
+    RCLCPP_WARN(get_logger(),
+      "Arm '%s': HALT_FOR_SINGULARITY — %s", arm_name.c_str(),
+      arm.config.reset_on_halt ? "resetting servo" : "reset DISABLED");
+  } else if (!halted && was_halted) {
+    // Re-arm: a later halt gets a fresh escape budget rather than inheriting
+    // the previous one's give-up state.
+    arm.escape_gave_up = false;
+    RCLCPP_INFO(get_logger(), "Arm '%s': singularity halt cleared", arm_name.c_str());
+  }
+
+  // Servo ignores pose commands while halted, so retargeting alone cannot
+  // recover; the latched state has to be cleared first.
+  if (halted && arm.config.reset_on_halt && arm.enabled.load()) {
+    reset_after_halt(arm_name);
+  }
+}
+
+// ── Cache the group's joint configuration from servo's command stream ──
+
+void ServoTargetBridge::servo_cmd_callback(
+  const std::string & arm_name,
+  const trajectory_msgs::msg::JointTrajectory::SharedPtr msg)
+{
+  auto it = arms_.find(arm_name);
+  if (it == arms_.end()) {return;}
+  auto & arm = *it->second;
+
+  // Only healthy commands are worth escaping to.
+  if (arm.singularity_halt.load() || msg->points.empty()) {return;}
+  if (msg->points.front().positions.size() != msg->joint_names.size()) {return;}
+
+  arm.escape_joint_names = msg->joint_names;
+
+  // Keep a short history: the newest healthy command sits right next to the
+  // singularity, so escaping to it lands straight back in the halt.
+  arm.joint_history.push_back(msg->points.front().positions);
+  const size_t depth = static_cast<size_t>(
+    std::max(1.0, arm.config.joint_escape_lookback_s * kServoCmdRateHz));
+  while (arm.joint_history.size() > depth) {
+    arm.joint_history.pop_front();
+  }
+  // The oldest retained sample is the furthest back from the trap.
+  arm.escape_joint_positions = arm.joint_history.front();
+  arm.have_escape_joints = true;
+}
+
+// ── Jointspace escape: replay the last healthy configuration ──
+
+void ServoTargetBridge::send_joint_escape(const std::string & arm_name)
+{
+  auto it = arms_.find(arm_name);
+  if (it == arms_.end()) {return;}
+  auto & arm = *it->second;
+
+  if (!arm.have_escape_joints || arm.config.joint_escape_time_s <= 0.0) {return;}
+
+  trajectory_msgs::msg::JointTrajectory traj;
+  traj.header.stamp = rclcpp::Time(0, 0, RCL_ROS_TIME);
+  traj.joint_names = arm.escape_joint_names;
+
+  trajectory_msgs::msg::JointTrajectoryPoint pt;
+  pt.positions = arm.escape_joint_positions;
+  pt.velocities.assign(arm.escape_joint_positions.size(), 0.0);
+  pt.time_from_start = rclcpp::Duration::from_seconds(arm.config.joint_escape_time_s);
+  traj.points.push_back(pt);
+
+  arm.joint_traj_pub->publish(traj);
+  RCLCPP_WARN(get_logger(),
+    "Arm '%s': jointspace escape — replaying last healthy configuration over %.1f s",
+    arm_name.c_str(), arm.config.joint_escape_time_s);
+}
+
+// ── Clear a latched halt: pause(true) then pause(false) ──
+
+void ServoTargetBridge::reset_after_halt(const std::string & arm_name)
+{
+  auto it = arms_.find(arm_name);
+  if (it == arms_.end()) {return;}
+  auto & arm = *it->second;
+
+  if (arm.reset_in_flight.load()) {return;}
+  if (!arm.pause_servo_client->service_is_ready()) {return;}
+
+  // Cooldown: status streams at the servo loop rate, so an uncooled reset would
+  // fire hundreds of times per second.
+  const rclcpp::Time now = this->now();
+  if (arm.last_reset.nanoseconds() > 0 &&
+    (now - arm.last_reset).seconds() < arm.config.reset_cooldown_s)
+  {
+    return;
+  }
+  arm.last_reset = now;
+  arm.reset_in_flight = true;
+
+  auto pause_req = std::make_shared<SetBool::Request>();
+  pause_req->data = true;
+  arm.pause_servo_client->async_send_request(
+    pause_req,
+    [this, arm_name](rclcpp::Client<SetBool>::SharedFuture pause_future) {
+      auto it2 = arms_.find(arm_name);
+      if (it2 == arms_.end()) {return;}
+      auto & arm2 = *it2->second;
+
+      if (!pause_future.get()->success) {
+        RCLCPP_WARN(get_logger(), "Arm '%s': halt-reset pause(true) rejected",
+          arm_name.c_str());
+        arm2.reset_in_flight = false;
+        return;
+      }
+      // Grip may have been released while the pause was in flight — leave the
+      // arm paused in that case, which is what a disable wants anyway.
+      if (!arm2.enabled.load()) {
+        arm2.reset_in_flight = false;
+        return;
+      }
+
+      // Servo is paused and no longer owns the controller: drive the arm out in
+      // jointspace, which needs no Jacobian and so is immune to the singularity.
+      send_joint_escape(arm_name);
+
+      // Resume only after the escape motion completes, else servo's first tick
+      // re-halts at the singular pose and fights the trajectory.
+      const double settle =
+      arm2.have_escape_joints ? arm2.config.joint_escape_time_s + 0.2 : 0.0;
+      arm2.resume_timer = this->create_wall_timer(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(
+          std::chrono::duration<double>(settle)),
+        [this, arm_name]() {
+          auto it3 = arms_.find(arm_name);
+          if (it3 == arms_.end()) {return;}
+          auto & arm3 = *it3->second;
+          arm3.resume_timer->cancel();
+
+          if (!arm3.enabled.load()) {
+            arm3.reset_in_flight = false;
+            return;
+          }
+          auto unpause_req = std::make_shared<SetBool::Request>();
+          unpause_req->data = false;
+          arm3.pause_servo_client->async_send_request(
+            unpause_req,
+            [this, arm_name](rclcpp::Client<SetBool>::SharedFuture unpause_future) {
+              auto it4 = arms_.find(arm_name);
+              if (it4 == arms_.end()) {return;}
+              auto & arm4 = *it4->second;
+              const bool ok = unpause_future.get()->success;
+              RCLCPP_WARN(get_logger(), "Arm '%s': halt-reset pause cycle -> %s",
+                arm_name.c_str(), ok ? "servo resumed" : "unpause FAILED");
+              arm4.reset_in_flight = false;
+            });
+        });
+    });
 }
 
 // ── Shared pose-publish timer ──
@@ -388,6 +663,54 @@ void ServoTargetBridge::pose_timer_callback()
         RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
           "Arm '%s': shoulder TF '%s' unavailable (%s) — reach clamp skipped",
           arm_name.c_str(), arm.config.reach_origin_frame.c_str(), e.what());
+      }
+    }
+
+    // Singularity escape: while halted, ignore the operator target and walk the
+    // command back toward the last healthy EE pose — the trap pose only re-halts.
+    if (arm.singularity_halt.load() && arm.config.escape_step > 0.0 &&
+      arm.have_last_good && !arm.escape_gave_up)
+    {
+      const double held = (this->now() - arm.halt_start).seconds();
+      if (arm.config.escape_timeout_s > 0.0 && held > arm.config.escape_timeout_s) {
+        arm.escape_gave_up = true;
+        RCLCPP_ERROR(get_logger(),
+          "Arm '%s': still halted after %.1f s — escape abandoned, release grip "
+          "and re-latch away from the singularity", arm_name.c_str(), held);
+      } else {
+        // Step from the previous command, not the operator target: the operator
+        // keeps pushing into the trap, so stepping from it never converges.
+        if (!arm.escaping) {
+          arm.escape_cmd = base_to_target;
+          arm.escaping = true;
+        }
+        const tf2::Vector3 to_good =
+          arm.last_good_cmd.getOrigin() - arm.escape_cmd.getOrigin();
+        const double dist = to_good.length();
+        const double frac = (dist > arm.config.escape_step) ?
+          (arm.config.escape_step / dist) : 1.0;
+
+        arm.escape_cmd.setOrigin(arm.escape_cmd.getOrigin() + to_good * frac);
+        arm.escape_cmd.setRotation(
+          arm.escape_cmd.getRotation().slerp(
+            arm.last_good_cmd.getRotation(), frac).normalized());
+        base_to_target = arm.escape_cmd;
+
+        RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000,
+          "Arm '%s': escaping singularity — %.3f m to last healthy pose",
+          arm_name.c_str(), dist);
+      }
+    } else if (!arm.singularity_halt.load()) {
+      arm.escaping = false;
+      // Anchor on the actual EE pose, not the commanded target: the target may
+      // already sit in the trap when the halt lands, making it useless to escape to.
+      try {
+        auto ee = tf_buffer_->lookupTransform(
+          arm.config.base_frame, arm.config.end_effector_frame, tf2::TimePointZero);
+        tf2::fromMsg(ee.transform, arm.last_good_cmd);
+        arm.have_last_good = true;
+      } catch (const tf2::TransformException &) {
+        // Keep the previous anchor; a stale healthy pose beats none.
       }
     }
 

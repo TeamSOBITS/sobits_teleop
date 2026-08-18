@@ -89,6 +89,7 @@ ament_target_dependencies(
   rclcpp_components
   std_msgs
   geometry_msgs
+  trajectory_msgs
   std_srvs
   moveit_msgs
   tf2_ros
