@@ -91,14 +91,24 @@ struct QuestHeadMap
 {
 
   std::string head_joint_trajectory_topic;
-  std::string body_joint_trajectory_topic;
   std::string vertical;
   std::string horizontal;
-  std::string body_lift;
   int head_mode;
   int vertical_sign;
   int horizontal_sign;
   float motion_scale;
+};
+
+// Vertical body lift, tracked from a frame's z travel. Latches on its own axis
+// so the body can move without the head following, and vice versa.
+struct QuestBodyMap
+{
+  std::string joint_trajectory_topic;
+  std::string target_frame_name = "hmd_odom";
+  std::string joint;
+  int enable_axis = -1;
+  int axis_sign = 1;
+  float motion_scale = 1.0f;
 };
 
 // Per-joint adaptive gripper target (close and open positions).
@@ -234,6 +244,7 @@ private:
   void process_poses();
   void process_cmd_vel();
   void process_head(bool head_tf_ok, const tf2::Transform & current_tf);
+  void process_body();
   void process_hand(const std::string & name, QuestHandMap & m);
   // Looks up a Quest frame under base_footprint; rejects stale/invalid TF.
   bool lookup_quest_frame(
@@ -337,6 +348,11 @@ private:
   // Head tracking latch state: pose captured at latch, delta computed against it every tick.
   tf2::Transform last_tf;
   double last_pan, last_tilt, last_body_lift;
+  // Body latch, independent of the head's.
+  bool body_control_enabled = false;
+  bool body_tracking = false;
+  bool body_tf_ok_prev_ = false;
+  tf2::Transform last_body_tf;
 
   // Current controller poses in base_footprint (recomputed every tick)
   tf2::Transform current_tf_hmd;
@@ -351,6 +367,7 @@ private:
 
   CmdVelMap cvm;
   QuestHeadMap qhm;
+  QuestBodyMap qbm;
 };
 
 }  // namespace sobits_teleop

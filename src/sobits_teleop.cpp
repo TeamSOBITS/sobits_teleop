@@ -524,13 +524,27 @@ void SOBITSTeleop::load_parameters()
         joint_pub[qhm.head_joint_trajectory_topic] = this->create_publisher<trajectory_msgs::msg::JointTrajectory>(
           qhm.head_joint_trajectory_topic, 10);
 
-        if (has_param("quest_control." + group + ".body_lift")) {
-          get_param("quest_control." + group + ".body_lift", qhm.body_lift);
-          get_param("robot_topic_name.joint_trajectory_topic.body",
-              qhm.body_joint_trajectory_topic);
-          joint_pub[qhm.body_joint_trajectory_topic] = this->create_publisher<trajectory_msgs::msg::JointTrajectory>(
-            qhm.body_joint_trajectory_topic, 10);
+        continue;
+      }
+
+      if (group == "body") {
+        get_param("quest_control." + group + ".joint", qbm.joint);
+        get_param("quest_control." + group + ".enable_axis", qbm.enable_axis);
+        get_param("quest_control." + group + ".target_frame_name", qbm.target_frame_name);
+        get_param("quest_control." + group + ".axis_sign", qbm.axis_sign);
+        get_param("quest_control." + group + ".motion_scale", qbm.motion_scale);
+        get_param("robot_topic_name.joint_trajectory_topic." + group,
+            qbm.joint_trajectory_topic);
+
+        if (qbm.joint.empty() || qbm.joint_trajectory_topic.empty()) {
+          RCLCPP_ERROR(get_logger(),
+            "Quest group 'body' needs a joint and a robot_topic_name entry — skipping");
+          qbm.joint.clear();
+          continue;
         }
+        joint_pub[qbm.joint_trajectory_topic] =
+          this->create_publisher<trajectory_msgs::msg::JointTrajectory>(
+          qbm.joint_trajectory_topic, 10);
         continue;
       }
 
@@ -1019,14 +1033,12 @@ void SOBITSTeleop::process_head(bool head_tf_ok, const tf2::Transform & current_
       last_pan = joint_pos[qhm.horizontal];
       last_tilt = joint_pos[qhm.vertical];
       last_tf = current_tf;
-      if (!qhm.body_lift.empty()) {last_body_lift = joint_pos[qhm.body_lift];}
     }
 
     if (head_control_enabled && !head_tracking) {
       last_pan = joint_pos[qhm.horizontal];
       last_tilt = joint_pos[qhm.vertical];
       last_tf = current_tf;
-      if (!qhm.body_lift.empty()) {last_body_lift = joint_pos[qhm.body_lift];}
       head_tracking = true;
 
     // RCLCPP_INFO(this->get_logger(), "cur_joint_pos %.2f, %.2f", joint_pos[qhm.horizontal], joint_pos[qhm.vertical]);
@@ -1064,28 +1076,6 @@ void SOBITSTeleop::process_head(bool head_tf_ok, const tf2::Transform & current_
         }
       }
 
-      if (!qhm.body_lift.empty()) {
-        double dz = T_delta.getOrigin().z();
-        double body_lift_target = last_body_lift + qhm.motion_scale * dz;
-        if (clamp_to_limits_checked(qhm.body_lift, body_lift_target)) {
-          trajectory_msgs::msg::JointTrajectory traj;
-          traj.joint_names = {qhm.body_lift};
-
-          trajectory_msgs::msg::JointTrajectoryPoint p;
-          p.positions = {body_lift_target};
-          p.time_from_start = rclcpp::Duration::from_seconds(dt());
-          traj.points.push_back(p);
-
-          auto it = joint_pub.find(qhm.body_joint_trajectory_topic);
-          if (it != joint_pub.end() && it->second) {
-            it->second->publish(traj);
-          } else {
-            RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
-                              "Publisher for %s not found",
-                qhm.body_joint_trajectory_topic.c_str());
-          }
-        }
-      }
     }
   } // if (head_tf_ok)
   head_tf_ok_prev_ = head_tf_ok;
@@ -1096,6 +1086,63 @@ void SOBITSTeleop::process_head(bool head_tf_ok, const tf2::Transform & current_
   if (!head_control_enabled && head_tracking) {
     head_tracking = false;
     RCLCPP_INFO(this->get_logger(), "Head tracking stopped");
+  }
+}
+
+// Vertical body lift from its own target frame's z travel. Latches on its own
+// axis, so head and body track independently.
+void SOBITSTeleop::process_body()
+{
+  if (qbm.joint.empty()) {return;}
+
+  // Trigger comes from /joy so releasing unlatches even while the TF is stale.
+  body_control_enabled = axis_held(qbm.enable_axis);
+
+  tf2::Transform current_tf;
+  const bool body_tf_ok = lookup_quest_frame(qbm.target_frame_name, current_tf);
+
+  if (body_tf_ok) {
+    // Re-anchor across a TF gap, else the whole gap delta lands as one jump.
+    if (body_tracking && !body_tf_ok_prev_) {
+      last_body_lift = joint_pos[qbm.joint];
+      last_body_tf = current_tf;
+    }
+
+    if (body_control_enabled && !body_tracking) {
+      last_body_lift = joint_pos[qbm.joint];
+      last_body_tf = current_tf;
+      body_tracking = true;
+      RCLCPP_INFO(this->get_logger(), "Body tracking started");
+    }
+
+    if (body_tracking) {
+      const double dz = (last_body_tf.inverse() * current_tf).getOrigin().z();
+      double target = last_body_lift + qbm.motion_scale * dz * qbm.axis_sign;
+      if (clamp_to_limits_checked(qbm.joint, target)) {
+        trajectory_msgs::msg::JointTrajectory traj;
+        traj.joint_names = {qbm.joint};
+
+        trajectory_msgs::msg::JointTrajectoryPoint p;
+        p.positions = {target};
+        p.time_from_start = rclcpp::Duration::from_seconds(dt());
+        traj.points.push_back(p);
+
+        auto it = joint_pub.find(qbm.joint_trajectory_topic);
+        if (it != joint_pub.end() && it->second) {
+          it->second->publish(traj);
+        } else {
+          RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
+            "Publisher for %s not found", qbm.joint_trajectory_topic.c_str());
+        }
+      }
+    }
+  }
+  body_tf_ok_prev_ = body_tf_ok;
+
+  // Outside the TF gate: a stale frame must not strand the latch.
+  if (!body_control_enabled && body_tracking) {
+    body_tracking = false;
+    RCLCPP_INFO(this->get_logger(), "Body tracking stopped");
   }
 }
 
@@ -1132,6 +1179,7 @@ void SOBITSTeleop::teleop()
     }
 
     process_head(head_tf_ok, current_tf);
+    process_body();
 
     // Arm. Helper: false if any transform component is NaN/Inf (Quest broadcasts NaN when untracked).
     auto transform_valid = [](const geometry_msgs::msg::Transform & t) {

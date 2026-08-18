@@ -65,6 +65,7 @@
     quest_control:
       groups:
         - head
+        - body
         - arm_right
         - hand_right
         - arm_left
@@ -82,7 +83,15 @@
         vertical_sign: 1
         horizontal_sign: 1
         motion_scale: 1.0
-        body_lift: "body_lift_joint"
+
+      # Vertical lift from target_frame_name's z travel, latched on its own axis
+      # so head and body track independently. Axes 0-7 are all bound already.
+      body:
+        enable_axis: -1       # free an axis above, then set it here
+        target_frame_name: "hmd_odom"   # z travel of this frame drives the lift
+        joint: "body_lift_joint"
+        axis_sign: 1
+        motion_scale: 1.0
 
       arm_right:
         arm: "arm_right"       # MoveIt planning group name
