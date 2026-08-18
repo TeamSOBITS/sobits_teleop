@@ -525,39 +525,88 @@ void SOBITSTeleop::load_parameters()
   if (has_param("quest_control.groups")) {
     get_param("quest_control.groups", quest_groups);
     for (const auto & group : quest_groups) {
-      if (group == "head") {
-        get_param("quest_control." + group + ".vertical", qhm.vertical);
-        get_param("quest_control." + group + ".horizontal", qhm.horizontal);
-        get_param("quest_control." + group + ".enable_axis", qhm.head_mode);
-        get_param("quest_control." + group + ".vertical_sign", qhm.vertical_sign);
-        get_param("quest_control." + group + ".horizontal_sign", qhm.horizontal_sign);
-        get_param("quest_control." + group + ".motion_scale", qhm.motion_scale);
-        qhm.head_joint_trajectory_topic = group_trajectory_topic(group);
-        if (qhm.head_joint_trajectory_topic.empty()) {continue;}
-        joint_pub[qhm.head_joint_trajectory_topic] = this->create_publisher<trajectory_msgs::msg::JointTrajectory>(
-          qhm.head_joint_trajectory_topic, 10);
-
-        continue;
+      const std::string joints_prefix = "quest_control." + group + ".joints.";
+      // A tracked group is identified by having a `joints` map; sub-keys arrive
+      // flattened (e.g. "...joints.<name>.type"), so scan overrides for the prefix.
+      std::set<std::string> joint_names;
+      const auto & overrides = this->get_node_parameters_interface()->get_parameter_overrides();
+      for (const auto & [name, value] : overrides) {
+        (void)value;
+        if (name.rfind(joints_prefix, 0) != 0) {continue;}
+        const std::string rest = name.substr(joints_prefix.size());
+        joint_names.insert(rest.substr(0, rest.find('.')));
       }
 
-      if (group == "body") {
-        get_param("quest_control." + group + ".joint", qbm.joint);
-        get_param("quest_control." + group + ".enable_axis", qbm.enable_axis);
-        get_param("quest_control." + group + ".target_frame_name", qbm.target_frame_name);
-        get_param("quest_control." + group + ".axis_sign", qbm.axis_sign);
-        get_param("quest_control." + group + ".motion_scale", qbm.motion_scale);
-        qbm.joint_trajectory_topic = group_trajectory_topic(group);
+      if (!joint_names.empty()) {
+        QuestTrackedGroup g{};
+        g.group = group;
+        get_param("quest_control." + group + ".enable_axis", g.enable_axis);
+        get_param("quest_control." + group + ".target_frame_name", g.target_frame_name);
+        get_param("quest_control." + group + ".motion_scale", g.motion_scale);
 
-        if (qbm.joint.empty() || qbm.joint_trajectory_topic.empty()) {
-          if (qbm.joint.empty()) {
-            RCLCPP_ERROR(get_logger(), "Quest group 'body' needs a joint — skipping");
+        for (const auto & jname : joint_names) {
+          const std::string jprefix = joints_prefix + jname;
+          std::string type, axis;
+          get_param(jprefix + ".type", type);
+          get_param(jprefix + ".axis", axis);
+          // sign: YAML "1"/"-1" parses as an integer override; read via the raw
+          // override value so both int and double authoring styles work.
+          double sign = 1.0;
+          const std::string sign_key = jprefix + ".sign";
+          read_keys_.insert(sign_key);
+          auto sign_it = overrides.find(sign_key);
+          if (sign_it != overrides.end()) {
+            sign = (sign_it->second.get_type() == rclcpp::ParameterType::PARAMETER_INTEGER) ?
+              static_cast<double>(sign_it->second.get<int64_t>()) :
+              sign_it->second.get<double>();
           }
-          qbm.joint.clear();
+
+          TrackedJoint tj;
+          tj.name = jname;
+          tj.sign = sign;
+          if (type == "rotation") {
+            tj.prismatic = false;
+            if (axis == "roll") {tj.component = 0;} else if (axis == "pitch") {
+              tj.component = 1;
+            } else if (axis == "yaw") {tj.component = 2;} else {
+              RCLCPP_ERROR(get_logger(),
+                "Quest group '%s' joint '%s': invalid rotation axis '%s' — skipping joint",
+                group.c_str(), jname.c_str(), axis.c_str());
+              continue;
+            }
+          } else if (type == "prismatic") {
+            tj.prismatic = true;
+            if (axis == "x") {tj.component = 0;} else if (axis == "y") {
+              tj.component = 1;
+            } else if (axis == "z") {tj.component = 2;} else {
+              RCLCPP_ERROR(get_logger(),
+                "Quest group '%s' joint '%s': invalid prismatic axis '%s' — skipping joint",
+                group.c_str(), jname.c_str(), axis.c_str());
+              continue;
+            }
+          } else {
+            RCLCPP_ERROR(get_logger(),
+              "Quest group '%s' joint '%s': unknown type '%s' — skipping joint",
+              group.c_str(), jname.c_str(), type.c_str());
+            continue;
+          }
+          g.joints.push_back(tj);
+        }
+
+        if (g.joints.empty()) {
+          RCLCPP_ERROR(get_logger(), "Quest group '%s' has no usable joints — skipping",
+            group.c_str());
           continue;
         }
-        joint_pub[qbm.joint_trajectory_topic] =
+
+        g.joint_trajectory_topic = group_trajectory_topic(group);
+        if (g.joint_trajectory_topic.empty()) {continue;}
+
+        g.latched_positions.assign(g.joints.size(), 0.0);
+        joint_pub[g.joint_trajectory_topic] =
           this->create_publisher<trajectory_msgs::msg::JointTrajectory>(
-          qbm.joint_trajectory_topic, 10);
+          g.joint_trajectory_topic, 10);
+        quest_tracked_groups[group] = g;
         continue;
       }
 
@@ -1033,134 +1082,72 @@ void SOBITSTeleop::process_cmd_vel()
   }
 }
 
-void SOBITSTeleop::process_head(bool head_tf_ok, const tf2::Transform & current_tf)
+// Latch/track one quest_control group. Trigger comes from /joy so releasing
+// always unlatches, even while the group's own TF is stale.
+void SOBITSTeleop::process_tracked_group(QuestTrackedGroup & g)
 {
-  // Trigger state comes from /joy, not TF: read it even when the Quest TF is
-  // stale so releasing always unlatches (see release handler below).
-  if (qhm.head_mode >= 0 &&
-    qhm.head_mode < static_cast<int>(latest_axes.size()))
-  {
-    head_control_enabled = axis_held(qhm.head_mode);
-  }
-
-  // --- (hold) ---
-  if (head_tf_ok) {
-    // Re-anchor after a TF dropout: last_tf predates the gap, so carrying it
-    // over would replay the whole gap delta as one jump.
-    if (head_tracking && !head_tf_ok_prev_) {
-      last_pan = joint_pos[qhm.horizontal];
-      last_tilt = joint_pos[qhm.vertical];
-      last_tf = current_tf;
-    }
-
-    if (head_control_enabled && !head_tracking) {
-      last_pan = joint_pos[qhm.horizontal];
-      last_tilt = joint_pos[qhm.vertical];
-      last_tf = current_tf;
-      head_tracking = true;
-
-    // RCLCPP_INFO(this->get_logger(), "cur_joint_pos %.2f, %.2f", joint_pos[qhm.horizontal], joint_pos[qhm.vertical]);
-      RCLCPP_INFO(this->get_logger(), "Head tracking started");
-    }
-
-    if (head_tracking) {
-      tf2::Transform T_delta = last_tf.inverse() * current_tf;
-      double roll, pitch, yaw;
-      tf2::Matrix3x3(T_delta.getRotation()).getRPY(roll, pitch, yaw);
-      (void)roll; // only pitch/yaw drive head tracking
-
-      double pan_target = last_pan + qhm.motion_scale * yaw * qhm.horizontal_sign;
-      double tilt_target = last_tilt + qhm.motion_scale * pitch * -qhm.vertical_sign;
-
-    // RCLCPP_INFO(this->get_logger(), "pub_joint_pos %.2f, %.2f", pan_target, tilt_target);
-      if (clamp_to_limits_checked(qhm.horizontal, pan_target) &&
-        clamp_to_limits_checked(qhm.vertical, tilt_target))
-      {
-        trajectory_msgs::msg::JointTrajectory traj;
-        traj.joint_names = {qhm.horizontal, qhm.vertical};
-
-        trajectory_msgs::msg::JointTrajectoryPoint p;
-        p.positions = {pan_target, tilt_target};
-        p.time_from_start = rclcpp::Duration::from_seconds(dt());
-        traj.points.push_back(p);
-
-        auto it = joint_pub.find(qhm.head_joint_trajectory_topic);
-        if (it != joint_pub.end() && it->second) {
-          it->second->publish(traj);
-        } else {
-          RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
-                            "Publisher for %s not found",
-              qhm.head_joint_trajectory_topic.c_str());
-        }
-      }
-
-    }
-  } // if (head_tf_ok)
-  head_tf_ok_prev_ = head_tf_ok;
-
-  // --- (release) ---
-  // Outside the TF gate: a stale hmd_odom must not strand the latch, or the
-  // next valid tick replays the whole stale delta and the head jumps.
-  if (!head_control_enabled && head_tracking) {
-    head_tracking = false;
-    RCLCPP_INFO(this->get_logger(), "Head tracking stopped");
-  }
-}
-
-// Vertical body lift from its own target frame's z travel. Latches on its own
-// axis, so head and body track independently.
-void SOBITSTeleop::process_body()
-{
-  if (qbm.joint.empty()) {return;}
-
-  // Trigger comes from /joy so releasing unlatches even while the TF is stale.
-  body_control_enabled = axis_held(qbm.enable_axis);
+  g.control_enabled = axis_held(g.enable_axis);
 
   tf2::Transform current_tf;
-  const bool body_tf_ok = lookup_quest_frame(qbm.target_frame_name, current_tf);
+  const bool tf_ok = lookup_quest_frame(g.target_frame_name, current_tf);
 
-  if (body_tf_ok) {
+  if (tf_ok) {
     // Re-anchor across a TF gap, else the whole gap delta lands as one jump.
-    if (body_tracking && !body_tf_ok_prev_) {
-      last_body_lift = joint_pos[qbm.joint];
-      last_body_tf = current_tf;
+    if (g.tracking && !g.tf_ok_prev) {
+      for (size_t i = 0; i < g.joints.size(); ++i) {
+        g.latched_positions[i] = joint_pos[g.joints[i].name];
+      }
+      g.last_tf = current_tf;
     }
 
-    if (body_control_enabled && !body_tracking) {
-      last_body_lift = joint_pos[qbm.joint];
-      last_body_tf = current_tf;
-      body_tracking = true;
-      RCLCPP_INFO(this->get_logger(), "Body tracking started");
+    if (g.control_enabled && !g.tracking) {
+      for (size_t i = 0; i < g.joints.size(); ++i) {
+        g.latched_positions[i] = joint_pos[g.joints[i].name];
+      }
+      g.last_tf = current_tf;
+      g.tracking = true;
+      RCLCPP_INFO(this->get_logger(), "%s tracking started", g.group.c_str());
     }
 
-    if (body_tracking) {
-      const double dz = (last_body_tf.inverse() * current_tf).getOrigin().z();
-      double target = last_body_lift + qbm.motion_scale * dz * qbm.axis_sign;
-      if (clamp_to_limits_checked(qbm.joint, target)) {
-        trajectory_msgs::msg::JointTrajectory traj;
-        traj.joint_names = {qbm.joint};
+    if (g.tracking) {
+      tf2::Transform T_delta = g.last_tf.inverse() * current_tf;
+      double rpy[3];
+      tf2::Matrix3x3(T_delta.getRotation()).getRPY(rpy[0], rpy[1], rpy[2]);
+      const tf2::Vector3 & o = T_delta.getOrigin();
+      const double pos[3] = {o.x(), o.y(), o.z()};
 
-        trajectory_msgs::msg::JointTrajectoryPoint p;
-        p.positions = {target};
+      trajectory_msgs::msg::JointTrajectory traj;
+      trajectory_msgs::msg::JointTrajectoryPoint p;
+      bool all_ok = true;
+      for (size_t i = 0; i < g.joints.size(); ++i) {
+        const auto & j = g.joints[i];
+        const double component = j.prismatic ? pos[j.component] : rpy[j.component];
+        double target = g.latched_positions[i] + g.motion_scale * component * j.sign;
+        if (!clamp_to_limits_checked(j.name, target)) {all_ok = false; break;}
+        traj.joint_names.push_back(j.name);
+        p.positions.push_back(target);
+      }
+
+      if (all_ok) {
         p.time_from_start = rclcpp::Duration::from_seconds(dt());
         traj.points.push_back(p);
 
-        auto it = joint_pub.find(qbm.joint_trajectory_topic);
+        auto it = joint_pub.find(g.joint_trajectory_topic);
         if (it != joint_pub.end() && it->second) {
           it->second->publish(traj);
         } else {
           RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
-            "Publisher for %s not found", qbm.joint_trajectory_topic.c_str());
+            "Publisher for %s not found", g.joint_trajectory_topic.c_str());
         }
       }
     }
   }
-  body_tf_ok_prev_ = body_tf_ok;
+  g.tf_ok_prev = tf_ok;
 
   // Outside the TF gate: a stale frame must not strand the latch.
-  if (!body_control_enabled && body_tracking) {
-    body_tracking = false;
-    RCLCPP_INFO(this->get_logger(), "Body tracking stopped");
+  if (!g.control_enabled && g.tracking) {
+    g.tracking = false;
+    RCLCPP_INFO(this->get_logger(), "%s tracking stopped", g.group.c_str());
   }
 }
 
@@ -1196,8 +1183,9 @@ void SOBITSTeleop::teleop()
       }
     }
 
-    process_head(head_tf_ok, current_tf);
-    process_body();
+    for (auto & [name, g] : quest_tracked_groups) {
+      process_tracked_group(g);
+    }
 
     // Arm. Helper: false if any transform component is NaN/Inf (Quest broadcasts NaN when untracked).
     auto transform_valid = [](const geometry_msgs::msg::Transform & t) {

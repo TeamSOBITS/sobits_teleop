@@ -73,20 +73,20 @@
 
       head:
         enable_axis: 2        # left trigger
-        vertical: "head_tilt_joint"
-        horizontal: "head_pan_joint"
-        vertical_sign: 1
-        horizontal_sign: 1
+        target_frame_name: "hmd_odom"
         motion_scale: 1.0
+        joints:
+          head_pan_joint:  { type: rotation, axis: yaw,   sign: 1 }
+          head_tilt_joint: { type: rotation, axis: pitch, sign: -1 }
 
       # Vertical lift from target_frame_name's z travel. Shares the head's axis
       # here, but latches separately — give it its own axis to split them.
       body:
         enable_axis: 2        # left trigger, same as head
         target_frame_name: "hmd_odom"   # z travel of this frame drives the lift
-        joint: "body_lift_joint"
-        axis_sign: 1
         motion_scale: 1.0
+        joints:
+          body_lift_joint: { type: prismatic, axis: z, sign: 1 }
 
       arm_right:
         controller_frame_name: "right_controller_odom"

@@ -87,28 +87,31 @@ struct CmdVelMap
   double fast_angular_scale = 0.0;
 };
 
-struct QuestHeadMap
+// One joint inside a tracked group: which TF component drives it and how.
+struct TrackedJoint
 {
-
-  std::string head_joint_trajectory_topic;
-  std::string vertical;
-  std::string horizontal;
-  int head_mode;
-  int vertical_sign;
-  int horizontal_sign;
-  float motion_scale;
+  std::string name;
+  bool prismatic = false;    // false = rotation
+  int component = 0;         // rotation: 0=roll,1=pitch,2=yaw; prismatic: 0=x,1=y,2=z
+  double sign = 1.0;
 };
 
-// Vertical body lift, tracked from a frame's z travel. Latches on its own axis
-// so the body can move without the head following, and vice versa.
-struct QuestBodyMap
+// One quest_control group identified by a `joints:` map (any group name).
+// Latches on its own axis, independent of every other tracked group.
+struct QuestTrackedGroup
 {
+  std::string group;
   std::string joint_trajectory_topic;
   std::string target_frame_name = "hmd_odom";
-  std::string joint;
   int enable_axis = -1;
-  int axis_sign = 1;
-  float motion_scale = 1.0f;
+  double motion_scale = 1.0;
+  std::vector<TrackedJoint> joints;
+
+  bool tracking = false;
+  bool control_enabled = false;
+  bool tf_ok_prev = false;
+  tf2::Transform last_tf;
+  std::vector<double> latched_positions;   // parallel to joints
 };
 
 // Per-joint adaptive gripper target (close and open positions).
@@ -250,8 +253,7 @@ private:
   void process_joints();
   void process_poses();
   void process_cmd_vel();
-  void process_head(bool head_tf_ok, const tf2::Transform & current_tf);
-  void process_body();
+  void process_tracked_group(QuestTrackedGroup & g);
   void process_hand(const std::string & name, QuestHandMap & m);
   // Looks up a Quest frame under base_footprint; rejects stale/invalid TF.
   bool lookup_quest_frame(
@@ -310,6 +312,7 @@ private:
   std::map<std::string, JointMap> joint_mappings;
   std::map<std::string, QuestArmMap> quest_arm_mappings;
   std::map<std::string, QuestHandMap> quest_hand_mappings;
+  std::map<std::string, QuestTrackedGroup> quest_tracked_groups;
   std::map<std::string, double> joint_pos;
   // Frame all Quest tracking resolves in; must be fixed to the arm's root.
   std::string base_frame = "base_footprint";
@@ -330,11 +333,6 @@ private:
 
   std::vector<std::string> quest_groups;
 
-  bool head_control_enabled = false;
-
-  bool head_tracking = false;
-  // Previous tick's hmd_odom validity; a false->true edge re-anchors the latch.
-  bool head_tf_ok_prev_ = false;
   bool arm_tracking = false;
   // Per-controller-side arm tracking state, keyed by controller ("left"/"right").
   std::map<std::string, ArmTrackState> arm_track_;
@@ -354,15 +352,6 @@ private:
   std::map<std::string, bool> hand_open_state_;             // keyed by hand group name
   std::map<std::string, rclcpp::Time> hand_toggle_time_;    // debounce timestamp per hand group
 
-  // Head tracking latch state: pose captured at latch, delta computed against it every tick.
-  tf2::Transform last_tf;
-  double last_pan, last_tilt, last_body_lift;
-  // Body latch, independent of the head's.
-  bool body_control_enabled = false;
-  bool body_tracking = false;
-  bool body_tf_ok_prev_ = false;
-  tf2::Transform last_body_tf;
-
   // Current controller poses in base_footprint (recomputed every tick)
   tf2::Transform current_tf_hmd;
 
@@ -375,8 +364,6 @@ private:
   std::shared_ptr<tf2_ros::Buffer> tf_buffer;
 
   CmdVelMap cvm;
-  QuestHeadMap qhm;
-  QuestBodyMap qbm;
 };
 
 }  // namespace sobits_teleop
