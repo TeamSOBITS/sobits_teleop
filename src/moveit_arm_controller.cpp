@@ -481,9 +481,8 @@ void MoveitArmController::cancel_trajectory(ArmData & arm)
     arm.last_sent_traj.reset();
   }
 
-  // Topic mode: halt by commanding the controller to hold the current joint
-  // positions. Uses the joint_states cache, not MGI's state monitor — this
-  // may run on the enable_callback/executor thread and must never block it.
+  // Topic mode: halt by holding current joint positions. Uses the joint_states
+  // cache, not MGI's state monitor — may run on the executor thread, never block.
   if (use_topic_) {
     if (!arm.mgi_ready.load(std::memory_order_acquire)) {return;}
     std::vector<std::string> names = arm.mgi->getJoints();  // cached local call, no service
@@ -615,8 +614,8 @@ void MoveitArmController::tracking_loop(const std::string & arm_name)
       target_pose.orientation = tf_stamped.transform.rotation;
 
     // ── 2. Get measured state, then build the SEED state ──────────────────
-    // Seed from the in-flight commanded state (sampled at now()+lookahead), not
-    // the lagging measured state, so hops chain forward smoothly.
+    // Seed from the in-flight commanded state (now()+lookahead), not the lagging
+    // measured state, so hops chain forward smoothly.
       moveit::core::RobotStatePtr measured_state = mgi->getCurrentState();
       if (!measured_state) {
         RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
