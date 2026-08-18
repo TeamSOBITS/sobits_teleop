@@ -397,8 +397,6 @@ servo_bridge:
 ```yaml
 servo_bridge:
   naming:
-    target_frame_name:       "{side}_target_link"
-    end_effector_frame_name: "hand_{side}_end_effector_link"
     reach_origin_frame:      "{arm}_shoulder_tilt_link"
     servo_node:              "servo_{arm}"
     enable_topic:            "{arm}/moveit_track_enabled"
@@ -410,6 +408,10 @@ servo_bridge:
 不要です．`status_topic`は解決後のノード名から`{servo_node}`を展開するため，
 `servo_node`を上書きすればそれに追従します．特定のアームだけ変えたい場合は
 `servo_bridge.{arm_name}.*`に直接キーを書けば，テンプレートより優先されます．
+
+ターゲットフレームとエンドエフェクタフレームはここに含めません．`quest.yaml`が
+それらの定義元であり，servoのlauncherがbridgeへ転送するため，定義は一箇所です．
+bridgeを単体起動した場合はC++側の既定値が使われます．
 
 Servoバックエンドには`ros-$ROS_DISTRO-moveit-servo`（`install.sh`でインストール）と，
 `/{robot_name}`名前空間で動作中の`move_group`が必要です — launcherが起動時に

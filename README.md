@@ -402,8 +402,6 @@ full name (`arm_right`) and `{side}` to the name without the `arm_` prefix
 ```yaml
 servo_bridge:
   naming:
-    target_frame_name:       "{side}_target_link"
-    end_effector_frame_name: "hand_{side}_end_effector_link"
     reach_origin_frame:      "{arm}_shoulder_tilt_link"
     servo_node:              "servo_{arm}"
     enable_topic:            "{arm}/moveit_track_enabled"
@@ -416,6 +414,10 @@ needed. `status_topic` expands `{servo_node}` from the resolved node name, so
 it follows a `servo_node` override. A single arm can still be handled by
 setting the key directly under `servo_bridge.{arm_name}.*`, which wins over
 the template.
+
+The target and end-effector frames are **not** listed here: `quest.yaml` owns
+them and the servo launcher forwards them to the bridge, so they are defined
+once. The C++ defaults still cover them when the bridge runs standalone.
 
 The servo backend requires `ros-$ROS_DISTRO-moveit-servo` (installed by
 `install.sh`) and a running `move_group` under `/{robot_name}` — the launcher
