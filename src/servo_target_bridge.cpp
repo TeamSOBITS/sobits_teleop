@@ -354,12 +354,7 @@ void ServoTargetBridge::enable_callback(
 
     // Drop the escape anchor: the next latch starts from a new EE pose, and a
     // stale one would drag the arm to wherever it was healthy last session.
-    arm.have_last_good = false;
-    arm.escape_gave_up = false;
-    arm.escaping = false;
-    arm.reset_in_flight = false;
-    arm.joint_history.clear();
-    arm.have_escape_joints = false;
+    arm.reset_escape_state();
 
     arm.pending_pause = 1;
     try_send_pause(arm_name);
@@ -465,7 +460,7 @@ void ServoTargetBridge::reset_after_halt(const std::string & arm_name)
   if (it == arms_.end()) {return;}
   auto & arm = *it->second;
 
-  if (arm.reset_in_flight.load()) {return;}
+  if (arm.recovery != RecoveryState::IDLE) {return;}
   if (!arm.pause_servo_client->service_is_ready()) {return;}
 
   // Cooldown: status streams at the servo loop rate, so an uncooled reset would
@@ -477,7 +472,7 @@ void ServoTargetBridge::reset_after_halt(const std::string & arm_name)
     return;
   }
   arm.last_reset = now;
-  arm.reset_in_flight = true;
+  arm.recovery = RecoveryState::PAUSING;
 
   auto pause_req = std::make_shared<SetBool::Request>();
   pause_req->data = true;
@@ -491,13 +486,13 @@ void ServoTargetBridge::reset_after_halt(const std::string & arm_name)
       if (!pause_future.get()->success) {
         RCLCPP_WARN(get_logger(), "Arm '%s': halt-reset pause(true) rejected",
           arm_name.c_str());
-        arm2.reset_in_flight = false;
+        arm2.recovery = RecoveryState::IDLE;
         return;
       }
       // Grip may have been released while the pause was in flight — leave the
       // arm paused in that case, which is what a disable wants anyway.
       if (!arm2.enabled.load()) {
-        arm2.reset_in_flight = false;
+        arm2.recovery = RecoveryState::IDLE;
         return;
       }
 
@@ -509,33 +504,40 @@ void ServoTargetBridge::reset_after_halt(const std::string & arm_name)
       // re-halts at the singular pose and fights the trajectory.
       const double settle =
       arm2.have_escape_joints ? arm2.config.joint_escape_time_s + 0.2 : 0.0;
-      arm2.resume_timer = this->create_wall_timer(
-        std::chrono::duration_cast<std::chrono::nanoseconds>(
-          std::chrono::duration<double>(settle)),
-        [this, arm_name]() {
-          auto it3 = arms_.find(arm_name);
-          if (it3 == arms_.end()) {return;}
-          auto & arm3 = *it3->second;
-          arm3.resume_timer->cancel();
+      arm2.escape_done = this->now() + rclcpp::Duration::from_seconds(settle);
+      arm2.recovery = RecoveryState::ESCAPING;
+    });
+}
 
-          if (!arm3.enabled.load()) {
-            arm3.reset_in_flight = false;
-            return;
-          }
-          auto unpause_req = std::make_shared<SetBool::Request>();
-          unpause_req->data = false;
-          arm3.pause_servo_client->async_send_request(
-            unpause_req,
-            [this, arm_name](rclcpp::Client<SetBool>::SharedFuture unpause_future) {
-              auto it4 = arms_.find(arm_name);
-              if (it4 == arms_.end()) {return;}
-              auto & arm4 = *it4->second;
-              const bool ok = unpause_future.get()->success;
-              RCLCPP_WARN(get_logger(), "Arm '%s': halt-reset pause cycle -> %s",
-                arm_name.c_str(), ok ? "servo resumed" : "unpause FAILED");
-              arm4.reset_in_flight = false;
-            });
-        });
+// ── Advance a recovery in flight; called once per arm each pose-timer tick ──
+
+void ServoTargetBridge::tick_recovery(const std::string & arm_name)
+{
+  auto it = arms_.find(arm_name);
+  if (it == arms_.end()) {return;}
+  auto & arm = *it->second;
+
+  if (arm.recovery != RecoveryState::ESCAPING) {return;}
+  if (this->now() < arm.escape_done) {return;}
+
+  if (!arm.enabled.load()) {
+    arm.recovery = RecoveryState::IDLE;
+    return;
+  }
+  arm.recovery = RecoveryState::RESUMING;
+
+  auto unpause_req = std::make_shared<SetBool::Request>();
+  unpause_req->data = false;
+  arm.pause_servo_client->async_send_request(
+    unpause_req,
+    [this, arm_name](rclcpp::Client<SetBool>::SharedFuture unpause_future) {
+      auto it2 = arms_.find(arm_name);
+      if (it2 == arms_.end()) {return;}
+      auto & arm2 = *it2->second;
+      const bool ok = unpause_future.get()->success;
+      RCLCPP_WARN(get_logger(), "Arm '%s': halt-reset pause cycle -> %s",
+        arm_name.c_str(), ok ? "servo resumed" : "unpause FAILED");
+      arm2.recovery = RecoveryState::IDLE;
     });
 }
 
@@ -545,6 +547,7 @@ void ServoTargetBridge::pose_timer_callback()
 {
   for (auto & [arm_name, arm_ptr] : arms_) {
     auto & arm = *arm_ptr;
+    tick_recovery(arm_name);
     if (!arm.enabled.load()) {continue;}
 
     geometry_msgs::msg::TransformStamped tf_stamped;

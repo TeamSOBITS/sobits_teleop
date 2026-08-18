@@ -91,6 +91,9 @@ private:
   // Warns for any "servo_bridge." override key not recorded in declared_keys_.
   void warn_unknown_parameters();
 
+  // Halt recovery runs as an explicit sequence so every exit path is visible.
+  enum class RecoveryState { IDLE, PAUSING, ESCAPING, RESUMING };
+
   struct ArmBridgeData
   {
     ServoBridgeArmConfig config;
@@ -134,10 +137,13 @@ private:
     rclcpp::Time halt_start{0, 0, RCL_ROS_TIME};
     bool escape_gave_up{false};
 
-    // Last halt-reset attempt, for the cooldown. reset_in_flight keeps the
-    // pause(true)->pause(false) pair from overlapping with the enable path.
+    // Last halt-reset attempt, for the cooldown.
     rclcpp::Time last_reset{0, 0, RCL_ROS_TIME};
-    std::atomic<bool> reset_in_flight{false};
+
+    // Halt recovery: PAUSING -> ESCAPING -> RESUMING -> IDLE. escape_done is the
+    // deadline (checked by the pose timer) before RESUMING may start.
+    RecoveryState recovery{RecoveryState::IDLE};
+    rclcpp::Time escape_done{0, 0, RCL_ROS_TIME};
 
     // Jointspace escape: last healthy joint configuration for this arm's group,
     // replayed to the controller when servo halts.
@@ -147,8 +153,16 @@ private:
     std::deque<std::vector<double>> joint_history;
     bool have_escape_joints{false};
 
-    // One-shot: unpauses servo after the escape trajectory has had time to run.
-    rclcpp::TimerBase::SharedPtr resume_timer;
+    // Clears escape/recovery state; shared by disable and other resets.
+    void reset_escape_state()
+    {
+      have_last_good = false;
+      escape_gave_up = false;
+      escaping = false;
+      recovery = RecoveryState::IDLE;
+      joint_history.clear();
+      have_escape_joints = false;
+    }
   };
 
   void enable_callback(const std::string & arm_name, const std_msgs::msg::Bool::SharedPtr msg);
@@ -159,6 +173,9 @@ private:
 
   // Clears a latched singularity halt with a pause(true)->pause(false) cycle.
   void reset_after_halt(const std::string & arm_name);
+
+  // Advances a PAUSING/ESCAPING/RESUMING recovery once its deadline passes.
+  void tick_recovery(const std::string & arm_name);
 
   // Caches the group's joint names/positions from servo's command stream.
   void servo_cmd_callback(
