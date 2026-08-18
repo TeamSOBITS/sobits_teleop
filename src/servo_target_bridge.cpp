@@ -1,5 +1,6 @@
 #include "sobits_teleop/servo_target_bridge.hpp"
 #include "sobits_teleop/arm_naming.hpp"
+#include "sobits_teleop/reach_clamp.hpp"
 
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 
@@ -578,11 +579,10 @@ void ServoTargetBridge::pose_timer_callback()
         tf2::Vector3 shoulder(
           sh.transform.translation.x, sh.transform.translation.y,
           sh.transform.translation.z);
-        tf2::Vector3 offset = base_to_target.getOrigin() - shoulder;
-        const double dist = offset.length();
+        const tf2::Vector3 target = base_to_target.getOrigin();
+        const double dist = (target - shoulder).length();
         if (dist > arm.config.max_reach) {
-          base_to_target.setOrigin(
-            shoulder + offset * (arm.config.max_reach / dist));
+          base_to_target.setOrigin(clamp_to_reach(shoulder, target, arm.config.max_reach));
           RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 2000,
             "Arm '%s': target %.2f m from shoulder — clamped to %.2f m",
             arm_name.c_str(), dist, arm.config.max_reach);
