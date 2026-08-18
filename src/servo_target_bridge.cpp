@@ -37,22 +37,42 @@ ServoTargetBridge::ServoTargetBridge(const rclcpp::NodeOptions & options)
   const double shared_joint_escape_lookback =
     declare_param("servo_bridge.joint_escape_lookback_s", 1.0);
 
+  // Naming templates: {arm}/{side} expanded per arm below. YAML may override
+  // any of these under servo_bridge.naming; defaults reproduce sobit_home.
+  const std::string tmpl_target_frame =
+    declare_param("servo_bridge.naming.target_frame_name", std::string("{side}_target_link"));
+  const std::string tmpl_end_effector_frame = declare_param(
+    "servo_bridge.naming.end_effector_frame_name",
+    std::string("hand_{side}_end_effector_link"));
+  const std::string tmpl_reach_origin_frame = declare_param(
+    "servo_bridge.naming.reach_origin_frame", std::string("{arm}_shoulder_tilt_link"));
+  const std::string tmpl_servo_node =
+    declare_param("servo_bridge.naming.servo_node", std::string("servo_{arm}"));
+  const std::string tmpl_enable_topic = declare_param(
+    "servo_bridge.naming.enable_topic", std::string("{arm}/moveit_track_enabled"));
+  const std::string tmpl_joint_traj_topic = declare_param(
+    "servo_bridge.naming.joint_traj_topic",
+    std::string("{arm}_position_controller/joint_trajectory"));
+  const std::string tmpl_status_topic =
+    declare_param("servo_bridge.naming.status_topic", std::string("{servo_node}/status"));
+
   for (const auto & arm_name : arm_names) {
-    // Defaults follow arm_naming; the YAML only carries values that break it.
+    // Defaults come from the naming templates; the YAML only carries values that break it.
     ServoBridgeArmConfig cfg;
     cfg.target_frame = declare_arm_param(
-      arm_name, "target_frame_name", arm_naming::target_frame(arm_name));
+      arm_name, "target_frame_name", arm_naming::expand(tmpl_target_frame, arm_name));
     cfg.base_frame = declare_arm_param(
       arm_name, "base_frame_name", std::string("base_footprint"));
     cfg.end_effector_frame = declare_arm_param(
-      arm_name, "end_effector_frame_name", arm_naming::end_effector_frame(arm_name));
+      arm_name, "end_effector_frame_name",
+      arm_naming::expand(tmpl_end_effector_frame, arm_name));
     cfg.servo_ee_frame = declare_arm_param(arm_name, "servo_ee_frame", std::string(""));
     cfg.servo_node = declare_arm_param(
-      arm_name, "servo_node", arm_naming::servo_node(arm_name));
+      arm_name, "servo_node", arm_naming::expand(tmpl_servo_node, arm_name));
     cfg.enable_topic = declare_arm_param(
-      arm_name, "enable_topic", arm_naming::enable_topic(arm_name));
+      arm_name, "enable_topic", arm_naming::expand(tmpl_enable_topic, arm_name));
     cfg.reach_origin_frame = declare_arm_param(
-      arm_name, "reach_origin_frame", arm_naming::reach_origin_frame(arm_name));
+      arm_name, "reach_origin_frame", arm_naming::expand(tmpl_reach_origin_frame, arm_name));
     cfg.max_reach = declare_arm_param(arm_name, "max_reach", shared_max_reach);
     cfg.escape_step = declare_arm_param(arm_name, "escape_step", shared_escape_step);
     cfg.escape_timeout_s = declare_arm_param(
@@ -62,13 +82,21 @@ ServoTargetBridge::ServoTargetBridge(const rclcpp::NodeOptions & options)
       arm_name, "reset_cooldown_s", shared_reset_cooldown);
     // Same controller topic servo commands, so the escape reaches the same JTC.
     cfg.joint_traj_topic = declare_arm_param(
-      arm_name, "joint_traj_topic", arm_naming::joint_traj_topic(arm_name));
+      arm_name, "joint_traj_topic", arm_naming::expand(tmpl_joint_traj_topic, arm_name));
     cfg.joint_escape_time_s = declare_arm_param(
       arm_name, "joint_escape_time_s", shared_joint_escape_time);
     cfg.joint_escape_lookback_s = declare_arm_param(
       arm_name, "joint_escape_lookback_s", shared_joint_escape_lookback);
+    // status_topic depends on the RESOLVED servo_node, not the arm name, so
+    // substitute {servo_node} directly rather than adding it to expand().
+    std::string status_default = tmpl_status_topic;
+    const std::string placeholder = "{servo_node}";
+    size_t pos = status_default.find(placeholder);
+    if (pos != std::string::npos) {
+      status_default.replace(pos, placeholder.size(), cfg.servo_node);
+    }
     const std::string status_topic = declare_arm_param(
-      arm_name, "status_topic", arm_naming::status_topic(cfg.servo_node));
+      arm_name, "status_topic", status_default);
 
     auto arm_data = std::make_unique<ArmBridgeData>();
     arm_data->config = cfg;

@@ -6,51 +6,38 @@
 namespace sobits_teleop
 {
 
-// Frames, topics and node names all default from the arm name, so an arm that
-// follows the convention needs no YAML at all. Overrides live in servo_bridge.
+// Robot-specific frame/topic conventions live in YAML as {arm}/{side}
+// templates (servo_bridge.naming.*); this is just the substitution engine.
 namespace arm_naming
 {
 
-// "arm_right" -> "right"; a name without the prefix is its own side.
+// "arm_right" -> "right"; a name without the "arm_" prefix is its own side.
 inline std::string side_of(const std::string & arm_name)
 {
   return arm_name.rfind("arm_", 0) == 0 ? arm_name.substr(4) : arm_name;
 }
 
-inline std::string target_frame(const std::string & arm_name)
+// Replaces every "{arm}"/"{side}" in tmpl, left to right. Any other "{...}"
+// is left untouched so a typo stays visible in the resulting name.
+inline std::string expand(const std::string & tmpl, const std::string & arm_name)
 {
-  return side_of(arm_name) + "_target_link";
-}
+  const std::string side = side_of(arm_name);
+  std::string out;
+  out.reserve(tmpl.size());
 
-inline std::string end_effector_frame(const std::string & arm_name)
-{
-  return "hand_" + side_of(arm_name) + "_end_effector_link";
-}
-
-inline std::string reach_origin_frame(const std::string & arm_name)
-{
-  return arm_name + "_shoulder_tilt_link";
-}
-
-inline std::string servo_node(const std::string & arm_name)
-{
-  return "servo_" + arm_name;
-}
-
-inline std::string enable_topic(const std::string & arm_name)
-{
-  return arm_name + "/moveit_track_enabled";
-}
-
-inline std::string joint_traj_topic(const std::string & arm_name)
-{
-  return arm_name + "_position_controller/joint_trajectory";
-}
-
-// servo publishes status on "~/status" relative to its own node name.
-inline std::string status_topic(const std::string & servo_node_name)
-{
-  return servo_node_name + "/status";
+  for (size_t i = 0; i < tmpl.size(); ) {
+    if (tmpl.compare(i, 5, "{arm}") == 0) {
+      out += arm_name;
+      i += 5;
+    } else if (tmpl.compare(i, 6, "{side}") == 0) {
+      out += side;
+      i += 6;
+    } else {
+      out += tmpl[i];
+      ++i;
+    }
+  }
+  return out;
 }
 
 }  // namespace arm_naming
