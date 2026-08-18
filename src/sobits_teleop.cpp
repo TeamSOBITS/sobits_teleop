@@ -930,12 +930,23 @@ void SOBITSTeleop::teleop()
       }
     }
 
+    // Trigger state comes from /joy, not TF: read it even when the Quest TF is
+    // stale so releasing always unlatches (see release handler below).
+    if (qhm.head_mode >= 0 &&
+      qhm.head_mode < static_cast<int>(latest_axes.size()))
+    {
+      head_control_enabled = (latest_axes[qhm.head_mode] > 0.5);
+    }
+
     // --- (hold) ---
     if (head_tf_ok) {
-      if (qhm.head_mode >= 0 &&
-        qhm.head_mode < static_cast<int>(latest_axes.size()))
-      {
-        head_control_enabled = (latest_axes[qhm.head_mode] > 0.5);
+      // Re-anchor after a TF dropout: last_tf predates the gap, so carrying it
+      // over would replay the whole gap delta as one jump.
+      if (head_tracking && !head_tf_ok_prev_) {
+        last_pan = joint_pos[qhm.horizontal];
+        last_tilt = joint_pos[qhm.vertical];
+        last_tf = current_tf;
+        if (!qhm.body_lift.empty()) {last_body_lift = joint_pos[qhm.body_lift];}
       }
 
       if (head_control_enabled && !head_tracking) {
@@ -1003,12 +1014,16 @@ void SOBITSTeleop::teleop()
           }
         }
       }
-    // --- (release) ---
-      if (!head_control_enabled && head_tracking) {
-        head_tracking = false;
-        RCLCPP_INFO(this->get_logger(), "Head tracking stopped");
-      }
     } // if (head_tf_ok)
+    head_tf_ok_prev_ = head_tf_ok;
+
+    // --- (release) ---
+    // Outside the TF gate: a stale hmd_odom must not strand the latch, or the
+    // next valid tick replays the whole stale delta and the head jumps.
+    if (!head_control_enabled && head_tracking) {
+      head_tracking = false;
+      RCLCPP_INFO(this->get_logger(), "Head tracking stopped");
+    }
 
 
     // Arm. Helper: false if any transform component is NaN/Inf (Quest broadcasts NaN when untracked).

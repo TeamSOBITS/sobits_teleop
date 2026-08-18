@@ -268,6 +268,8 @@ private:
   bool head_control_enabled = false;
 
   bool head_tracking = false;
+  // Previous tick's hmd_odom validity; a false->true edge re-anchors the latch.
+  bool head_tf_ok_prev_ = false;
   bool arm_tracking = false;
   // Per-controller-side arm tracking state, keyed by controller ("left"/"right").
   std::map<std::string, ArmTrackState> arm_track_;
