@@ -22,6 +22,7 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace sobits_teleop
@@ -68,6 +69,27 @@ public:
 private:
   using ServoCommandType = moveit_msgs::srv::ServoCommandType;
   using SetBool = std_srvs::srv::SetBool;
+
+  // Declare key if absent, then read it. Records key into declared_keys_.
+  template<typename T>
+  T declare_param(const std::string & key, const T & default_value)
+  {
+    declared_keys_.insert(key);
+    if (!this->has_parameter(key)) {
+      this->declare_parameter<T>(key, default_value);
+    }
+    return this->get_parameter(key).get_value<T>();
+  }
+
+  // Per-arm key "servo_bridge.<arm>.<key>", defaulting to the shared value.
+  template<typename T>
+  T declare_arm_param(const std::string & arm, const std::string & key, const T & shared)
+  {
+    return declare_param("servo_bridge." + arm + "." + key, shared);
+  }
+
+  // Warns for any "servo_bridge." override key not recorded in declared_keys_.
+  void warn_unknown_parameters();
 
   struct ArmBridgeData
   {
@@ -158,6 +180,7 @@ private:
   void pose_timer_callback();
 
   std::unordered_map<std::string, std::unique_ptr<ArmBridgeData>> arms_;
+  std::unordered_set<std::string> declared_keys_;
 
   std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
   std::shared_ptr<tf2_ros::TransformListener> tf_listener_;

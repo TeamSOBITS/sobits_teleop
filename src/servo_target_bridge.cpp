@@ -20,55 +20,23 @@ ServoTargetBridge::ServoTargetBridge(const rclcpp::NodeOptions & options)
   tf_buffer_ = std::make_shared<tf2_ros::Buffer>(this->get_clock());
   tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 
-  if (!this->has_parameter("servo_bridge.pose_rate_hz")) {
-    this->declare_parameter("servo_bridge.pose_rate_hz", 100.0);
-  }
-  pose_rate_hz_ = this->get_parameter("servo_bridge.pose_rate_hz").as_double();
+  pose_rate_hz_ = declare_param("servo_bridge.pose_rate_hz", 100.0);
 
-  if (!this->has_parameter("servo_bridge.arms")) {
-    this->declare_parameter("servo_bridge.arms",
-      std::vector<std::string>{"arm_right", "arm_left"});
-  }
+  auto arm_names = declare_param(
+    "servo_bridge.arms", std::vector<std::string>{"arm_right", "arm_left"});
 
-  auto arm_names = this->get_parameter("servo_bridge.arms").as_string_array();
-
-  // Shared default for the per-arm reach clamp; per-arm max_reach overrides it.
-  if (!this->has_parameter("servo_bridge.max_reach")) {
-    this->declare_parameter("servo_bridge.max_reach", 0.0);
-  }
-  const double shared_max_reach =
-    this->get_parameter("servo_bridge.max_reach").as_double();
-
-  // Shared singularity-escape defaults; per-arm keys override.
-  if (!this->has_parameter("servo_bridge.escape_step")) {
-    this->declare_parameter("servo_bridge.escape_step", 0.0);
-  }
-  const double shared_escape_step =
-    this->get_parameter("servo_bridge.escape_step").as_double();
-
-  if (!this->has_parameter("servo_bridge.escape_timeout_s")) {
-    this->declare_parameter("servo_bridge.escape_timeout_s", 2.0);
-  }
+  // Shared defaults; per-arm keys below override them.
+  const double shared_max_reach = declare_param("servo_bridge.max_reach", 0.0);
+  const double shared_escape_step = declare_param("servo_bridge.escape_step", 0.0);
   const double shared_escape_timeout =
-    this->get_parameter("servo_bridge.escape_timeout_s").as_double();
-
-  if (!this->has_parameter("servo_bridge.reset_on_halt")) {
-    this->declare_parameter("servo_bridge.reset_on_halt", true);
-  }
-  const bool shared_reset_on_halt =
-    this->get_parameter("servo_bridge.reset_on_halt").as_bool();
-
-  if (!this->has_parameter("servo_bridge.reset_cooldown_s")) {
-    this->declare_parameter("servo_bridge.reset_cooldown_s", 1.0);
-  }
+    declare_param("servo_bridge.escape_timeout_s", 2.0);
+  const bool shared_reset_on_halt = declare_param("servo_bridge.reset_on_halt", true);
   const double shared_reset_cooldown =
-    this->get_parameter("servo_bridge.reset_cooldown_s").as_double();
-
-  if (!this->has_parameter("servo_bridge.joint_escape_time_s")) {
-    this->declare_parameter("servo_bridge.joint_escape_time_s", 0.0);
-  }
+    declare_param("servo_bridge.reset_cooldown_s", 1.0);
   const double shared_joint_escape_time =
-    this->get_parameter("servo_bridge.joint_escape_time_s").as_double();
+    declare_param("servo_bridge.joint_escape_time_s", 0.0);
+  const double shared_joint_escape_lookback =
+    declare_param("servo_bridge.joint_escape_lookback_s", 1.0);
 
   for (const auto & arm_name : arm_names) {
     // Frames/topics default from the arm name (arm_right -> side "right");
@@ -76,92 +44,36 @@ ServoTargetBridge::ServoTargetBridge(const rclcpp::NodeOptions & options)
     const std::string side =
       arm_name.rfind("arm_", 0) == 0 ? arm_name.substr(4) : arm_name;
 
-    auto tf_key = "servo_bridge." + arm_name + ".target_frame_name";
-    auto bf_key = "servo_bridge." + arm_name + ".base_frame_name";
-    auto ee_key = "servo_bridge." + arm_name + ".end_effector_frame_name";
-    auto se_key = "servo_bridge." + arm_name + ".servo_ee_frame";
-    auto sn_key = "servo_bridge." + arm_name + ".servo_node";
-    auto en_key = "servo_bridge." + arm_name + ".enable_topic";
-    auto ro_key = "servo_bridge." + arm_name + ".reach_origin_frame";
-    auto mr_key = "servo_bridge." + arm_name + ".max_reach";
-    auto es_key = "servo_bridge." + arm_name + ".escape_step";
-    auto et_key = "servo_bridge." + arm_name + ".escape_timeout_s";
-    auto st_key = "servo_bridge." + arm_name + ".status_topic";
-    auto rh_key = "servo_bridge." + arm_name + ".reset_on_halt";
-    auto rc_key = "servo_bridge." + arm_name + ".reset_cooldown_s";
-    auto jt_key = "servo_bridge." + arm_name + ".joint_traj_topic";
-    auto je_key = "servo_bridge." + arm_name + ".joint_escape_time_s";
-    auto jl_key = "servo_bridge." + arm_name + ".joint_escape_lookback_s";
-
-    if (!this->has_parameter(tf_key)) {
-      this->declare_parameter(tf_key, side + "_target_link");
-    }
-    if (!this->has_parameter(bf_key)) {
-      this->declare_parameter(bf_key, "base_footprint");
-    }
-    if (!this->has_parameter(ee_key)) {
-      this->declare_parameter(ee_key, "hand_" + side + "_end_effector_link");
-    }
-    if (!this->has_parameter(se_key)) {
-      this->declare_parameter(se_key, std::string(""));
-    }
-    if (!this->has_parameter(sn_key)) {
-      this->declare_parameter(sn_key, std::string("servo_") + arm_name);
-    }
-    if (!this->has_parameter(en_key)) {
-      this->declare_parameter(en_key, arm_name + "/moveit_track_enabled");
-    }
-    if (!this->has_parameter(ro_key)) {
-      this->declare_parameter(ro_key, arm_name + "_shoulder_tilt_link");
-    }
-    if (!this->has_parameter(mr_key)) {
-      this->declare_parameter(mr_key, shared_max_reach);
-    }
-    if (!this->has_parameter(es_key)) {
-      this->declare_parameter(es_key, shared_escape_step);
-    }
-    if (!this->has_parameter(et_key)) {
-      this->declare_parameter(et_key, shared_escape_timeout);
-    }
-    if (!this->has_parameter(rh_key)) {
-      this->declare_parameter(rh_key, shared_reset_on_halt);
-    }
-    if (!this->has_parameter(rc_key)) {
-      this->declare_parameter(rc_key, shared_reset_cooldown);
-    }
-    // Same controller topic servo commands, so the escape reaches the same JTC.
-    if (!this->has_parameter(jt_key)) {
-      this->declare_parameter(jt_key, arm_name + "_position_controller/joint_trajectory");
-    }
-    if (!this->has_parameter(je_key)) {
-      this->declare_parameter(je_key, shared_joint_escape_time);
-    }
-    if (!this->has_parameter(jl_key)) {
-      this->declare_parameter(jl_key, 1.0);
-    }
-    // servo publishes status on "~/status" relative to its own node name.
-    if (!this->has_parameter(st_key)) {
-      this->declare_parameter(st_key,
-        this->get_parameter(sn_key).as_string() + "/status");
-    }
-
     ServoBridgeArmConfig cfg;
-    cfg.target_frame = this->get_parameter(tf_key).as_string();
-    cfg.base_frame = this->get_parameter(bf_key).as_string();
-    cfg.end_effector_frame = this->get_parameter(ee_key).as_string();
-    cfg.servo_ee_frame = this->get_parameter(se_key).as_string();
-    cfg.servo_node = this->get_parameter(sn_key).as_string();
-    cfg.enable_topic = this->get_parameter(en_key).as_string();
-    cfg.reach_origin_frame = this->get_parameter(ro_key).as_string();
-    cfg.max_reach = this->get_parameter(mr_key).as_double();
-    cfg.escape_step = this->get_parameter(es_key).as_double();
-    cfg.escape_timeout_s = this->get_parameter(et_key).as_double();
-    cfg.reset_on_halt = this->get_parameter(rh_key).as_bool();
-    cfg.reset_cooldown_s = this->get_parameter(rc_key).as_double();
-    cfg.joint_traj_topic = this->get_parameter(jt_key).as_string();
-    cfg.joint_escape_time_s = this->get_parameter(je_key).as_double();
-    cfg.joint_escape_lookback_s = this->get_parameter(jl_key).as_double();
-    const std::string status_topic = this->get_parameter(st_key).as_string();
+    cfg.target_frame = declare_arm_param(arm_name, "target_frame_name", side + "_target_link");
+    cfg.base_frame = declare_arm_param(
+      arm_name, "base_frame_name", std::string("base_footprint"));
+    cfg.end_effector_frame = declare_arm_param(
+      arm_name, "end_effector_frame_name", "hand_" + side + "_end_effector_link");
+    cfg.servo_ee_frame = declare_arm_param(arm_name, "servo_ee_frame", std::string(""));
+    cfg.servo_node = declare_arm_param(
+      arm_name, "servo_node", std::string("servo_") + arm_name);
+    cfg.enable_topic = declare_arm_param(
+      arm_name, "enable_topic", arm_name + "/moveit_track_enabled");
+    cfg.reach_origin_frame = declare_arm_param(
+      arm_name, "reach_origin_frame", arm_name + "_shoulder_tilt_link");
+    cfg.max_reach = declare_arm_param(arm_name, "max_reach", shared_max_reach);
+    cfg.escape_step = declare_arm_param(arm_name, "escape_step", shared_escape_step);
+    cfg.escape_timeout_s = declare_arm_param(
+      arm_name, "escape_timeout_s", shared_escape_timeout);
+    cfg.reset_on_halt = declare_arm_param(arm_name, "reset_on_halt", shared_reset_on_halt);
+    cfg.reset_cooldown_s = declare_arm_param(
+      arm_name, "reset_cooldown_s", shared_reset_cooldown);
+    // Same controller topic servo commands, so the escape reaches the same JTC.
+    cfg.joint_traj_topic = declare_arm_param(
+      arm_name, "joint_traj_topic", arm_name + "_position_controller/joint_trajectory");
+    cfg.joint_escape_time_s = declare_arm_param(
+      arm_name, "joint_escape_time_s", shared_joint_escape_time);
+    cfg.joint_escape_lookback_s = declare_arm_param(
+      arm_name, "joint_escape_lookback_s", shared_joint_escape_lookback);
+    // servo publishes status on "~/status" relative to its own node name.
+    const std::string status_topic = declare_arm_param(
+      arm_name, "status_topic", cfg.servo_node + "/status");
 
     auto arm_data = std::make_unique<ArmBridgeData>();
     arm_data->config = cfg;
@@ -236,6 +148,22 @@ ServoTargetBridge::ServoTargetBridge(const rclcpp::NodeOptions & options)
   RCLCPP_INFO(get_logger(),
     "ServoTargetBridge: %zu arm(s), pose_rate=%.1f Hz",
     arms_.size(), pose_rate_hz_);
+
+  warn_unknown_parameters();
+}
+
+// ── Warn about servo_bridge.* YAML keys that no declare_param call used ──
+
+void ServoTargetBridge::warn_unknown_parameters()
+{
+  const auto & overrides = this->get_node_parameters_interface()->get_parameter_overrides();
+  for (const auto & [name, value] : overrides) {
+    (void)value;
+    if (name.rfind("servo_bridge.", 0) != 0) {continue;}
+    if (declared_keys_.count(name)) {continue;}
+    RCLCPP_WARN(get_logger(),
+      "Unknown parameter '%s' - check for a typo; it has no effect", name.c_str());
+  }
 }
 
 // ── Startup sequence: async POSE switch + pause, retried until both succeed ──
