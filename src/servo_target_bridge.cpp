@@ -5,6 +5,7 @@
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 
 #include <chrono>
+#include <stdexcept>
 
 namespace sobits_teleop
 {
@@ -39,11 +40,12 @@ ServoTargetBridge::ServoTargetBridge(const rclcpp::NodeOptions & options)
 
   // Naming templates: {arm}/{side} expanded per arm below. YAML may override
   // any of these under servo_bridge.naming; defaults reproduce sobit_home.
+  // No default for the target/EE frames: quest.yaml owns them and the launcher
+  // forwards them, so guessing here would hide a broken launch.
   const std::string tmpl_target_frame =
-    declare_param("servo_bridge.naming.target_frame_name", std::string("{side}_target_link"));
+    declare_param("servo_bridge.naming.target_frame_name", std::string(""));
   const std::string tmpl_end_effector_frame = declare_param(
-    "servo_bridge.naming.end_effector_frame_name",
-    std::string("hand_{side}_end_effector_link"));
+    "servo_bridge.naming.end_effector_frame_name", std::string(""));
   const std::string tmpl_reach_origin_frame = declare_param(
     "servo_bridge.naming.reach_origin_frame", std::string("{arm}_shoulder_tilt_link"));
   const std::string tmpl_servo_node =
@@ -71,6 +73,16 @@ ServoTargetBridge::ServoTargetBridge(const rclcpp::NodeOptions & options)
       arm_name, "servo_node", arm_naming::expand(tmpl_servo_node, arm_name));
     cfg.enable_topic = declare_arm_param(
       arm_name, "enable_topic", arm_naming::expand(tmpl_enable_topic, arm_name));
+
+    // Both come from quest.yaml via the launcher; unset means a broken launch.
+    if (cfg.target_frame.empty() || cfg.end_effector_frame.empty()) {
+      throw std::runtime_error(
+              "servo_bridge: arm '" + arm_name + "' has no " +
+              (cfg.target_frame.empty() ? "target_frame_name" : "end_effector_frame_name") +
+              ". It is normally forwarded from quest_control." + arm_name +
+              " by arm_backend_servo.launch.py; set servo_bridge." + arm_name +
+              ".* or servo_bridge.naming.* to run this node standalone.");
+    }
     cfg.reach_origin_frame = declare_arm_param(
       arm_name, "reach_origin_frame", arm_naming::expand(tmpl_reach_origin_frame, arm_name));
     cfg.max_reach = declare_arm_param(arm_name, "max_reach", shared_max_reach);
