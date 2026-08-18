@@ -150,7 +150,14 @@ private:
     rclcpp::Publisher<trajectory_msgs::msg::JointTrajectory>::SharedPtr joint_traj_pub;
     std::vector<std::string> escape_joint_names;
     std::vector<double> escape_joint_positions;
-    std::deque<std::vector<double>> joint_history;
+    // Stamped so the window is bounded by elapsed time, not sample count:
+    // servo's publish rate is its own config and may not match ours.
+    struct JointSample
+    {
+      rclcpp::Time stamp;
+      std::vector<double> positions;
+    };
+    std::deque<JointSample> joint_history;
     bool have_escape_joints{false};
 
     // Clears escape/recovery state; shared by disable and other resets.

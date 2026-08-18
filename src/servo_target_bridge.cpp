@@ -1,4 +1,5 @@
 #include "sobits_teleop/servo_target_bridge.hpp"
+#include "sobits_teleop/arm_naming.hpp"
 
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 
@@ -6,9 +7,6 @@
 
 namespace sobits_teleop
 {
-
-// Servo's command output rate (publish_period 0.02 s); sizes the escape history.
-constexpr double kServoCmdRateHz = 50.0;
 
 // ── Constructor ──
 
@@ -39,24 +37,21 @@ ServoTargetBridge::ServoTargetBridge(const rclcpp::NodeOptions & options)
     declare_param("servo_bridge.joint_escape_lookback_s", 1.0);
 
   for (const auto & arm_name : arm_names) {
-    // Frames/topics default from the arm name (arm_right -> side "right");
-    // the YAML only carries values that break the convention.
-    const std::string side =
-      arm_name.rfind("arm_", 0) == 0 ? arm_name.substr(4) : arm_name;
-
+    // Defaults follow arm_naming; the YAML only carries values that break it.
     ServoBridgeArmConfig cfg;
-    cfg.target_frame = declare_arm_param(arm_name, "target_frame_name", side + "_target_link");
+    cfg.target_frame = declare_arm_param(
+      arm_name, "target_frame_name", arm_naming::target_frame(arm_name));
     cfg.base_frame = declare_arm_param(
       arm_name, "base_frame_name", std::string("base_footprint"));
     cfg.end_effector_frame = declare_arm_param(
-      arm_name, "end_effector_frame_name", "hand_" + side + "_end_effector_link");
+      arm_name, "end_effector_frame_name", arm_naming::end_effector_frame(arm_name));
     cfg.servo_ee_frame = declare_arm_param(arm_name, "servo_ee_frame", std::string(""));
     cfg.servo_node = declare_arm_param(
-      arm_name, "servo_node", std::string("servo_") + arm_name);
+      arm_name, "servo_node", arm_naming::servo_node(arm_name));
     cfg.enable_topic = declare_arm_param(
-      arm_name, "enable_topic", arm_name + "/moveit_track_enabled");
+      arm_name, "enable_topic", arm_naming::enable_topic(arm_name));
     cfg.reach_origin_frame = declare_arm_param(
-      arm_name, "reach_origin_frame", arm_name + "_shoulder_tilt_link");
+      arm_name, "reach_origin_frame", arm_naming::reach_origin_frame(arm_name));
     cfg.max_reach = declare_arm_param(arm_name, "max_reach", shared_max_reach);
     cfg.escape_step = declare_arm_param(arm_name, "escape_step", shared_escape_step);
     cfg.escape_timeout_s = declare_arm_param(
@@ -66,14 +61,13 @@ ServoTargetBridge::ServoTargetBridge(const rclcpp::NodeOptions & options)
       arm_name, "reset_cooldown_s", shared_reset_cooldown);
     // Same controller topic servo commands, so the escape reaches the same JTC.
     cfg.joint_traj_topic = declare_arm_param(
-      arm_name, "joint_traj_topic", arm_name + "_position_controller/joint_trajectory");
+      arm_name, "joint_traj_topic", arm_naming::joint_traj_topic(arm_name));
     cfg.joint_escape_time_s = declare_arm_param(
       arm_name, "joint_escape_time_s", shared_joint_escape_time);
     cfg.joint_escape_lookback_s = declare_arm_param(
       arm_name, "joint_escape_lookback_s", shared_joint_escape_lookback);
-    // servo publishes status on "~/status" relative to its own node name.
     const std::string status_topic = declare_arm_param(
-      arm_name, "status_topic", cfg.servo_node + "/status");
+      arm_name, "status_topic", arm_naming::status_topic(cfg.servo_node));
 
     auto arm_data = std::make_unique<ArmBridgeData>();
     arm_data->config = cfg;
@@ -415,14 +409,17 @@ void ServoTargetBridge::servo_cmd_callback(
 
   // Keep a short history: the newest healthy command sits right next to the
   // singularity, so escaping to it lands straight back in the halt.
-  arm.joint_history.push_back(msg->points.front().positions);
-  const size_t depth = static_cast<size_t>(
-    std::max(1.0, arm.config.joint_escape_lookback_s * kServoCmdRateHz));
-  while (arm.joint_history.size() > depth) {
+  const rclcpp::Time now = this->now();
+  arm.joint_history.push_back({now, msg->points.front().positions});
+
+  // Receive time, not header.stamp — servo does not stamp its command output.
+  const rclcpp::Time cutoff =
+    now - rclcpp::Duration::from_seconds(arm.config.joint_escape_lookback_s);
+  while (arm.joint_history.size() > 1 && arm.joint_history.front().stamp < cutoff) {
     arm.joint_history.pop_front();
   }
   // The oldest retained sample is the furthest back from the trap.
-  arm.escape_joint_positions = arm.joint_history.front();
+  arm.escape_joint_positions = arm.joint_history.front().positions;
   arm.have_escape_joints = true;
 }
 
