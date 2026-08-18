@@ -20,7 +20,7 @@
       - arm_left
       - arm_right
       head:
-        names:
+        joints_name:
         - head_tilt_joint
         - head_pan_joint
         head_tilt_joint:
@@ -38,7 +38,7 @@
           speed : 0.1
           fast_speed : 0.5
       body:
-        names:
+        joints_name:
         - body_lift_joint
         body_lift_joint:
           button : 3           # □
@@ -48,7 +48,7 @@
           speed : 0.1
           fast_speed : 0.2
       arm_left:
-        names: 
+        joints_name: 
         - arm_left_shoulder_tilt_joint
         - arm_left_upper_roll_joint
         - arm_left_upper_flex_joint
@@ -98,7 +98,7 @@
           speed : 0.1
           fast_speed : 0.5
       arm_right:
-        names: 
+        joints_name: 
         - arm_right_shoulder_tilt_joint
         - arm_right_upper_roll_joint
         - arm_right_upper_flex_joint

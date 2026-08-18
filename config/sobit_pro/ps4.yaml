@@ -6,7 +6,7 @@
       - head
       - arm
       head:
-        names:
+        joints_name:
         - head_tilt_joint
         - head_pan_joint
         head_tilt_joint:
@@ -24,7 +24,7 @@
           speed : 0.1
           fast_speed : 0.5
       arm:
-        names: 
+        joints_name: 
         - arm_shoulder_1_tilt_joint
         - arm_elbow_upper_1_tilt_joint
         - arm_elbow_lower_tilt_joint

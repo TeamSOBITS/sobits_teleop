@@ -8,7 +8,7 @@
       - arm_left
       - arm_right
       head:
-        names:
+        joints_name:
         - head_camera_tilt_joint
         - head_camera_pan_joint
         head_camera_tilt_joint:
@@ -26,7 +26,7 @@
           speed : 0.1
           fast_speed : 0.5
       body:
-        names:
+        joints_name:
         - body_roll_joint
         body_roll_joint:
           button : 3           # □
@@ -36,7 +36,7 @@
           speed : 0.1
           fast_speed : 0.5
       arm_left:
-        names:
+        joints_name:
         - l_arm_shoulder_roll_joint
         - l_arm_shoulder_pan_joint
         - l_arm_elbow_tilt_joint
@@ -70,7 +70,7 @@
           speed : 0.1
           fast_speed : 0.5
       arm_right:
-        names:
+        joints_name:
         - r_arm_shoulder_roll_joint
         - r_arm_shoulder_pan_joint
         - r_arm_elbow_tilt_joint

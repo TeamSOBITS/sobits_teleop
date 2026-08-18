@@ -396,7 +396,7 @@ void SOBITSTeleop::load_parameters()
     get_param("control_joints.groups", joint_groups);
 
     for (const auto & joint_group : joint_groups) {
-      if (!get_param("control_joints." + joint_group + ".names", joint_names)) {
+      if (!get_param("control_joints." + joint_group + ".joints_name", joint_names)) {
         mark_visited("control_joints." + joint_group);
         continue;
       }
@@ -525,19 +525,14 @@ void SOBITSTeleop::load_parameters()
   if (has_param("quest_control.groups")) {
     get_param("quest_control.groups", quest_groups);
     for (const auto & group : quest_groups) {
-      const std::string joints_prefix = "quest_control." + group + ".joints.";
-      // A tracked group is identified by having a `joints` map; sub-keys arrive
-      // flattened (e.g. "...joints.<name>.type"), so scan overrides for the prefix.
-      std::set<std::string> joint_names;
-      const auto & overrides = this->get_node_parameters_interface()->get_parameter_overrides();
-      for (const auto & [name, value] : overrides) {
-        (void)value;
-        if (name.rfind(joints_prefix, 0) != 0) {continue;}
-        const std::string rest = name.substr(joints_prefix.size());
-        joint_names.insert(rest.substr(0, rest.find('.')));
-      }
+      // A tracked group lists its joints in `names`, then describes each one
+      // below it — the same shape as control_joints and the hand's adaptive block.
+      std::vector<std::string> joint_names;
+      get_param("quest_control." + group + ".joints_name", joint_names);
 
       if (!joint_names.empty()) {
+        const auto & overrides =
+          this->get_node_parameters_interface()->get_parameter_overrides();
         QuestTrackedGroup g{};
         g.group = group;
         get_param("quest_control." + group + ".enable_axis", g.enable_axis);
@@ -545,7 +540,7 @@ void SOBITSTeleop::load_parameters()
         get_param("quest_control." + group + ".motion_scale", g.motion_scale);
 
         for (const auto & jname : joint_names) {
-          const std::string jprefix = joints_prefix + jname;
+          const std::string jprefix = "quest_control." + group + "." + jname;
           std::string type, axis;
           get_param(jprefix + ".type", type);
           get_param(jprefix + ".axis", axis);
@@ -695,9 +690,9 @@ void SOBITSTeleop::load_parameters()
           // Load adaptive joint list: adaptive.names is a list of joint names,
           // each with close_pos, open_pos, and optional fixed flag.
           const std::string aj_prefix = "quest_control." + group + ".adaptive";
-          if (has_param(aj_prefix + ".names")) {
+          if (has_param(aj_prefix + ".joints_name")) {
             std::vector<std::string> aj_names;
-            get_param(aj_prefix + ".names", aj_names);
+            get_param(aj_prefix + ".joints_name", aj_names);
             for (const auto & jname : aj_names) {
               mark_visited(aj_prefix + "." + jname);
               AdaptiveJointTarget ajt;

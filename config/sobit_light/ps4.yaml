@@ -6,7 +6,7 @@
       - head
       - arm
       head:
-        names:
+        joints_name:
         - head_pitch_joint
         - head_yaw_joint
         head_pitch_joint:
@@ -24,7 +24,7 @@
           speed : 0.1
           fast_speed : 0.5
       arm:
-        names: 
+        joints_name: 
         - arm_shoulder_roll_joint
         - arm_shoulder_pitch_joint
         - arm_elbow_pitch_joint
