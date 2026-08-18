@@ -368,7 +368,67 @@ void SOBITSTeleop::load_parameters()
       this->get_parameter("control_poses.trigger", pm.trigger);
       this->get_parameter("control_poses." + pose_name + ".button", pm.button);
 
+      const std::string base = "control_poses." + pose_name;
+      // Shared default first, then the per-pose override.
+      this->get_parameter("control_poses.time_from_start", pm.time_from_start);
+      this->get_parameter(base + ".time_from_start", pm.time_from_start);
+
+      // A pose defined in YAML lists the groups it drives; each group names the
+      // robot.yaml joint group whose trajectory topic carries it.
+      std::vector<std::string> groups;
+      this->get_parameter(base + ".groups", groups);
+
+      // Single-group shorthand: joints/positions directly under the pose.
+      if (groups.empty() && this->has_parameter(base + ".joints")) {
+        groups.push_back("");
+      }
+
+      for (const auto & g : groups) {
+        const std::string gbase = g.empty() ? base : base + "." + g;
+        PoseJointGroup pg{};
+        this->get_parameter(gbase + ".joints", pg.joint_names);
+        this->get_parameter(gbase + ".positions", pg.positions);
+
+        if (pg.joint_names.empty()) {
+          RCLCPP_ERROR(get_logger(),
+            "Pose '%s' group '%s' lists no joints — skipping that group",
+            pose_name.c_str(), g.c_str());
+          continue;
+        }
+        if (pg.joint_names.size() != pg.positions.size()) {
+          RCLCPP_ERROR(get_logger(),
+            "Pose '%s' group '%s': %zu joints but %zu positions — skipping that group",
+            pose_name.c_str(), g.c_str(), pg.joint_names.size(), pg.positions.size());
+          continue;
+        }
+
+        // Topic: explicit override, else the joint group's robot.yaml topic.
+        this->get_parameter(gbase + ".joint_trajectory_topic", pg.joint_trajectory_topic);
+        if (pg.joint_trajectory_topic.empty() && !g.empty()) {
+          this->get_parameter("robot_topic_name.joint_trajectory_topic." + g,
+              pg.joint_trajectory_topic);
+        }
+        if (pg.joint_trajectory_topic.empty()) {
+          RCLCPP_ERROR(get_logger(),
+            "Pose '%s' group '%s': no trajectory topic (set joint_trajectory_topic or "
+            "name a group from robot_topic_name) — skipping that group",
+            pose_name.c_str(), g.c_str());
+          continue;
+        }
+
+        if (joint_pub.find(pg.joint_trajectory_topic) == joint_pub.end()) {
+          joint_pub[pg.joint_trajectory_topic] =
+            this->create_publisher<trajectory_msgs::msg::JointTrajectory>(
+            pg.joint_trajectory_topic, 10);
+        }
+        pm.joint_groups.push_back(pg);
+      }
+
       pose_mappings.push_back(pm);
+      RCLCPP_INFO(get_logger(), "Pose '%s': %s", pose_name.c_str(),
+        pm.joint_groups.empty() ?
+            "no joints defined — using MoveToPose action" :
+            "defined in YAML — publishing joint trajectories");
     }
     RCLCPP_INFO(get_logger(), "Loaded %zu pose parameters from rosparam", pose_mappings.size());
   }
@@ -625,6 +685,65 @@ void SOBITSTeleop::robot_tf_static_callback(const tf2_msgs::msg::TFMessage::Shar
 }
 
 
+bool SOBITSTeleop::send_pose(const PoseMap & pose_map)
+{
+  // YAML-defined pose: publish straight to the controllers, no action server.
+  if (!pose_map.joint_groups.empty()) {
+    for (const auto & pg : pose_map.joint_groups) {
+      auto it = joint_pub.find(pg.joint_trajectory_topic);
+      if (it == joint_pub.end()) {continue;}
+
+      trajectory_msgs::msg::JointTrajectory traj;
+      traj.header.stamp = rclcpp::Time(0, 0, RCL_ROS_TIME);
+      traj.joint_names = pg.joint_names;
+
+      trajectory_msgs::msg::JointTrajectoryPoint pt;
+      pt.positions = pg.positions;
+      pt.velocities.assign(pg.positions.size(), 0.0);
+      pt.time_from_start = rclcpp::Duration::from_seconds(pose_map.time_from_start);
+      traj.points.push_back(pt);
+
+      it->second->publish(traj);
+    }
+    RCLCPP_INFO(get_logger(), "Sending pose '%s' over %zu joint group(s), %.1f s",
+      pose_map.pose_name.c_str(), pose_map.joint_groups.size(), pose_map.time_from_start);
+    return true;
+  }
+
+  if (!move_to_pose_client->action_server_is_ready()) {
+    RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 3000,
+      "move_to_pose action server not ready — skipping pose '%s'", pose_map.pose_name.c_str());
+    return false;
+  }
+
+  auto goal_msg = sobits_interfaces::action::MoveToPose::Goal();
+  goal_msg.pose_name = pose_map.pose_name;
+  goal_msg.time_allowance.sec = 10;
+
+  auto send_goal_options =
+    rclcpp_action::Client<sobits_interfaces::action::MoveToPose>::SendGoalOptions();
+  send_goal_options.result_callback = [this,
+      pose_name = pose_map.pose_name](const auto & result) {
+      switch (result.code) {
+        case rclcpp_action::ResultCode::SUCCEEDED:
+          RCLCPP_INFO(get_logger(), "Pose '%s' succeeded", pose_name.c_str());
+          break;
+        case rclcpp_action::ResultCode::ABORTED:
+          RCLCPP_ERROR(get_logger(), "Pose '%s' aborted", pose_name.c_str());
+          break;
+        case rclcpp_action::ResultCode::CANCELED:
+          RCLCPP_WARN(get_logger(), "Pose '%s' canceled", pose_name.c_str());
+          break;
+        default:
+          RCLCPP_ERROR(get_logger(), "Unknown result code for pose '%s'", pose_name.c_str());
+          break;
+      }
+    };
+  move_to_pose_client->async_send_goal(goal_msg, send_goal_options);
+  RCLCPP_INFO(get_logger(), "Sending pose: %s", pose_map.pose_name.c_str());
+  return true;
+}
+
 void SOBITSTeleop::teleop()
 {
   if (!joy_received) {return;}
@@ -696,37 +815,7 @@ void SOBITSTeleop::teleop()
 
     if (!button_just_pressed) {continue;}
 
-    if (!move_to_pose_client->action_server_is_ready()) {
-      RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 3000,
-        "move_to_pose action server not ready — skipping pose '%s'", pose_map.pose_name.c_str());
-      continue;
-    }
-
-    auto goal_msg = sobits_interfaces::action::MoveToPose::Goal();
-    goal_msg.pose_name = pose_map.pose_name;
-    goal_msg.time_allowance.sec = 10;
-
-    auto send_goal_options =
-      rclcpp_action::Client<sobits_interfaces::action::MoveToPose>::SendGoalOptions();
-    send_goal_options.result_callback = [this,
-        pose_name = pose_map.pose_name](const auto & result) {
-        switch (result.code) {
-          case rclcpp_action::ResultCode::SUCCEEDED:
-            RCLCPP_INFO(get_logger(), "Pose '%s' succeeded", pose_name.c_str());
-            break;
-          case rclcpp_action::ResultCode::ABORTED:
-            RCLCPP_ERROR(get_logger(), "Pose '%s' aborted", pose_name.c_str());
-            break;
-          case rclcpp_action::ResultCode::CANCELED:
-            RCLCPP_WARN(get_logger(), "Pose '%s' canceled", pose_name.c_str());
-            break;
-          default:
-            RCLCPP_ERROR(get_logger(), "Unknown result code for pose '%s'", pose_name.c_str());
-            break;
-        }
-      };
-    move_to_pose_client->async_send_goal(goal_msg, send_goal_options);
-    RCLCPP_INFO(get_logger(), "Sending pose: %s", pose_map.pose_name.c_str());
+    send_pose(pose_map);
   }
 
   // Skip entirely if cmd_vel isn't configured — avoids flooding zero twists.

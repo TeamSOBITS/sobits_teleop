@@ -49,11 +49,24 @@ struct JointMap
   double max_pos = 0.0;
 };
 
+// One target group inside a locally-defined pose: joints + positions published
+// together on one trajectory topic.
+struct PoseJointGroup
+{
+  std::string joint_trajectory_topic;
+  std::vector<std::string> joint_names;
+  std::vector<double> positions;
+};
+
 struct PoseMap
 {
   std::string pose_name;
   int trigger = -1;   // optional modifier button; -1 = no modifier required
   int button = -1;
+  // Non-empty = pose is defined in YAML and published as joint trajectories;
+  // empty = fall back to the MoveToPose action (pose resolved server-side).
+  std::vector<PoseJointGroup> joint_groups;
+  double time_from_start = 3.0;  // seconds to reach the pose
 };
 
 struct CmdVelMap
@@ -180,6 +193,9 @@ private:
   void teleop();
   // Clamp value into joint's URDF limits; false (no clamp) if limits unknown.
   bool clamp_to_limits_checked(const std::string & joint, double & value);
+
+  // Send one configured pose. Shared by the joy buttons and the reset service.
+  bool send_pose(const PoseMap & pose_map);
   // Publish the tracking enable/disable state for one arm's planning group.
   void publish_arm_tracking(const std::string & arm, bool enabled);
   // True if any arm mapping's own enable axis is currently held.
