@@ -392,10 +392,30 @@ last healthy EE pose, which only helps before the arm parks *on* the singular
 pose. If a halt outlives `escape_timeout_s` the override is released and the
 operator is told to re-latch, so a persistent halt cannot pin the arm forever.
 
-Per-arm frames and topics default by convention from the arm name (`arm_right` →
-`right_target_link`, `hand_right_end_effector_link`,
-`arm_right_shoulder_tilt_link`, ...); override any key under
-`servo_bridge.{arm_name}.*` if your robot names differ.
+##### Per-arm naming
+
+Per-arm frames and topics are derived from the arm name using templates, so an
+arm that follows the convention needs no per-arm config. `{arm}` expands to the
+full name (`arm_right`) and `{side}` to the name without the `arm_` prefix
+(`right`):
+
+```yaml
+servo_bridge:
+  naming:
+    target_frame_name:       "{side}_target_link"
+    end_effector_frame_name: "hand_{side}_end_effector_link"
+    reach_origin_frame:      "{arm}_shoulder_tilt_link"
+    servo_node:              "servo_{arm}"
+    enable_topic:            "{arm}/moveit_track_enabled"
+    joint_traj_topic:        "{arm}_position_controller/joint_trajectory"
+    status_topic:            "{servo_node}/status"
+```
+
+If your robot names its links differently, edit the templates — no rebuild is
+needed. `status_topic` expands `{servo_node}` from the resolved node name, so
+it follows a `servo_node` override. A single arm can still be handled by
+setting the key directly under `servo_bridge.{arm_name}.*`, which wins over
+the template.
 
 The servo backend requires `ros-$ROS_DISTRO-moveit-servo` (installed by
 `install.sh`) and a running `move_group` under `/{robot_name}` — the launcher

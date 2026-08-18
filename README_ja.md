@@ -388,10 +388,28 @@ servo_bridge:
 ハルトが`escape_timeout_s`を超えて続く場合は上書きを解除して握り直しを促すため，
 復帰不能なハルトがアームを永久に拘束することはありません．
 
-アームごとのフレームやトピックはアーム名から
-規約で導出されます（`arm_right` → `right_target_link`、
-`hand_right_end_effector_link`、`arm_right_shoulder_tilt_link`など）．
-ロボットの命名が異なる場合は`servo_bridge.{arm_name}.*`のキーで上書きしてください．
+##### アームごとの命名
+
+アームごとのフレームやトピックはテンプレートからアーム名を使って導出されるため，
+規約に従うアームは個別の設定を一切必要としません．`{arm}`はアーム名そのもの
+（`arm_right`），`{side}`は`arm_`接頭辞を除いた名前（`right`）に展開されます．
+
+```yaml
+servo_bridge:
+  naming:
+    target_frame_name:       "{side}_target_link"
+    end_effector_frame_name: "hand_{side}_end_effector_link"
+    reach_origin_frame:      "{arm}_shoulder_tilt_link"
+    servo_node:              "servo_{arm}"
+    enable_topic:            "{arm}/moveit_track_enabled"
+    joint_traj_topic:        "{arm}_position_controller/joint_trajectory"
+    status_topic:            "{servo_node}/status"
+```
+
+ロボットのリンク名が異なる場合はテンプレートを書き換えてください．再ビルドは
+不要です．`status_topic`は解決後のノード名から`{servo_node}`を展開するため，
+`servo_node`を上書きすればそれに追従します．特定のアームだけ変えたい場合は
+`servo_bridge.{arm_name}.*`に直接キーを書けば，テンプレートより優先されます．
 
 Servoバックエンドには`ros-$ROS_DISTRO-moveit-servo`（`install.sh`でインストール）と，
 `/{robot_name}`名前空間で動作中の`move_group`が必要です — launcherが起動時に
