@@ -43,7 +43,7 @@ class TestNodeStartup(unittest.TestCase):
     def test_loaded_quest_params(self, proc_output):
         # rclcpp logging (RCLCPP_INFO) goes to stderr, not stdout.
         proc_output.assertWaitFor(
-            'Loaded 1 quest arm and 1 quest hand parameters',
+            'Loaded 2 quest arm and 2 quest hand parameters',
             timeout=8.0, stream='stderr')
 
     def test_created_arm_track_publisher(self, proc_output):
