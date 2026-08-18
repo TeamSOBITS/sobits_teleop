@@ -311,6 +311,8 @@ private:
   std::map<std::string, QuestArmMap> quest_arm_mappings;
   std::map<std::string, QuestHandMap> quest_hand_mappings;
   std::map<std::string, double> joint_pos;
+  // Frame all Quest tracking resolves in; must be fixed to the arm's root.
+  std::string base_frame = "base_footprint";
   double teleop_rate_hz = 100.0;
   double tick_period() const {return 1.0 / teleop_rate_hz;}
   // Trajectory horizon, always two ticks: one tick stalls the controller on any

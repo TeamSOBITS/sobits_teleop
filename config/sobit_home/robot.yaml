@@ -4,6 +4,8 @@
     # is sampled and joint/pose/cmd_vel commands are published.
     teleop_rate_hz: 100.0
     robot_topic_name:
+      # Frame Quest tracking resolves in; must be fixed to the arm's root.
+      base_frame: base_footprint
       joint_states_topic: joint_states
       joint_trajectory_topic:
         head: head_position_controller/joint_trajectory

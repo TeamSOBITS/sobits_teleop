@@ -247,7 +247,7 @@ void SOBITSTeleop::process_arm(
   bool ee_ok = false;
   try {
     geometry_msgs::msg::TransformStamped ee_msg = tf_buffer->lookupTransform(
-      "base_footprint",
+      base_frame,
       m.end_effector_frame_name,
         tf2::TimePointZero,
         tf2::Duration(0)
@@ -355,7 +355,7 @@ void SOBITSTeleop::process_arm(
   // Publish target under base_footprint (visualization — stays fixed in robot space).
   geometry_msgs::msg::TransformStamped target_msg;
   target_msg.header.stamp = this->now();
-  target_msg.header.frame_id = "base_footprint";
+  target_msg.header.frame_id = base_frame;
   target_msg.child_frame_id = m.target_frame_name;
   target_msg.transform = tf2::toMsg(T_pub);
   tf_broadcaster->sendTransform(target_msg);
@@ -382,6 +382,7 @@ void SOBITSTeleop::process_arm(
 void SOBITSTeleop::load_parameters()
 {
   get_param("robot_topic_name.joint_states_topic", joint_states_topic);
+  get_param("robot_topic_name.base_frame", base_frame);
 
   // robot.yaml lists every group's topic; a device.yaml only uses a subset.
   mark_visited("robot_topic_name.joint_trajectory_topic");
@@ -885,7 +886,7 @@ bool SOBITSTeleop::lookup_quest_frame(
   tf2::Transform * out_base)
 {
   try {
-    auto ts = tf_buffer->lookupTransform("base_footprint", quest_frame, tf2::TimePointZero,
+    auto ts = tf_buffer->lookupTransform(base_frame, quest_frame, tf2::TimePointZero,
       tf2::Duration(0));
     // Reject stamps far from the wall clock: TimePointZero serves cached transforms
     // forever, so a disconnected headset's last pose would look like live input.
@@ -1188,7 +1189,7 @@ void SOBITSTeleop::teleop()
         // Re-broadcast under base_footprint (RViz visualization).
         geometry_msgs::msg::TransformStamped hmd_msg;
         hmd_msg.header.stamp = this->now();
-        hmd_msg.header.frame_id = "base_footprint";
+        hmd_msg.header.frame_id = base_frame;
         hmd_msg.child_frame_id = "hmd_link";
         hmd_msg.transform = tf2::toMsg(T_base_hmd);
         tf_broadcaster->sendTransform(hmd_msg);
@@ -1234,7 +1235,7 @@ void SOBITSTeleop::teleop()
       // Re-broadcast under base_footprint (RViz visualization).
       geometry_msgs::msg::TransformStamped c_msg;
       c_msg.header.stamp = this->now();
-      c_msg.header.frame_id = "base_footprint";
+      c_msg.header.frame_id = base_frame;
       c_msg.child_frame_id = st.controller_echo_frame_name;
       c_msg.transform = tf2::toMsg(T_base_ctrl);
       tf_broadcaster->sendTransform(c_msg);
