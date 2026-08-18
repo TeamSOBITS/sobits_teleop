@@ -22,6 +22,21 @@ ServoTargetBridge::ServoTargetBridge(const rclcpp::NodeOptions & options)
 
   pose_rate_hz_ = declare_param("servo_bridge.pose_rate_hz", 100.0);
 
+  // Servo interpolates stale targets if we stream slower than it consumes, and
+  // halts entirely if a command does not arrive within incoming_command_timeout.
+  const double servo_period = declare_param("moveit_servo.publish_period", 0.0);
+  const double servo_timeout = declare_param("moveit_servo.incoming_command_timeout", 0.0);
+  if (servo_period > 0.0 && pose_rate_hz_ < 1.0 / servo_period) {
+    RCLCPP_WARN(get_logger(),
+      "servo_bridge.pose_rate_hz=%.1f is below servo's %.1f Hz (publish_period=%.3f) — "
+      "servo will reuse stale targets", pose_rate_hz_, 1.0 / servo_period, servo_period);
+  }
+  if (servo_timeout > 0.0 && pose_rate_hz_ < 1.0 / servo_timeout) {
+    RCLCPP_ERROR(get_logger(),
+      "servo_bridge.pose_rate_hz=%.1f is slower than incoming_command_timeout=%.2f s — "
+      "servo will halt between commands", pose_rate_hz_, servo_timeout);
+  }
+
   auto arm_names = declare_param(
     "servo_bridge.arms", std::vector<std::string>{"arm_right", "arm_left"});
 
