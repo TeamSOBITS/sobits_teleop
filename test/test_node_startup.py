@@ -1,4 +1,5 @@
 import os
+import time
 import unittest
 
 from ament_index_python.packages import get_package_prefix, get_package_share_directory
@@ -8,6 +9,8 @@ import launch_testing.actions
 import launch_testing.asserts
 import launch_testing.markers
 import pytest
+import rclpy
+import yaml
 
 
 @pytest.mark.launch_test
@@ -38,23 +41,41 @@ def generate_test_description():
     ]), {'sobits_teleop_process': sobits_teleop_process}
 
 
+def _quest_arm_groups():
+    """Arm groups quest.yaml declares, so the test tracks the config."""
+    share_dir = get_package_share_directory('sobits_teleop')
+    with open(os.path.join(share_dir, 'config', 'sobit_home', 'quest.yaml')) as f:
+        params = yaml.safe_load(f)['/**']['ros__parameters']
+    return [g for g in params['quest_control']['groups'] if g.startswith('arm_')]
+
+
 class TestNodeStartup(unittest.TestCase):
 
-    def test_loaded_quest_params(self, proc_output):
-        # rclcpp logging (RCLCPP_INFO) goes to stderr, not stdout.
-        proc_output.assertWaitFor(
-            'Loaded 2 quest arm and 2 quest hand parameters',
-            timeout=8.0, stream='stderr')
+    def test_publishes_track_enable_per_configured_arm(self, proc_output):
+        """Assert on the graph, not log text: one enable topic per configured arm."""
+        expected = {f'/{g}/moveit_track_enabled' for g in _quest_arm_groups()}
+        self.assertTrue(expected, 'quest.yaml declares no arm groups')
 
-    def test_created_arm_track_publisher(self, proc_output):
-        proc_output.assertWaitFor(
-            "Created arm track publisher for 'arm_left'",
-            timeout=8.0, stream='stderr')
-        # Let the constructor finish (hand pose client, timers) before SIGINT — an
-        # early signal races node construction and aborts with RCLError.
-        proc_output.assertWaitFor(
-            "Created hand pose client for 'hand_left'",
-            timeout=8.0, stream='stderr')
+        # Must match the node's domain, set in generate_test_description.
+        os.environ['ROS_DOMAIN_ID'] = '42'
+        rclpy.init()
+        try:
+            probe = rclpy.create_node('startup_probe')
+            deadline = time.monotonic() + 15.0
+            found = set()
+            while time.monotonic() < deadline and not expected <= found:
+                rclpy.spin_once(probe, timeout_sec=0.2)
+                found = {name for name, _ in probe.get_topic_names_and_types()}
+            probe.destroy_node()
+        finally:
+            rclpy.shutdown()
+
+        self.assertLessEqual(
+            expected, found, f'missing enable topics: {sorted(expected - found)}')
+
+    def test_constructor_completes(self, proc_output):
+        """Last unconditional constructor line; SIGINT before it aborts with RCLError."""
+        proc_output.assertWaitFor('Config:', timeout=15.0, stream='stderr')
 
 
 @launch_testing.post_shutdown_test()
