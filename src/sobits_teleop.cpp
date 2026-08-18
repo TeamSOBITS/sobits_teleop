@@ -722,8 +722,6 @@ void SOBITSTeleop::warn_unknown_parameters()
     "control_joints.", "control_poses.", "control_velocity.",
     "quest_control.", "robot_topic_name."
   };
-  // Read by arm_backend_servo.launch.py to pick the servo'd arms, not by us.
-  static const char * kLauncherKeys[] = {"controllers", "controller", "arm"};
 
   const auto & overrides = this->get_node_parameters_interface()->get_parameter_overrides();
   for (const auto & [name, value] : overrides) {
@@ -734,14 +732,6 @@ void SOBITSTeleop::warn_unknown_parameters()
     }
     if (!matches_prefix) {continue;}
     if (read_keys_.count(name)) {continue;}
-
-    const auto leaf_dot = name.find_last_of('.');
-    const std::string leaf = (leaf_dot == std::string::npos) ? name : name.substr(leaf_dot + 1);
-    bool launcher_key = false;
-    for (const char * key : kLauncherKeys) {
-      if (leaf == key) {launcher_key = true; break;}
-    }
-    if (launcher_key) {continue;}
 
     bool under_visited = false;
     for (const auto & prefix : visited_prefixes_) {
