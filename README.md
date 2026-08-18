@@ -467,11 +467,11 @@ SRDF link is the end-effector, and `move_group` running under
 
 ### Arm Scale Calibration (Meta Quest)
 
-The `scale` parameter in `quest.yaml` maps the human arm reach to the robot arm reach. Run `arm_scale_calibrator` once per operator to compute the correct value automatically.
+The `motion_scale` parameter in `quest.yaml` maps the human arm reach to the robot arm reach. It is named apart from `moveit_servo.scale`, which is servo's own EE velocity cap and unrelated. Run `arm_scale_calibrator` once per operator to compute the correct value automatically.
 
 #### When to run
 
-Run once per operator, or whenever the robot URDF arm reach changes. The result is pasted into `config/{robot_name}/quest.yaml` under `arm_right.scale` and `arm_left.scale`.
+Run once per operator, or whenever the robot URDF arm reach changes. The result is pasted into `config/{robot_name}/quest.yaml` under `arm_right.motion_scale` and `arm_left.motion_scale`.
 
 #### Configuration
 
@@ -526,19 +526,19 @@ ros2 run sobits_teleop arm_scale_calibrator --ros-args \
   Human arm reach used   : 0.9150 m
   Robot arm reach        : 1.2926 m
 
-  Recommended scale = 1.2926 / 0.9150 = 1.4126
+  Recommended motion_scale = 1.2926 / 0.9150 = 1.4126
 
 Update config/sobit_home/quest.yaml:
-    scale: 1.4126   # (both right and left)
+    motion_scale: 1.4126   # (both right and left)
 ```
 
 Paste the value into `quest.yaml`:
 
 ```yaml
 arm_right:
-  scale: 1.4126
+  motion_scale: 1.4126
 arm_left:
-  scale: 1.4126
+  motion_scale: 1.4126
 ```
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>

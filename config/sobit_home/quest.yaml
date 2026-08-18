@@ -81,14 +81,14 @@
         horizontal: "head_pan_joint"
         vertical_sign: 1
         horizontal_sign: 1
-        scale: 1.0
+        motion_scale: 1.0
         body_lift: "body_lift_joint"
 
       arm_right:
         arm: "arm_right"       # MoveIt planning group name
         controller: "right"
         enable_axis: 7        # right grip
-        scale: 2.0            # anatomical ratio is 1.41; raised to 2.0 for reach
+        motion_scale: 2.0     # anatomical ratio is 1.41; raised to 2.0 for reach
         end_effector_frame_name: "hand_right_end_effector_link"
         target_frame_name: "right_target_link"
         proximity_threshold: 0.0        # m; 0 = latch immediately
@@ -142,7 +142,7 @@
         arm: "arm_left"        # MoveIt planning group name
         controller: "left"
         enable_axis: 7        # right grip
-        scale: 2.0            # anatomical ratio is 1.41; raised to 2.0 for reach
+        motion_scale: 2.0     # anatomical ratio is 1.41; raised to 2.0 for reach
         end_effector_frame_name: "hand_left_end_effector_link"
         target_frame_name: "left_target_link"
         proximity_threshold: 0.0        # m; 0 = latch immediately

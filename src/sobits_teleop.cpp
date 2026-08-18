@@ -252,7 +252,7 @@ void SOBITSTeleop::process_arm(
   {
     tf2::Vector3 hmd_pos_odom = current_tf_hmd_odom.getOrigin();
     tf2::Vector3 delta_odom = st.current_tf_odom.getOrigin() - hmd_pos_odom;
-    T_target.setOrigin(hmd_pos_odom + delta_odom * m.scale);
+    T_target.setOrigin(hmd_pos_odom + delta_odom * m.motion_scale);
     T_target.setRotation(st.current_tf_odom.getRotation());
   }
 
@@ -311,7 +311,7 @@ void SOBITSTeleop::process_arm(
       (this->now() - st.latch_time).seconds() / kLatchSoftStartSec, 0.0, 1.0);
     const tf2::Vector3 dpos =
       (st.current_tf_odom.getOrigin() - st.T_ctrl_latch.getOrigin()) *
-      static_cast<double>(m.scale) * ramp;
+      static_cast<double>(m.motion_scale) * ramp;
     T_pub.setOrigin(st.T_ee_latch.getOrigin() + dpos);
     tf2::Quaternion q_delta =
       st.current_tf_odom.getRotation() * st.T_ctrl_latch.getRotation().inverse();
@@ -511,7 +511,7 @@ void SOBITSTeleop::load_parameters()
         this->get_parameter("quest_control." + group + ".enable_axis", qhm.head_mode);
         this->get_parameter("quest_control." + group + ".vertical_sign", qhm.vertical_sign);
         this->get_parameter("quest_control." + group + ".horizontal_sign", qhm.horizontal_sign);
-        this->get_parameter("quest_control." + group + ".scale", qhm.scale);
+        this->get_parameter("quest_control." + group + ".motion_scale", qhm.motion_scale);
         this->get_parameter("robot_topic_name.joint_trajectory_topic." + group,
             qhm.head_joint_trajectory_topic);
         joint_pub[qhm.head_joint_trajectory_topic] = this->create_publisher<trajectory_msgs::msg::JointTrajectory>(
@@ -540,7 +540,7 @@ void SOBITSTeleop::load_parameters()
         this->get_parameter("quest_control." + group + ".end_effector_frame_name",
             am.end_effector_frame_name);
         this->get_parameter("quest_control." + group + ".target_frame_name", am.target_frame_name);
-        this->get_parameter("quest_control." + group + ".scale", am.scale);
+        this->get_parameter("quest_control." + group + ".motion_scale", am.motion_scale);
         this->get_parameter("quest_control." + group + ".enable_axis", am.enable_axis);
         this->get_parameter("robot_topic_name.joint_trajectory_topic." + group,
             am.arm_joint_trajectory_topic);
@@ -988,8 +988,8 @@ void SOBITSTeleop::process_head(bool head_tf_ok, const tf2::Transform & current_
       tf2::Matrix3x3(T_delta.getRotation()).getRPY(roll, pitch, yaw);
       (void)roll; // only pitch/yaw drive head tracking
 
-      double pan_target = last_pan + qhm.scale * yaw * qhm.horizontal_sign;
-      double tilt_target = last_tilt + qhm.scale * pitch * -qhm.vertical_sign;
+      double pan_target = last_pan + qhm.motion_scale * yaw * qhm.horizontal_sign;
+      double tilt_target = last_tilt + qhm.motion_scale * pitch * -qhm.vertical_sign;
 
     // RCLCPP_INFO(this->get_logger(), "pub_joint_pos %.2f, %.2f", pan_target, tilt_target);
       if (clamp_to_limits_checked(qhm.horizontal, pan_target) &&
@@ -1015,7 +1015,7 @@ void SOBITSTeleop::process_head(bool head_tf_ok, const tf2::Transform & current_
 
       if (!qhm.body_lift.empty()) {
         double dz = T_delta.getOrigin().z();
-        double body_lift_target = last_body_lift + qhm.scale * dz;
+        double body_lift_target = last_body_lift + qhm.motion_scale * dz;
         if (clamp_to_limits_checked(qhm.body_lift, body_lift_target)) {
           trajectory_msgs::msg::JointTrajectory traj;
           traj.joint_names = {qhm.body_lift};

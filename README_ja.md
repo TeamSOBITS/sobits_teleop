@@ -460,11 +460,11 @@ QuestのTFが途切れている間でも離せば必ず追従が停止します�
 
 ### アームスケールキャリブレーション（Meta Quest）
 
-`quest.yaml`の`scale`パラメータは人間のアームリーチとロボットのアームリーチを対応付けます．`arm_scale_calibrator`ツールを使うと、適切な`scale`値を自動的に計算できます．
+`quest.yaml`の`motion_scale`パラメータは人間のアームリーチとロボットのアームリーチを対応付けます．servo自身のEE速度上限である`moveit_servo.scale`とは別物のため，名前を分けています．`arm_scale_calibrator`ツールを使うと，適切な`motion_scale`値を自動的に計算できます．
 
 #### 実行タイミング
 
-オペレータごとに一度実行する（ロボットURDFのアームリーチが変わった場合も再実行）．結果を`config/{robot_name}/quest.yaml`の`arm_right.scale`と`arm_left.scale`に設定する．
+オペレータごとに一度実行する（ロボットURDFのアームリーチが変わった場合も再実行）．結果を`config/{robot_name}/quest.yaml`の`arm_right.motion_scale`と`arm_left.motion_scale`に設定する．
 
 #### 設定ファイル
 
@@ -519,19 +519,19 @@ ros2 run sobits_teleop arm_scale_calibrator --ros-args \
   Human arm reach used   : 0.9150 m
   Robot arm reach        : 1.2926 m
 
-  Recommended scale = 1.2926 / 0.9150 = 1.4126
+  Recommended motion_scale = 1.2926 / 0.9150 = 1.4126
 
 Update config/sobit_home/quest.yaml:
-    scale: 1.4126   # (both right and left)
+    motion_scale: 1.4126   # (both right and left)
 ```
 
 表示された`scale`値を`quest.yaml`に設定する：
 
 ```yaml
 arm_right:
-  scale: 1.4126
+  motion_scale: 1.4126
 arm_left:
-  scale: 1.4126
+  motion_scale: 1.4126
 ```
 
 <p align="right">(<a href="#readme-top">上に戻る</a>)</p>

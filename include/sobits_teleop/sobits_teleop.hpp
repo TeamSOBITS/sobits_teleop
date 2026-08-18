@@ -97,7 +97,7 @@ struct QuestHeadMap
   int head_mode;
   int vertical_sign;
   int horizontal_sign;
-  float scale;
+  float motion_scale;
 };
 
 // Per-joint adaptive gripper target (close and open positions).
@@ -119,7 +119,7 @@ struct QuestArmMap
   std::string target_frame_name;
   std::string arm_joint_trajectory_topic;
   int enable_axis = -1;
-  float scale = 1.0f;
+  float motion_scale = 1.0f;
   // Proximity thresholds: arm only latches when controller is within these
   // distances of the robot end-effector. Set to <=0 to disable the check.
   double proximity_threshold = 0.15;       // metres (position)

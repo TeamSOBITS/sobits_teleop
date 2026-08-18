@@ -177,9 +177,9 @@ void ArmScaleCalibrator::compute_and_print()
     "  Left  max displacement : %.4f m\n"
     "  Human arm reach used   : %.4f m\n"
     "  Robot arm reach        : %.4f m\n\n"
-    "  Recommended scale = %.4f / %.4f = %.4f\n\n"
+    "  Recommended motion_scale = %.4f / %.4f = %.4f\n\n"
     "Update config/sobit_home/quest.yaml:\n"
-    "    scale: %.4f   # (both right and left)",
+    "    motion_scale: %.4f   # (both right and left)",
     right_samples_.size(),
     right_max, left_max,
     human_reach,
