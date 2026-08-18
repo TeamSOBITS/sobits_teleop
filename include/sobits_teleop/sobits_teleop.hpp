@@ -125,7 +125,11 @@ struct AdaptiveJointTarget
 struct QuestArmMap
 {
   std::string group;        // planning group, e.g. "arm_left"
+  // Identifies the physical VR controller and keys the per-side latch state.
   std::string controller;   // "left" or "right"
+  // TF the arm follows. Defaults from controller if unset, for older configs.
+  std::string controller_frame_name;
+  std::string controller_echo_frame_name;
   std::string end_effector_frame_name;
   std::string target_frame_name;
   std::string arm_joint_trajectory_topic;
@@ -141,7 +145,6 @@ struct QuestArmMap
 struct QuestHandMap
 {
   std::string group;        // e.g. "hand_left"
-  std::string controller;   // "left" or "right"
   int pose_button = -1;    // button to toggle open/close hand pose
   std::string pose_open;   // pose name sent when toggling open
   std::string pose_close;  // pose name sent when toggling close
@@ -176,6 +179,9 @@ struct QuestHandMap
 // Per-controller-side arm tracking state (one entry per "left"/"right" etc.).
 struct ArmTrackState
 {
+  // Copied from the arm map so the TF loop never rebuilds frame names.
+  std::string controller_frame_name;
+  std::string controller_echo_frame_name;
   bool latched = false;
   bool just_latched = false;
   bool have_pub_prev = false;

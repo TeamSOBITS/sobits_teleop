@@ -575,15 +575,28 @@ void SOBITSTeleop::load_parameters()
               am.proximity_angle_threshold);
         }
 
+        // Frames default from the controller side so older configs still work.
+        get_param("quest_control." + group + ".controller_frame_name",
+            am.controller_frame_name);
+        get_param("quest_control." + group + ".controller_echo_frame_name",
+            am.controller_echo_frame_name);
+        if (am.controller_frame_name.empty()) {
+          am.controller_frame_name = am.controller + "_controller_odom";
+        }
+        if (am.controller_echo_frame_name.empty()) {
+          am.controller_echo_frame_name = am.controller + "_controller_link";
+        }
+
         joint_pub[am.arm_joint_trajectory_topic] = this->create_publisher<trajectory_msgs::msg::JointTrajectory>(
           am.arm_joint_trajectory_topic, 10);
         quest_arm_mappings[group] = am;
         // One tracking-state entry per distinct controller side.
-        arm_track_.emplace(am.controller, ArmTrackState{});
+        auto & st = arm_track_[am.controller];
+        st.controller_frame_name = am.controller_frame_name;
+        st.controller_echo_frame_name = am.controller_echo_frame_name;
       } else if (is_hand) {
         QuestHandMap hm{};
         hm.group = group;
-        get_param("quest_control." + group + ".controller", hm.controller);
         get_param("quest_control." + group + ".speed", hm.speed);
 
         if (has_param("quest_control." + group + ".single_joint.axis")) {
@@ -1204,12 +1217,12 @@ void SOBITSTeleop::teleop()
       st.tf_ok = false;
       if (!base_odom_ok) {continue;}
       tf2::Transform T_ctrl, T_base_ctrl;
-      if (!lookup_quest_frame(side + "_controller_odom", T_ctrl, &T_base_ctrl)) {continue;}
+      if (!lookup_quest_frame(st.controller_frame_name, T_ctrl, &T_base_ctrl)) {continue;}
       geometry_msgs::msg::Transform t_msg = tf2::toMsg(T_ctrl);
       if (!transform_valid(t_msg)) {
         RCLCPP_WARN_THROTTLE(this->get_logger(), *get_clock(), 2000,
-          "%s_controller_odom has invalid (NaN/zero) transform — waiting for controller tracking",
-          side.c_str());
+          "%s has invalid (NaN/zero) transform — waiting for controller tracking",
+          st.controller_frame_name.c_str());
         continue;
       }
       st.current_tf = T_ctrl;
@@ -1219,7 +1232,7 @@ void SOBITSTeleop::teleop()
       geometry_msgs::msg::TransformStamped c_msg;
       c_msg.header.stamp = this->now();
       c_msg.header.frame_id = "base_footprint";
-      c_msg.child_frame_id = side + "_controller_link";
+      c_msg.child_frame_id = st.controller_echo_frame_name;
       c_msg.transform = tf2::toMsg(T_base_ctrl);
       tf_broadcaster->sendTransform(c_msg);
     }

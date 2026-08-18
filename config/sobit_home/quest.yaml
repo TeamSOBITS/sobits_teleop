@@ -95,7 +95,9 @@
 
       arm_right:
         arm: "arm_right"       # MoveIt planning group name
-        controller: "right"
+        controller: "right"     # which VR controller; keys the per-side latch
+        controller_frame_name: "right_controller_odom"
+        controller_echo_frame_name: "right_controller_link"
         enable_axis: 7        # right grip
         motion_scale: 2.0     # anatomical ratio is 1.41; raised to 2.0 for reach
         end_effector_frame_name: "hand_right_end_effector_link"
@@ -104,7 +106,6 @@
         proximity_angle_threshold: 0.0  # rad; 0 = latch immediately
 
       hand_right:
-        controller: "right"
         pose_button: 6        # B button: toggle open/grasp pose
         pose_open: "two_fingers_open_pose"
         pose_close: "two_fingers_grasp_pose"
@@ -149,7 +150,9 @@
 
       arm_left:
         arm: "arm_left"        # MoveIt planning group name
-        controller: "left"
+        controller: "left"     # which VR controller; keys the per-side latch
+        controller_frame_name: "left_controller_odom"
+        controller_echo_frame_name: "left_controller_link"
         enable_axis: 7        # right grip
         motion_scale: 2.0     # anatomical ratio is 1.41; raised to 2.0 for reach
         end_effector_frame_name: "hand_left_end_effector_link"
@@ -158,7 +161,6 @@
         proximity_angle_threshold: 0.0  # rad; 0 = latch immediately
 
       hand_left:
-        controller: "left"
         pose_button: 2        # toggle open/grasp pose (NOT X — X is button 0; verify via /joy)
         pose_open: "two_fingers_open_pose"
         pose_close: "two_fingers_grasp_pose"
