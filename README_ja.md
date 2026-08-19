@@ -149,6 +149,11 @@ configは同梱済みで，新しいロボットへの移植はこのディレ�
         arm_left:  arm_left_position_controller/joint_trajectory
         arm_right: arm_right_position_controller/joint_trajectory
       cmd_vel_topic: cmd_vel
+
+    # 台車の上限 [m/s, rad/s]．control_velocityのscaleはこれに対する割合．
+    base_max_speed:
+      linear:  1.0
+      angular: 1.0
 ```
 
 </details>
@@ -207,11 +212,11 @@ configは同梱済みで，新しいロボットへの移植はこのディレ�
       linear:
         x_axis:     1
         y_axis:     0
-        scale:      0.1
-        fast_scale: 0.2
+        scale:      0.2      # base_max_speed.linear に対する割合
+        fast_scale: 0.6
       angular:
         axis:       3
-        scale:      0.3
+        scale:      0.2      # base_max_speed.angular に対する割合
         fast_scale: 0.6
 ```
 

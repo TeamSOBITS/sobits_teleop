@@ -123,6 +123,9 @@ struct CmdVelMap
   int linear_y_axis = -1;
   int angular_axis = -1;
   int axis_sign = 1;
+  // scale/fast_scale are fractions of max_speed, which is the robot's limit.
+  double linear_max = 0.0;
+  double angular_max = 0.0;
   double linear_scale = 0.0;
   double angular_scale = 0.0;
   double fast_linear_scale = 0.0;

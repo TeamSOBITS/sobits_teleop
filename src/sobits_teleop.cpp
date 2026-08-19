@@ -631,6 +631,9 @@ void SOBITSTeleop::load_parameters()
     get_param("control_velocity.enable_axis", cvm.axis);
     get_param("control_velocity.fast_enable_axis", cvm.fast_axis);
     get_param("control_velocity.axis_sign", cvm.axis_sign);
+    // Robot limits live in robot.yaml; the scales below are fractions of them.
+    get_param("base_max_speed.linear", cvm.linear_max);
+    get_param("base_max_speed.angular", cvm.angular_max);
     get_param("control_velocity.linear.x_axis", cvm.linear_x_axis);
     get_param("control_velocity.linear.y_axis", cvm.linear_y_axis);
     get_param("control_velocity.linear.scale", cvm.linear_scale);
@@ -854,7 +857,7 @@ void SOBITSTeleop::warn_unknown_parameters()
 {
   static const char * kPrefixes[] = {
     "control_joints.", "control_poses.", "control_velocity.",
-    "control_target.", "robot_topic_name."
+    "control_target.", "robot_topic_name.", "base_max_speed."
   };
 
   const auto & overrides = this->get_node_parameters_interface()->get_parameter_overrides();
@@ -1213,8 +1216,10 @@ void SOBITSTeleop::process_cmd_vel()
     }
 
     if (cmd_vel_enabled) {
-      const double linear_scale = fast_mode ? cvm.fast_linear_scale : cvm.linear_scale;
-      const double angular_scale = fast_mode ? cvm.fast_angular_scale : cvm.angular_scale;
+      const double linear_scale =
+        cvm.linear_max * (fast_mode ? cvm.fast_linear_scale : cvm.linear_scale);
+      const double angular_scale =
+        cvm.angular_max * (fast_mode ? cvm.fast_angular_scale : cvm.angular_scale);
 
       if (cvm.linear_x_axis >= 0 &&
         cvm.linear_x_axis < static_cast<int>(latest_axes.size()))

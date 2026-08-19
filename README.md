@@ -152,6 +152,11 @@ robot-independent.
         arm_left:  arm_left_position_controller/joint_trajectory
         arm_right: arm_right_position_controller/joint_trajectory
       cmd_vel_topic: cmd_vel
+
+    # Base limits [m/s, rad/s]; control_velocity scales are fractions of these.
+    base_max_speed:
+      linear:  1.0
+      angular: 1.0
 ```
 
 </details>
@@ -210,11 +215,11 @@ robot-independent.
       linear:
         x_axis:     1
         y_axis:     0
-        scale:      0.1
-        fast_scale: 0.2
+        scale:      0.2      # fraction of base_max_speed.linear
+        fast_scale: 0.6
       angular:
         axis:       3
-        scale:      0.3
+        scale:      0.2      # fraction of base_max_speed.angular
         fast_scale: 0.6
 ```
 

@@ -125,9 +125,9 @@
       linear:
         x_axis: 4
         y_axis: 3
-        scale: 0.1
-        fast_scale: 0.2
+        scale: 0.2
+        fast_scale: 0.6
       angular:
         axis: 0
-        scale: 0.3
+        scale: 0.2
         fast_scale: 0.6

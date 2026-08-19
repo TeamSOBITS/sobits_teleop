@@ -6,11 +6,11 @@
       linear:
         x_axis: 1
         y_axis: 0
-        scale: 0.1
-        fast_scale: 0.2
+        scale: 0.2
+        fast_scale: 0.6
       angular:
         axis: 4
-        scale: 0.3
+        scale: 0.2
         fast_scale: 0.6
     control_poses:
       pose_action: move_to_pose

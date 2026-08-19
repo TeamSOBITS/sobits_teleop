@@ -1,5 +1,8 @@
 /**:
   ros__parameters:
+    base_max_speed:
+      linear: 1.0
+      angular: 1.0
     control_velocity:
       enable_button: 5
       fast_enable_button: 7
@@ -10,8 +13,8 @@
         x_axis: 1
         y_axis: 0
         scale: 0.2
-        fast_scale: 0.5
+        fast_scale: 0.6
       angular:
         axis: 3
-        scale: 0.3
+        scale: 0.2
         fast_scale: 0.6
