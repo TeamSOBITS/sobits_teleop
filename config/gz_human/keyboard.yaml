@@ -1,10 +1,10 @@
 /**:
   ros__parameters:
     control_velocity:
-      button: 6
-      fast_button: 7
-      axis: -1
-      fast_axis: -1
+      enable_button: 6
+      fast_enable_button: 7
+      enable_axis: -1
+      fast_enable_axis: -1
       axis_sign: 1
       linear:
         x_axis: 4

@@ -183,36 +183,39 @@ robot-independent.
     control_poses:        # Move to predefined poses
       trigger: 8            # Optional modifier button; omit for none
       time_from_start: 3.0  # Default seconds to reach a pose
-      poses_name:
+      poses:                # Poses, blends and cycles each have a block
+        poses_name:
         - initial_pose
         - pre_manipulation_pose
-      initial_pose:
-        button: 2
-        # Listing `groups` defines the pose HERE and publishes joint
-        # trajectories; omit it to resolve pose_name via the MoveToPose action.
-        groups:
-          - head
-          - arm_left
-        head:
-          joints:    [ head_pan_joint, head_tilt_joint ]
-          positions: [ 0.0,            0.0             ]
-        arm_left:
-          joints:    [ arm_left_elbow_joint ]
-          positions: [ 2.5 ]
-      pre_manipulation_pose:
-        button: 3           # No `groups` -> MoveToPose action backend
+        initial_pose:
+          button: 2
+          # Listing `groups` defines the pose HERE and publishes joint
+          # trajectories; omit it to resolve pose_name via the MoveToPose action.
+          groups:
+            - head
+            - arm_left
+          head:
+            joints:    [ head_pan_joint, head_tilt_joint ]
+            positions: [ 0.0,            0.0             ]
+          arm_left:
+            joints:    [ arm_left_elbow_joint ]
+            positions: [ 2.5 ]
+        pre_manipulation_pose:
+          button: 3         # No `groups` -> MoveToPose action backend
 
     control_velocity:     # Mobile base control
-      button:             5
-      fast_button:        7
-      linear_x_axis:      1
-      linear_y_axis:      0
-      angular_axis:       3
-      axis_sign:          1
-      linear_scale:       0.1
-      angular_scale:      0.3
-      fast_linear_scale:  0.2
-      fast_angular_scale: 0.6
+      enable_button: 5      # Enable; arms both linear and angular
+      fast_enable_button: 7 # enable_axis / fast_enable_axis also work
+      axis_sign:   1
+      linear:
+        x_axis:     1
+        y_axis:     0
+        scale:      0.1
+        fast_scale: 0.2
+      angular:
+        axis:       3
+        scale:      0.3
+        fast_scale: 0.6
 ```
 
 </details>
@@ -224,12 +227,14 @@ of poses, one per button press, wrapping at the end.
 
 ```yaml
 control_poses:
-  poses_name:   [grip_open, grip_two, grip_three]
-  cycles_name: [hand_right_grip]
-  hand_right_grip:
-    button: 6
-    exclude_groups: []    # groups of each pose to leave alone
-    poses: [grip_open, grip_two, grip_three]
+  poses:
+    poses_name: [grip_open, grip_two, grip_three]
+  cycles:
+    cycles_name: [hand_right_grip]
+    hand_right_grip:
+      button: 6
+      exclude_groups: []  # groups of each pose to leave alone
+      poses: [grip_open, grip_two, grip_three]
 ```
 
 Each press sends every group of the pose except those in `exclude_groups`. A
@@ -245,18 +250,20 @@ gripper hold an object.
 
 ```yaml
 control_poses:
-  poses_name:  [hand_open, hand_close]
-  blends_name: [hand_right_grip]
-  hand_right_grip:
-    exclude_groups: []    # groups of the two poses to leave alone
-    from:  hand_open
-    to:    hand_close
-    enable_axis: 6        # -1 with no enable_button = always live
-    axis: 4               # sign picks the pose, size the speed
-    axis_sign: -1
-    to_button: -1         # button alternative for devices with no axis
-    from_button: -1
-    speed: 0.6            # rad per legacy 50 ms tick at full deflection
+  poses:
+    poses_name: [hand_open, hand_close]
+  blends:
+    blends_name: [hand_right_grip]
+    hand_right_grip:
+      exclude_groups: []  # groups of the two poses to leave alone
+      from:  hand_open
+      to:    hand_close
+      enable_axis: 6      # -1 with no enable_button = always live
+      axis: 4             # sign picks the pose, size the speed
+      axis_sign: -1
+      to_button: -1       # button alternative for devices with no axis
+      from_button: -1
+      speed: 0.6          # rad per legacy 50 ms tick at full deflection
 ```
 
 The endpoints come from the poses, so the joint values live in one place. The

@@ -113,8 +113,8 @@
         detecting_pose:
           button: 0
     control_velocity:
-      button: 5
-      fast_button: 7
+      enable_button: 5
+      fast_enable_button: 7
       axis_sign: 1
       linear:
         x_axis: 1

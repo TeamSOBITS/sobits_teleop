@@ -623,13 +623,13 @@ void SOBITSTeleop::load_parameters()
   }
 
   // Load cmd_vel parameters. Either button-based or axis-based enable is allowed.
-  if (has_param("control_velocity.button") ||
-    has_param("control_velocity.axis"))
+  if (has_param("control_velocity.enable_button") ||
+    has_param("control_velocity.enable_axis"))
   {
-    get_param("control_velocity.button", cvm.button);
-    get_param("control_velocity.fast_button", cvm.fast_button);
-    get_param("control_velocity.axis", cvm.axis);
-    get_param("control_velocity.fast_axis", cvm.fast_axis);
+    get_param("control_velocity.enable_button", cvm.button);
+    get_param("control_velocity.fast_enable_button", cvm.fast_button);
+    get_param("control_velocity.enable_axis", cvm.axis);
+    get_param("control_velocity.fast_enable_axis", cvm.fast_axis);
     get_param("control_velocity.axis_sign", cvm.axis_sign);
     get_param("control_velocity.linear.x_axis", cvm.linear_x_axis);
     get_param("control_velocity.linear.y_axis", cvm.linear_y_axis);

@@ -180,36 +180,39 @@ configは同梱済みで，新しいロボットへの移植はこのディレ�
     control_poses:        # 定義済みポーズへの移動
       trigger: 8            # 任意の修飾ボタン．不要なら省略
       time_from_start: 3.0  # ポーズ到達までの既定秒数
-      poses_name:
+      poses:                # poses / blends / cycles をブロックに分ける
+        poses_name:
         - initial_pose
         - pre_manipulation_pose
-      initial_pose:
-        button: 2
-        # `groups`を書くとポーズをこの場で定義し，関節軌道として配信する．
-        # 省略した場合はpose_nameをMoveToPoseアクションで解決する．
-        groups:
-          - head
-          - arm_left
-        head:
-          joints:    [ head_pan_joint, head_tilt_joint ]
-          positions: [ 0.0,            0.0             ]
-        arm_left:
-          joints:    [ arm_left_elbow_joint ]
-          positions: [ 2.5 ]
-      pre_manipulation_pose:
-        button: 3           # `groups`なし -> MoveToPoseアクションを使用
+        initial_pose:
+          button: 2
+          # `groups`を書くとポーズをこの場で定義し，関節軌道として配信する．
+          # 省略した場合はpose_nameをMoveToPoseアクションで解決する．
+          groups:
+            - head
+            - arm_left
+          head:
+            joints:    [ head_pan_joint, head_tilt_joint ]
+            positions: [ 0.0,            0.0             ]
+          arm_left:
+            joints:    [ arm_left_elbow_joint ]
+            positions: [ 2.5 ]
+        pre_manipulation_pose:
+          button: 3         # `groups`なし -> MoveToPoseアクションを使用
 
     control_velocity:     # 台車制御
-      button:             5
-      fast_button:        7
-      linear_x_axis:      1
-      linear_y_axis:      0
-      angular_axis:       3
-      axis_sign:          1
-      linear_scale:       0.1
-      angular_scale:      0.3
-      fast_linear_scale:  0.2
-      fast_angular_scale: 0.6
+      enable_button: 5      # 有効化．linear/angular 双方を armする
+      fast_enable_button: 7 # enable_axis / fast_enable_axis も使用可
+      axis_sign:   1
+      linear:
+        x_axis:     1
+        y_axis:     0
+        scale:      0.1
+        fast_scale: 0.2
+      angular:
+        axis:       3
+        scale:      0.3
+        fast_scale: 0.6
 ```
 
 </details>
@@ -221,12 +224,14 @@ configは同梱済みで，新しいロボットへの移植はこのディレ�
 
 ```yaml
 control_poses:
-  poses_name:   [grip_open, grip_two, grip_three]
-  cycles_name: [hand_right_grip]
-  hand_right_grip:
-    button: 6
-    exclude_groups: []    # 送らないグループ
-    poses: [grip_open, grip_two, grip_three]
+  poses:
+    poses_name: [grip_open, grip_two, grip_three]
+  cycles:
+    cycles_name: [hand_right_grip]
+    hand_right_grip:
+      button: 6
+      exclude_groups: []  # 送らないグループ
+      poses: [grip_open, grip_two, grip_three]
 ```
 
 1回の押下で`exclude_groups`以外のすべてのグループを送ります．ポーズが2つ未満の

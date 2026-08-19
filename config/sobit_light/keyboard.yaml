@@ -89,8 +89,8 @@
         initial_moving_pose:
           button: 3
     control_velocity:
-      button: 6
-      fast_button: 7
+      enable_button: 6
+      fast_enable_button: 7
       axis_sign: 1
       linear:
         x_axis: 4

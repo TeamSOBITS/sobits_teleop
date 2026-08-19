@@ -1,8 +1,8 @@
 /**:
   ros__parameters:
     control_velocity:
-      axis: 6
-      fast_axis: 7
+      enable_axis: 6
+      fast_enable_axis: 7
       axis_sign: 1
       linear:
         x_axis: 1
