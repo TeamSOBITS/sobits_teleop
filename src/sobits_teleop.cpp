@@ -192,6 +192,19 @@ std::string SOBITSTeleop::group_trajectory_topic(const std::string & group)
 
 // Reports which optional config blocks this device.yaml supplies, so a block
 // missing on one robot is visible at startup instead of silently doing nothing.
+const PoseJointGroup * SOBITSTeleop::find_pose_group(
+  const std::string & pose, const std::string & group)
+{
+  const std::string topic = group.empty() ? std::string() : group_trajectory_topic(group);
+  for (const auto & pm : pose_mappings) {
+    if (pm.pose_name != pose) {continue;}
+    for (const auto & pg : pm.joint_groups) {
+      if (topic.empty() || pg.joint_trajectory_topic == topic) {return &pg;}
+    }
+  }
+  return nullptr;
+}
+
 void SOBITSTeleop::report_config_summary()
 {
   const std::pair<const char *, bool> blocks[] = {
@@ -508,6 +521,58 @@ void SOBITSTeleop::load_parameters()
             "defined in YAML — publishing joint trajectories");
     }
     RCLCPP_INFO(get_logger(), "Loaded %zu pose parameters from rosparam", pose_mappings.size());
+  }
+
+  // Blends sweep one group between two poses, so they load after the poses.
+  std::vector<std::string> blend_names;
+  if (get_param("control_poses.blends_name", blend_names)) {
+    for (const auto & bname : blend_names) {
+      const std::string base = "control_poses." + bname;
+      PoseBlendMap bl;
+      bl.name = bname;
+      get_param(base + ".enable_axis", bl.enable_axis);
+      get_param(base + ".enable_button", bl.enable_button);
+      get_param(base + ".axis", bl.axis);
+      get_param(base + ".axis_sign", bl.axis_sign);
+      get_param(base + ".to_button", bl.to_button);
+      get_param(base + ".from_button", bl.from_button);
+      get_param(base + ".speed", bl.speed);
+
+      std::string group, from_pose, to_pose;
+      get_param(base + ".group", group);
+      get_param(base + ".from", from_pose);
+      get_param(base + ".to", to_pose);
+
+      const PoseJointGroup * from_g = find_pose_group(from_pose, group);
+      const PoseJointGroup * to_g = find_pose_group(to_pose, group);
+      if (!from_g || !to_g) {
+        RCLCPP_ERROR(get_logger(),
+          "Blend '%s': pose '%s' or '%s' defines no group '%s' — skipping",
+          bname.c_str(), from_pose.c_str(), to_pose.c_str(), group.c_str());
+        continue;
+      }
+
+      // Drive every joint the two poses share; one listed in only one is skipped.
+      bl.joint_trajectory_topic = from_g->joint_trajectory_topic;
+      for (size_t i = 0; i < from_g->joint_names.size(); ++i) {
+        const auto & jn = from_g->joint_names[i];
+        for (size_t k = 0; k < to_g->joint_names.size(); ++k) {
+          if (to_g->joint_names[k] != jn) {continue;}
+          if (i >= from_g->positions.size() || k >= to_g->positions.size()) {break;}
+          bl.joint_names.push_back(jn);
+          bl.from_positions.push_back(from_g->positions[i]);
+          bl.to_positions.push_back(to_g->positions[k]);
+          break;
+        }
+      }
+      if (bl.joint_names.empty()) {
+        RCLCPP_ERROR(get_logger(), "Blend '%s': poses share no joints — skipping",
+          bname.c_str());
+        continue;
+      }
+      pose_blends.push_back(bl);
+    }
+    RCLCPP_INFO(get_logger(), "Loaded %zu pose blend(s) from rosparam", pose_blends.size());
   }
 
   // Load cmd_vel parameters. Either button-based or axis-based enable is allowed.
@@ -1026,6 +1091,44 @@ void SOBITSTeleop::process_poses()
   }
 }
 
+// Steps a blend's joints toward whichever pose the input selects, at a speed
+// set by how far it is pushed. Releasing leaves them where they are.
+void SOBITSTeleop::process_pose_blends()
+{
+  for (const auto & bl : pose_blends) {
+    const bool gated = bl.enable_axis >= 0 || bl.enable_button >= 0;
+    if (gated && !axis_held(bl.enable_axis) && !button_down(bl.enable_button)) {continue;}
+
+    double deflection = axis_value(bl.axis) * bl.axis_sign;
+    if (button_down(bl.to_button)) {deflection = 1.0;}
+    if (button_down(bl.from_button)) {deflection = -1.0;}
+    if (std::abs(deflection) < 0.1) {continue;}
+
+    const bool toward_to = deflection > 0.0;
+    const double step = bl.speed * std::abs(deflection) * jog_tick_scale_;
+
+    trajectory_msgs::msg::JointTrajectory traj;
+    trajectory_msgs::msg::JointTrajectoryPoint pt;
+    for (size_t i = 0; i < bl.joint_names.size(); ++i) {
+      const std::string & jn = bl.joint_names[i];
+      const double goal = toward_to ? bl.to_positions[i] : bl.from_positions[i];
+      const double cur = joint_pos.count(jn) ? joint_pos.at(jn) : goal;
+      double next = cur + ((goal > cur) ? step : -step);
+      if ((goal > cur && next > goal) || (goal < cur && next < goal)) {next = goal;}
+      if (!clamp_to_limits_checked(jn, next)) {continue;}
+      joint_pos[jn] = next;
+      traj.joint_names.push_back(jn);
+      pt.positions.push_back(next);
+    }
+    if (traj.joint_names.empty()) {continue;}
+
+    pt.time_from_start = rclcpp::Duration::from_seconds(dt());
+    traj.points.push_back(pt);
+    auto it = joint_pub.find(bl.joint_trajectory_topic);
+    if (it != joint_pub.end() && it->second) {it->second->publish(traj);}
+  }
+}
+
 void SOBITSTeleop::process_cmd_vel()
 {
   // Skip entirely if cmd_vel isn't configured — avoids flooding zero twists.
@@ -1163,6 +1266,7 @@ void SOBITSTeleop::teleop()
 
   process_joints();
   process_poses();
+  process_pose_blends();
   process_cmd_vel();
 
   // Quest controllers: Unity publishes Quest frames directly under base_footprint.

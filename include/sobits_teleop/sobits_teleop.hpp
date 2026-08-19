@@ -78,6 +78,24 @@ struct PoseMap
   double time_from_start = 3.0;  // seconds to reach the pose
 };
 
+// Sweeps one group between two poses. The input's sign picks the endpoint and
+// its size the speed, so releasing leaves the joints where they are.
+struct PoseBlendMap
+{
+  std::string name;
+  std::string joint_trajectory_topic;
+  std::vector<std::string> joint_names;
+  std::vector<double> from_positions;
+  std::vector<double> to_positions;
+  int enable_axis = -1;     // -1 with no enable_button = always live
+  int enable_button = -1;
+  int axis = -1;
+  int axis_sign = 1;
+  int to_button = -1;       // button alternative to the axis
+  int from_button = -1;
+  double speed = 0.0;       // rad per legacy 50 ms tick at full deflection
+};
+
 struct CmdVelMap
 {
   std::string topic;
@@ -248,6 +266,9 @@ private:
   void process_arm(const QuestArmMap & m, ArmTrackState & st, bool head_tf_ok, bool arm_enabled);
   void process_joints();
   void process_poses();
+  void process_pose_blends();
+  // The named pose's entry for one group, or nullptr if it defines none.
+  const PoseJointGroup * find_pose_group(const std::string & pose, const std::string & group);
   void process_cmd_vel();
   void process_tracked_group(QuestTrackedGroup & g);
   void process_hand(const std::string & name, QuestHandMap & m);
@@ -322,6 +343,7 @@ private:
 
   std::vector<std::string> pose_list;
   std::vector<PoseMap> pose_mappings;
+  std::vector<PoseBlendMap> pose_blends;
 
   std::vector<float> latest_axes;
   std::vector<int> latest_buttons;
