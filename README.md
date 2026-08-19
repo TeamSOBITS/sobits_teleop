@@ -434,13 +434,13 @@ fetches the robot model from it at startup.
 
 #### Tracked joint groups (Quest)
 
-A `quest_control` group that lists `joints_name` follows a TF frame: each
+A `control_target` group that lists `joints_name` follows a TF frame: each
 joint takes one component of that frame's movement since the latch. The group
 name is free — `head`, `neck`, `torso` — and any number of groups may exist,
 each with its own latch.
 
 ```yaml
-quest_control:
+control_target:
   groups: [head, body, ...]
   head:
     enable_axis: 2                  # hold to latch

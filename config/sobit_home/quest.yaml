@@ -62,7 +62,7 @@
                     hand_right_finger_r_dip_joint ]
           positions: [ 1.57, 0.0, 1.57, 1.57, 0.0, -1.57, 0.0 ]
 
-    quest_control:
+    control_target:
       groups:
         - head
         - body

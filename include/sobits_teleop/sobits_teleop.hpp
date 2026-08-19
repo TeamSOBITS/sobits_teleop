@@ -101,7 +101,7 @@ struct TrackedJoint
   double sign = 1.0;
 };
 
-// One quest_control group identified by a `joints:` map (any group name).
+// One control_target group identified by a `joints:` map (any group name).
 // Latches on its own axis, independent of every other tracked group.
 struct QuestTrackedGroup
 {
@@ -293,7 +293,7 @@ private:
   bool joint_state_initialized = false;
   bool joy_received = false;
   bool requires_joint_states = false;
-  bool has_quest_controls = false;
+  bool has_control_targets = false;
   // Previous tick's cmd_vel enable state, for edge-triggered stop publish.
   bool cmd_vel_was_enabled_ = false;
 

@@ -428,13 +428,13 @@ Servoバックエンドには`ros-$ROS_DISTRO-moveit-servo`（`install.sh`でイ
 
 #### 追従関節グループ（Quest）
 
-`joints_name`を持つ`quest_control`グループはTFフレームに追従します．各関節は
+`joints_name`を持つ`control_target`グループはTFフレームに追従します．各関節は
 ラッチ以降のフレーム移動量のうち1成分を受け取ります．グループ名は自由で
 （`head`、`neck`、`torso`など），それぞれ独立したラッチを持ち，いくつでも
 定義できます．
 
 ```yaml
-quest_control:
+control_target:
   groups: [head, body, ...]
   head:
     enable_axis: 2                  # 押している間ラッチ

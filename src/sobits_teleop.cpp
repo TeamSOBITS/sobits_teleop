@@ -198,7 +198,7 @@ void SOBITSTeleop::report_config_summary()
     {"control_joints", !joint_mappings.empty()},
     {"control_poses", !pose_mappings.empty()},
     {"control_velocity", cvm.button >= 0 || cvm.axis >= 0},
-    {"quest_control", has_quest_controls},
+    {"control_target", has_control_targets},
   };
 
   std::string configured, absent;
@@ -527,25 +527,25 @@ void SOBITSTeleop::load_parameters()
     RCLCPP_INFO(get_logger(), "Loaded control_velocity parameters from rosparam");
   }
   // Load quest parameters
-  if (has_param("quest_control.groups")) {
-    get_param("quest_control.groups", quest_groups);
+  if (has_param("control_target.groups")) {
+    get_param("control_target.groups", quest_groups);
     for (const auto & group : quest_groups) {
       // A tracked group lists its joints in `names`, then describes each one
       // below it — the same shape as control_joints and the hand's adaptive block.
       std::vector<std::string> joint_names;
-      get_param("quest_control." + group + ".joints_name", joint_names);
+      get_param("control_target." + group + ".joints_name", joint_names);
 
       if (!joint_names.empty()) {
         const auto & overrides =
           this->get_node_parameters_interface()->get_parameter_overrides();
         QuestTrackedGroup g{};
         g.group = group;
-        get_param("quest_control." + group + ".enable_axis", g.enable_axis);
-        get_param("quest_control." + group + ".target_frame_name", g.target_frame_name);
-        get_param("quest_control." + group + ".motion_scale", g.motion_scale);
+        get_param("control_target." + group + ".enable_axis", g.enable_axis);
+        get_param("control_target." + group + ".target_frame_name", g.target_frame_name);
+        get_param("control_target." + group + ".motion_scale", g.motion_scale);
 
         for (const auto & jname : joint_names) {
-          const std::string jprefix = "quest_control." + group + "." + jname;
+          const std::string jprefix = "control_target." + group + "." + jname;
           std::string type, axis;
           get_param(jprefix + ".type", type);
           get_param(jprefix + ".axis", axis);
@@ -570,7 +570,7 @@ void SOBITSTeleop::load_parameters()
               tj.component = 1;
             } else if (axis == "yaw") {tj.component = 2;} else {
               RCLCPP_ERROR(get_logger(),
-                "Quest group '%s' joint '%s': invalid rotation axis '%s' — skipping joint",
+                "Target group '%s' joint '%s': invalid rotation axis '%s' — skipping joint",
                 group.c_str(), jname.c_str(), axis.c_str());
               continue;
             }
@@ -580,13 +580,13 @@ void SOBITSTeleop::load_parameters()
               tj.component = 1;
             } else if (axis == "z") {tj.component = 2;} else {
               RCLCPP_ERROR(get_logger(),
-                "Quest group '%s' joint '%s': invalid prismatic axis '%s' — skipping joint",
+                "Target group '%s' joint '%s': invalid prismatic axis '%s' — skipping joint",
                 group.c_str(), jname.c_str(), axis.c_str());
               continue;
             }
           } else {
             RCLCPP_ERROR(get_logger(),
-              "Quest group '%s' joint '%s': unknown type '%s' — skipping joint",
+              "Target group '%s' joint '%s': unknown type '%s' — skipping joint",
               group.c_str(), jname.c_str(), type.c_str());
             continue;
           }
@@ -594,7 +594,7 @@ void SOBITSTeleop::load_parameters()
         }
 
         if (g.joints.empty()) {
-          RCLCPP_ERROR(get_logger(), "Quest group '%s' has no usable joints — skipping",
+          RCLCPP_ERROR(get_logger(), "Target group '%s' has no usable joints — skipping",
             group.c_str());
           continue;
         }
@@ -611,42 +611,42 @@ void SOBITSTeleop::load_parameters()
       }
 
       // Group type is inferred from which fields are present.
-      const bool is_arm = has_param("quest_control." + group +
+      const bool is_arm = has_param("control_target." + group +
           ".end_effector_frame_name");
-      const bool is_hand = has_param("quest_control." + group + ".pose_action") ||
-        has_param("quest_control." + group + ".adaptive.trigger_axis");
+      const bool is_hand = has_param("control_target." + group + ".pose_action") ||
+        has_param("control_target." + group + ".adaptive.trigger_axis");
 
       if (is_arm) {
         QuestArmMap am{};
         am.group = group;
-        get_param("quest_control." + group + ".end_effector_frame_name",
+        get_param("control_target." + group + ".end_effector_frame_name",
             am.end_effector_frame_name);
-        get_param("quest_control." + group + ".target_frame_name", am.target_frame_name);
-        get_param("quest_control." + group + ".motion_scale", am.motion_scale);
-        get_param("quest_control." + group + ".enable_axis", am.enable_axis);
+        get_param("control_target." + group + ".target_frame_name", am.target_frame_name);
+        get_param("control_target." + group + ".motion_scale", am.motion_scale);
+        get_param("control_target." + group + ".enable_axis", am.enable_axis);
         am.arm_joint_trajectory_topic = group_trajectory_topic(group);
         if (am.arm_joint_trajectory_topic.empty()) {continue;}
         // Optional proximity thresholds — defaults are set in the struct
-        if (has_param("quest_control." + group + ".proximity_threshold")) {
-          get_param("quest_control." + group + ".proximity_threshold",
+        if (has_param("control_target." + group + ".proximity_threshold")) {
+          get_param("control_target." + group + ".proximity_threshold",
               am.proximity_threshold);
         }
-        if (has_param("quest_control." + group + ".proximity_angle_threshold")) {
-          get_param("quest_control." + group + ".proximity_angle_threshold",
+        if (has_param("control_target." + group + ".proximity_angle_threshold")) {
+          get_param("control_target." + group + ".proximity_angle_threshold",
               am.proximity_angle_threshold);
         }
 
         // Frames default from the controller side so older configs still work.
-        get_param("quest_control." + group + ".controller_frame_name",
+        get_param("control_target." + group + ".controller_frame_name",
             am.controller_frame_name);
-        get_param("quest_control." + group + ".controller_echo_frame_name",
+        get_param("control_target." + group + ".controller_echo_frame_name",
             am.controller_echo_frame_name);
         // Log label only; the frames below carry the real identity.
         am.controller = group;
 
         if (am.controller_frame_name.empty() || am.controller_echo_frame_name.empty()) {
           RCLCPP_ERROR(get_logger(),
-            "Quest arm '%s' needs controller_frame_name and "
+            "Target arm '%s' needs controller_frame_name and "
             "controller_echo_frame_name — skipping", group.c_str());
           continue;
         }
@@ -661,40 +661,40 @@ void SOBITSTeleop::load_parameters()
       } else if (is_hand) {
         QuestHandMap hm{};
         hm.group = group;
-        get_param("quest_control." + group + ".speed", hm.speed);
+        get_param("control_target." + group + ".speed", hm.speed);
 
-        if (has_param("quest_control." + group + ".single_joint.axis")) {
-          get_param("quest_control." + group + ".single_joint.axis", hm.type_axis);
-          get_param("quest_control." + group + ".single_joint.name", hm.type_joint);
-          if (has_param("quest_control." + group + ".single_joint.axis_sign")) {
-            get_param("quest_control." + group + ".single_joint.axis_sign", hm.type_sign);
+        if (has_param("control_target." + group + ".single_joint.axis")) {
+          get_param("control_target." + group + ".single_joint.axis", hm.type_axis);
+          get_param("control_target." + group + ".single_joint.name", hm.type_joint);
+          if (has_param("control_target." + group + ".single_joint.axis_sign")) {
+            get_param("control_target." + group + ".single_joint.axis_sign", hm.type_sign);
           }
-          if (has_param("quest_control." + group + ".single_joint.min")) {
-            get_param("quest_control." + group + ".single_joint.min", hm.type_min);
+          if (has_param("control_target." + group + ".single_joint.min")) {
+            get_param("control_target." + group + ".single_joint.min", hm.type_min);
           }
-          if (has_param("quest_control." + group + ".single_joint.max")) {
-            get_param("quest_control." + group + ".single_joint.max", hm.type_max);
+          if (has_param("control_target." + group + ".single_joint.max")) {
+            get_param("control_target." + group + ".single_joint.max", hm.type_max);
           }
         }
-        if (has_param("quest_control." + group + ".pose_button")) {
-          get_param("quest_control." + group + ".pose_button", hm.pose_button);
+        if (has_param("control_target." + group + ".pose_button")) {
+          get_param("control_target." + group + ".pose_button", hm.pose_button);
         }
-        if (has_param("quest_control." + group + ".pose_open")) {
-          get_param("quest_control." + group + ".pose_open", hm.pose_open);
-          get_param("quest_control." + group + ".pose_close", hm.pose_close);
-          get_param("quest_control." + group + ".pose_action", hm.pose_action);
+        if (has_param("control_target." + group + ".pose_open")) {
+          get_param("control_target." + group + ".pose_open", hm.pose_open);
+          get_param("control_target." + group + ".pose_close", hm.pose_close);
+          get_param("control_target." + group + ".pose_action", hm.pose_action);
         }
-        if (has_param("quest_control." + group + ".adaptive.trigger_axis")) {
-          get_param("quest_control." + group + ".adaptive.trigger_axis",
+        if (has_param("control_target." + group + ".adaptive.trigger_axis")) {
+          get_param("control_target." + group + ".adaptive.trigger_axis",
               hm.adaptive_trigger_axis);
-          get_param("quest_control." + group + ".adaptive.stick_axis",
+          get_param("control_target." + group + ".adaptive.stick_axis",
               hm.adaptive_stick_axis);
-          get_param("quest_control." + group + ".adaptive.axis_sign",
+          get_param("control_target." + group + ".adaptive.axis_sign",
               hm.adaptive_close_sign);
 
           // Load adaptive joint list: adaptive.names is a list of joint names,
           // each with close_pos, open_pos, and optional fixed flag.
-          const std::string aj_prefix = "quest_control." + group + ".adaptive";
+          const std::string aj_prefix = "control_target." + group + ".adaptive";
           if (has_param(aj_prefix + ".joints_name")) {
             std::vector<std::string> aj_names;
             get_param(aj_prefix + ".joints_name", aj_names);
@@ -713,14 +713,14 @@ void SOBITSTeleop::load_parameters()
         }
         quest_hand_mappings[group] = hm;
       } else {
-        mark_visited("quest_control." + group);
-        RCLCPP_WARN(get_logger(), "Quest group '%s' is neither arm nor hand — skipping",
+        mark_visited("control_target." + group);
+        RCLCPP_WARN(get_logger(), "Target group '%s' is neither arm nor hand — skipping",
             group.c_str());
       }
     }
-    RCLCPP_INFO(get_logger(), "Loaded %zu quest arm and %zu quest hand parameters from rosparam",
+    RCLCPP_INFO(get_logger(), "Loaded %zu target arm and %zu target hand parameters from rosparam",
       quest_arm_mappings.size(), quest_hand_mappings.size());
-    has_quest_controls = !quest_groups.empty();
+    has_control_targets = !quest_groups.empty();
 
     // Create one enable-publisher per arm (planning group)
     for (const auto & [arm_name, am] : quest_arm_mappings) {
@@ -751,7 +751,7 @@ void SOBITSTeleop::load_parameters()
     }
   }
 
-  requires_joint_states = !joint_mappings.empty() || has_quest_controls;
+  requires_joint_states = !joint_mappings.empty() || has_control_targets;
 
   report_config_summary();
 
@@ -763,7 +763,7 @@ void SOBITSTeleop::load_parameters()
     quest_arm_mappings.clear();
     quest_hand_mappings.clear();
     quest_groups.clear();
-    has_quest_controls = false;
+    has_control_targets = false;
     requires_joint_states = false;
   }
 
@@ -782,7 +782,7 @@ void SOBITSTeleop::warn_unknown_parameters()
 {
   static const char * kPrefixes[] = {
     "control_joints.", "control_poses.", "control_velocity.",
-    "quest_control.", "robot_topic_name."
+    "control_target.", "robot_topic_name."
   };
 
   const auto & overrides = this->get_node_parameters_interface()->get_parameter_overrides();
@@ -1092,7 +1092,7 @@ void SOBITSTeleop::process_cmd_vel()
   }
 }
 
-// Latch/track one quest_control group. Trigger comes from /joy so releasing
+// Latch/track one control_target group. Trigger comes from /joy so releasing
 // always unlatches, even while the group's own TF is stale.
 void SOBITSTeleop::process_tracked_group(QuestTrackedGroup & g)
 {
@@ -1173,7 +1173,7 @@ void SOBITSTeleop::teleop()
   // Quest controllers: Unity publishes Quest frames directly under base_footprint.
   bool base_odom_ok = true;  // always ready; kept as guard variable for structure
 
-  if (this->has_parameter("quest_control.groups")) {
+  if (this->has_parameter("control_target.groups")) {
     // Head / HMD — also used as body reference for arm target scaling
     bool head_tf_ok = false;
     tf2::Transform current_tf;  // controller pose this tick, base_footprint

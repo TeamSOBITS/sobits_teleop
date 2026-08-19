@@ -41,19 +41,19 @@ def generate_test_description():
     ]), {'sobits_teleop_process': sobits_teleop_process}
 
 
-def _quest_arm_groups():
-    """Arm groups quest.yaml declares, so the test tracks the config."""
+def _target_arm_groups():
+    """Arm groups the device yaml declares, so the test tracks the config."""
     share_dir = get_package_share_directory('sobits_teleop')
     with open(os.path.join(share_dir, 'config', 'sobit_home', 'quest.yaml')) as f:
         params = yaml.safe_load(f)['/**']['ros__parameters']
-    return [g for g in params['quest_control']['groups'] if g.startswith('arm_')]
+    return [g for g in params['control_target']['groups'] if g.startswith('arm_')]
 
 
 class TestNodeStartup(unittest.TestCase):
 
     def test_publishes_track_enable_per_configured_arm(self, proc_output):
         """Assert on the graph, not log text: one enable topic per configured arm."""
-        expected = {f'/{g}/moveit_track_enabled' for g in _quest_arm_groups()}
+        expected = {f'/{g}/moveit_track_enabled' for g in _target_arm_groups()}
         self.assertTrue(expected, 'quest.yaml declares no arm groups')
 
         # Must match the node's domain, set in generate_test_description.
