@@ -269,12 +269,12 @@ private:
     const std::string & quest_frame, tf2::Transform & out,
     tf2::Transform * out_base = nullptr);
 
-  rclcpp::Subscription<sensor_msgs::msg::Joy>::SharedPtr joy_sub;
-  rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr joint_state_sub;
-  rclcpp::Subscription<tf2_msgs::msg::TFMessage>::SharedPtr robot_tf_sub;
-  rclcpp::Subscription<tf2_msgs::msg::TFMessage>::SharedPtr robot_tf_static_sub;
+  rclcpp::Subscription<sensor_msgs::msg::Joy>::SharedPtr joy_sub_;
+  rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr joint_state_sub_;
+  rclcpp::Subscription<tf2_msgs::msg::TFMessage>::SharedPtr robot_tf_sub_;
+  rclcpp::Subscription<tf2_msgs::msg::TFMessage>::SharedPtr robot_tf_static_sub_;
 
-  rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_pub;
+  rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_pub_;
   std::map<std::string,
     rclcpp::Publisher<trajectory_msgs::msg::JointTrajectory>::SharedPtr>
   joint_pub;
@@ -283,64 +283,62 @@ private:
   std::map<std::string, rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr>
   arm_track_pubs_;
 
-  rclcpp_action::Client<sobits_interfaces::action::MoveToPose>::SharedPtr move_to_pose_client;
+  rclcpp_action::Client<sobits_interfaces::action::MoveToPose>::SharedPtr move_to_pose_client_;
   // Hand pose action clients, keyed by hand group name (e.g. "hand_left").
   // Created at startup from pose_action in each hand group's config.
 
-  rclcpp::TimerBase::SharedPtr timer;
+  rclcpp::TimerBase::SharedPtr timer_;
 
-  bool joint_state_initialized = false;
-  bool joy_received = false;
-  bool requires_joint_states = false;
-  bool has_cartesian_groups = false;
+  bool joint_state_initialized_ = false;
+  bool joy_received_ = false;
+  bool requires_joint_states_ = false;
+  bool has_cartesian_groups_ = false;
   // Previous tick's cmd_vel enable state, for edge-triggered stop publish.
   bool cmd_vel_was_enabled_ = false;
 
-  std::string robot_description_source_node;
-  std::shared_ptr<rclcpp::AsyncParametersClient> async_param_client;
-  std::shared_future<std::vector<rclcpp::Parameter>> robot_desc_future;
-  rclcpp::TimerBase::SharedPtr urdf_timer;
-  bool urdf_loaded = false;
-  bool robot_desc_requested = false;
+  std::string robot_description_source_node_;
+  std::shared_ptr<rclcpp::AsyncParametersClient> async_param_client_;
+  std::shared_future<std::vector<rclcpp::Parameter>> robot_desc_future_;
+  rclcpp::TimerBase::SharedPtr urdf_timer_;
+  bool urdf_loaded_ = false;
+  bool robot_desc_requested_ = false;
 
-  std::unordered_map<std::string, Limit> joint_limits;
+  std::unordered_map<std::string, Limit> joint_limits_;
 
   // Config keys read via get_param/has_param, for warn_unknown_parameters().
   std::set<std::string> read_keys_;
   // Subtree roots entered via mark_visited(), for warn_unknown_parameters().
   std::set<std::string> visited_prefixes_;
 
-  std::string robot_name;
-  std::string joint_states_topic;
+  std::string robot_name_;
+  std::string joint_states_topic_;
   std::vector<std::string> enabled_controllers_;
-  std::vector<std::string> joint_groups;
-  std::vector<std::string> joint_names;
-  std::map<std::string, JointMap> joint_mappings;
-  std::map<std::string, QuestArmMap> quest_arm_mappings;
-  std::map<std::string, QuestTrackedGroup> quest_tracked_groups;
-  std::map<std::string, double> joint_pos;
+  std::map<std::string, JointMap> joint_mappings_;
+  std::map<std::string, QuestArmMap> quest_arm_mappings_;
+  std::map<std::string, QuestTrackedGroup> quest_tracked_groups_;
+  std::map<std::string, double> joint_pos_;
   // Frame all Quest tracking resolves in; must be fixed to the arm's root.
-  std::string base_frame = "base_footprint";
-  double teleop_rate_hz = 100.0;
-  double tick_period() const {return 1.0 / teleop_rate_hz;}
+  std::string base_frame_ = "base_footprint";
+  double teleop_rate_hz_ = 100.0;
+  double tick_period() const {return 1.0 / teleop_rate_hz_;}
   // Trajectory horizon, always two ticks: one tick stalls the controller on any
-  // timer jitter, and a horizon past the tick leaves every goal unfinished.
+  // timer_ jitter, and a horizon past the tick leaves every goal unfinished.
   double dt() const {return 2.0 * tick_period();}
   // Scales legacy per-50ms-tick config speeds to the actual loop period.
   double jog_tick_scale_ = 1.0;
 
-  std::vector<std::string> poses_name;
-  std::vector<PoseMap> pose_mappings;
-  std::vector<PoseBlendMap> pose_blends;
-  std::vector<PoseCycleMap> pose_cycles;
+  std::vector<std::string> poses_name_;
+  std::vector<PoseMap> pose_mappings_;
+  std::vector<PoseBlendMap> pose_blends_;
+  std::vector<PoseCycleMap> pose_cycles_;
 
-  std::vector<float> latest_axes;
-  std::vector<int> latest_buttons;
-  std::vector<int> previous_buttons;
+  std::vector<float> latest_axes_;
+  std::vector<int> latest_buttons_;
+  std::vector<int> previous_buttons_;
 
-  std::vector<std::string> quest_groups;
+  std::vector<std::string> quest_groups_;
 
-  bool arm_tracking = false;
+  bool arm_tracking_ = false;
   // Per-controller-side arm tracking state, keyed by controller ("left"/"right").
   std::map<std::string, ArmTrackState> arm_track_;
 
@@ -358,17 +356,17 @@ private:
   // Hand pose toggle state per controller: true = open, false = closed
 
   // Current controller poses in base_footprint (recomputed every tick)
-  tf2::Transform current_tf_hmd;
+  tf2::Transform current_tf_hmd_;
 
   // Current controller poses in odom (wall-clock, recomputed every tick)
-  tf2::Transform current_tf_hmd_odom;
+  tf2::Transform current_tf_hmd_odom_;
 
-  std::shared_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster;
+  std::shared_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
   std::shared_ptr<rclcpp::Clock> wall_clock_;
   // Single wall-clock buffer for all TFs (Quest wall-clock + robot re-stamped).
-  std::shared_ptr<tf2_ros::Buffer> tf_buffer;
+  std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
 
-  CmdVelMap cvm;
+  CmdVelMap cvm_;
 };
 
 }  // namespace sobits_teleop

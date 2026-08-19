@@ -35,11 +35,11 @@ ArmScaleCalibrator::ArmScaleCalibrator(const rclcpp::NodeOptions & options)
 
   joy_sub_ = this->create_subscription<sensor_msgs::msg::Joy>(
     joy_topic, 10,
-    std::bind(&ArmScaleCalibrator::joy_cb, this, std::placeholders::_1));
+    std::bind(&ArmScaleCalibrator::joy_callback, this, std::placeholders::_1));
 
   sample_timer_ = this->create_wall_timer(
     std::chrono::milliseconds(50),
-    std::bind(&ArmScaleCalibrator::sample_cb, this));
+    std::bind(&ArmScaleCalibrator::sample_callback, this));
 
   RCLCPP_INFO(this->get_logger(),
     "\n\n=== Arm Scale Calibrator ===\n"
@@ -50,7 +50,7 @@ ArmScaleCalibrator::ArmScaleCalibrator(const rclcpp::NodeOptions & options)
     robot_arm_reach_m_);
 }
 
-void ArmScaleCalibrator::joy_cb(const sensor_msgs::msg::Joy::SharedPtr msg)
+void ArmScaleCalibrator::joy_callback(const sensor_msgs::msg::Joy::SharedPtr msg)
 {
   // Guard against a negative grip_axis config typo, not just out-of-range.
   if (grip_axis_ < 0 || grip_axis_ >= static_cast<int>(msg->axes.size())) {return;}
@@ -116,7 +116,7 @@ void ArmScaleCalibrator::joy_cb(const sensor_msgs::msg::Joy::SharedPtr msg)
   }
 }
 
-void ArmScaleCalibrator::sample_cb()
+void ArmScaleCalibrator::sample_callback()
 {
   std::lock_guard<std::mutex> lock(mutex_);
   if (state_ != State::RECORDING) {return;}

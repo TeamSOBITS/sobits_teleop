@@ -68,9 +68,8 @@
 
       # Per-arm keys default by convention from the arm name; set here only to override.
 
-      # Naming templates, expanded per arm ({arm} -> full name, {side} -> name
-      # without "arm_" prefix). Bridge-only names; the target and EE frames are
-      # quest.yaml's, forwarded by the launcher.
+      # Bridge-only names, expanded per arm ({arm}, {side}). The target and EE
+      # frames are quest.yaml's, forwarded by the launcher.
       naming:
         reach_origin_frame:      "{arm}_shoulder_tilt_link"
         servo_node:              "servo_{arm}"
