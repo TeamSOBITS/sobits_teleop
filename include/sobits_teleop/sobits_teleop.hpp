@@ -177,19 +177,6 @@ struct QuestArmMap
   double proximity_angle_threshold = 0.52; // radians (~30 deg, orientation)
 };
 
-// One per hand_* group (gripper controlled by a hand controller).
-struct QuestHandMap
-{
-  std::string group;        // e.g. "hand_left"
-  int pose_button = -1;    // button to toggle open/close hand pose
-  std::string pose_open;   // pose name sent when toggling open
-  std::string pose_close;  // pose name sent when toggling close
-  std::string pose_action; // action server name for hand pose (e.g. "move_left_hand_to_pose")
-  // A pose action in flight suppresses this hand's blend; the deadline
-  // backstops a lost result.
-  bool hand_pose_in_flight = false;
-  rclcpp::Time hand_pose_deadline{0, 0, RCL_ROS_TIME};
-};
 
 // Per-controller-side arm tracking state (one entry per "left"/"right" etc.).
 struct ArmTrackState
@@ -275,7 +262,6 @@ private:
   std::string topic_group_name(const std::string & topic);
   void process_cmd_vel();
   void process_tracked_group(QuestTrackedGroup & g);
-  void process_hand(const std::string & name, QuestHandMap & m);
   // Looks up a Quest frame under base_footprint; rejects stale/invalid TF.
   bool lookup_quest_frame(
     const std::string & quest_frame, tf2::Transform & out,
@@ -298,9 +284,6 @@ private:
   rclcpp_action::Client<sobits_interfaces::action::MoveToPose>::SharedPtr move_to_pose_client;
   // Hand pose action clients, keyed by hand group name (e.g. "hand_left").
   // Created at startup from pose_action in each hand group's config.
-  std::map<std::string,
-    rclcpp_action::Client<sobits_interfaces::action::MoveToPose>::SharedPtr>
-  hand_pose_clients_;
 
   rclcpp::TimerBase::SharedPtr timer;
 
@@ -331,7 +314,6 @@ private:
   std::vector<std::string> joint_names;
   std::map<std::string, JointMap> joint_mappings;
   std::map<std::string, QuestArmMap> quest_arm_mappings;
-  std::map<std::string, QuestHandMap> quest_hand_mappings;
   std::map<std::string, QuestTrackedGroup> quest_tracked_groups;
   std::map<std::string, double> joint_pos;
   // Frame all Quest tracking resolves in; must be fixed to the arm's root.
@@ -371,8 +353,6 @@ private:
   static constexpr double kMaxTargetAngVel = 1.5;  // rad/s
 
   // Hand pose toggle state per controller: true = open, false = closed
-  std::map<std::string, bool> hand_open_state_;             // keyed by hand group name
-  std::map<std::string, rclcpp::Time> hand_toggle_time_;    // debounce timestamp per hand group
 
   // Current controller poses in base_footprint (recomputed every tick)
   tf2::Transform current_tf_hmd;

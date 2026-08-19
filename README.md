@@ -487,9 +487,9 @@ fetches the robot model from it at startup.
 
 | Input | Action |
 |---|---|
-| Grip button (`enable_axis`) | Hold to track the arm |
-| Pose button (`pose_button`) | Toggle `pose_open` / `pose_close` |
-| Trigger + stick left/right | Adaptive open/close curl |
+| Grip button (`enable_axis`) | Hold to track the arm (`control_cartesian`) |
+| Pose button | Step the grip poses (a `control_poses` cycle) |
+| Trigger + stick left/right | Sweep between the grip poses (a `control_poses` blend) |
 | Trigger + stick up/down | Rotate the grip-type joint (a `control_joints` entry) |
 
 #### Tracked joint groups (Quest)

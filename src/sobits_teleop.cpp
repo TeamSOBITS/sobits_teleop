@@ -742,7 +742,6 @@ void SOBITSTeleop::load_parameters()
     for (const auto & group : quest_groups) {
       const bool is_arm = has_param("control_cartesian." + group +
           ".end_effector_frame_name");
-      const bool is_hand = has_param("control_cartesian." + group + ".pose_action");
 
       if (is_arm) {
         QuestArmMap am{};
@@ -786,27 +785,14 @@ void SOBITSTeleop::load_parameters()
         auto & st = arm_track_[am.controller_frame_name];
         st.controller_frame_name = am.controller_frame_name;
         st.controller_echo_frame_name = am.controller_echo_frame_name;
-      } else if (is_hand) {
-        QuestHandMap hm{};
-        hm.group = group;
-
-        if (has_param("control_cartesian." + group + ".pose_button")) {
-          get_param("control_cartesian." + group + ".pose_button", hm.pose_button);
-        }
-        if (has_param("control_cartesian." + group + ".pose_open")) {
-          get_param("control_cartesian." + group + ".pose_open", hm.pose_open);
-          get_param("control_cartesian." + group + ".pose_close", hm.pose_close);
-          get_param("control_cartesian." + group + ".pose_action", hm.pose_action);
-        }
-        quest_hand_mappings[group] = hm;
       } else {
         mark_visited("control_cartesian." + group);
         RCLCPP_WARN(get_logger(), "Cartesian group '%s' defines no end effector — skipping",
             group.c_str());
       }
     }
-    RCLCPP_INFO(get_logger(), "Loaded %zu cartesian arm and %zu hand parameters from rosparam",
-      quest_arm_mappings.size(), quest_hand_mappings.size());
+    RCLCPP_INFO(get_logger(), "Loaded %zu cartesian arm parameters from rosparam",
+      quest_arm_mappings.size());
     has_cartesian_groups = !quest_groups.empty();
 
     // Create one enable-publisher per arm (planning group)
@@ -819,21 +805,6 @@ void SOBITSTeleop::load_parameters()
           rclcpp::QoS(1).reliable().transient_local());
         RCLCPP_INFO(get_logger(),
           "Created arm track publisher for '%s'", am.group.c_str());
-      }
-    }
-    // Create one hand pose action client per hand group
-    for (const auto & [hand_name, hm] : quest_hand_mappings) {
-      if (!hm.pose_action.empty() &&
-        hand_pose_clients_.find(hm.group) == hand_pose_clients_.end())
-      {
-        hand_pose_clients_[hm.group] =
-          rclcpp_action::create_client<sobits_interfaces::action::MoveToPose>(
-            this, hm.pose_action);
-        hand_open_state_[hm.group] = true;
-        hand_toggle_time_[hm.group] = rclcpp::Time(0, 0, RCL_ROS_TIME);
-        RCLCPP_INFO(get_logger(),
-          "Created hand pose client for '%s' → '%s'",
-          hm.group.c_str(), hm.pose_action.c_str());
       }
     }
   }
@@ -849,7 +820,6 @@ void SOBITSTeleop::load_parameters()
       "joint_states_topic is required for joint or quest teleop, disabling those controls.");
     joint_mappings.clear();
     quest_arm_mappings.clear();
-    quest_hand_mappings.clear();
     quest_groups.clear();
     has_cartesian_groups = false;
     requires_joint_states = false;
@@ -1450,71 +1420,12 @@ void SOBITSTeleop::teleop()
       }
     }// Arm
 
-    // Gripper — separate loop over hand groups, runs after the arm loop.
-    for (auto &[name, m] : quest_hand_mappings) {
-      process_hand(name, m);
-    }
   }// Quest controllers
 
   // Consume edges once per tick (teleop() runs faster than joy publishes).
   previous_buttons = latest_buttons;
 }
 
-void SOBITSTeleop::process_hand(const std::string & name, QuestHandMap & m)
-{
-    // ── 1. Hand pose toggle (open / close) on button press ───────────────
-    // Configured via pose_button / pose_open / pose_close / pose_action in quest.yaml.
-  auto hp_client_it = hand_pose_clients_.find(name);
-  if (m.pose_button >= 0 && hp_client_it != hand_pose_clients_.end()) {
-    rclcpp::Time & toggle_time = hand_toggle_time_.at(name);
-    const bool debounce_ok = (this->now() - toggle_time).seconds() > 0.4;
-
-    if (button_pressed(m.pose_button) && debounce_ok) {
-      auto & client = hp_client_it->second;
-            // Check server readiness before flipping state, non-blocking.
-      if (client->action_server_is_ready()) {
-        toggle_time = this->now();
-        bool & is_open = hand_open_state_.at(name);
-        is_open = !is_open;
-        const std::string pose_name = is_open ? m.pose_open : m.pose_close;
-
-        auto goal = sobits_interfaces::action::MoveToPose::Goal();
-        goal.pose_name = pose_name;
-              // time_allowance becomes the trajectory's time_from_start, i.e. the motion duration.
-        goal.time_allowance.sec = 1;
-              // Suppress this hand's adaptive goal stream until the pose motion
-              // completes, so per-tick "hold" goals don't fight the trajectory.
-        m.hand_pose_in_flight = true;
-        m.hand_pose_deadline = this->now() + rclcpp::Duration::from_seconds(2.0);
-        bool * pose_in_flight = &m.hand_pose_in_flight;
-        auto opts =
-          rclcpp_action::Client<sobits_interfaces::action::MoveToPose>::SendGoalOptions();
-        opts.goal_response_callback =
-          [pose_in_flight](rclcpp_action::ClientGoalHandle<sobits_interfaces::action::MoveToPose>::
-          SharedPtr h) {
-            if (!h) {*pose_in_flight = false;}      // rejected: resume adaptive
-          };
-        opts.result_callback = [this, pose_name, pose_in_flight](const auto & result) {
-            *pose_in_flight = false;
-            if (result.code == rclcpp_action::ResultCode::SUCCEEDED) {
-              RCLCPP_INFO(get_logger(), "Hand pose '%s' succeeded", pose_name.c_str());
-            } else {
-              RCLCPP_WARN(get_logger(), "Hand pose '%s' failed", pose_name.c_str());
-            }
-          };
-        client->async_send_goal(goal, opts);
-        RCLCPP_INFO(get_logger(), "%s hand → %s", name.c_str(), pose_name.c_str());
-      } else {
-        RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
-                "'%s' hand pose action server not available", name.c_str());
-      }
-    }
-  }
-
-  if (m.hand_pose_in_flight && this->now() >= m.hand_pose_deadline) {
-    m.hand_pose_in_flight = false;
-  }
-}
 
 }  // namespace sobits_teleop
 

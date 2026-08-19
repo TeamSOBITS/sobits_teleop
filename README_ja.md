@@ -478,9 +478,9 @@ Servoバックエンドには`ros-$ROS_DISTRO-moveit-servo`（`install.sh`でイ
 
 | 入力 | 動作 |
 |---|---|
-| グリップボタン（`enable_axis`） | 押している間アームを追従 |
-| ポーズボタン（`pose_button`） | `pose_open`/`pose_close`をトグル |
-| トリガ + スティック左右 | アダプティブ開閉 |
+| グリップボタン（`enable_axis`） | 押している間アームを追従（`control_cartesian`） |
+| ポーズボタン | 把持ポーズを順に送る（`control_poses`のcycle） |
+| トリガ + スティック左右 | 把持ポーズ間を掃引（`control_poses`のblend） |
 | トリガ + スティック上下 | 把持タイプ関節を回転（`control_joints`のエントリ） |
 
 #### 追従関節グループ（Quest）
