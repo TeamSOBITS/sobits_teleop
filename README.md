@@ -214,11 +214,11 @@ robot-independent.
         open_button: -1
         speed: 0.6          # Rad per legacy 50 ms tick at full deflection
         group: hand_right   # Supplies the trajectory topic
-        joints_name:
-          - hand_right_finger_c_mcp_joint
-        hand_right_finger_c_mcp_joint:
-          open_pos: 1.571
-          close_pos: -0.5
+        open:  hand_open    # A control_poses entry, or use the inline form below
+        close: hand_close
+        # Inline alternative when the endpoints are not worth their own poses:
+        # joints_name: [ hand_right_finger_c_mcp_joint ]
+        # hand_right_finger_c_mcp_joint: { open_pos: 1.571, close_pos: -0.5 }
       pre_manipulation_pose:
         button: 3           # No `groups` -> MoveToPose action backend
 
@@ -251,6 +251,13 @@ lets a gripper hold an object.
 | `close_button` / `open_button` | button alternative for devices with no axis |
 | `speed` | radians per legacy 50 ms tick at full deflection |
 | `group` | names the group whose trajectory topic carries the output |
+| `open` / `close` | a `control_poses` entry to use as that endpoint |
+
+If `open`/`close` name a pose, the blend takes that pose's joints and
+positions for the group — the values live in one place. Otherwise list
+`joints_name` and give each joint its own `open_pos`/`close_pos`. A pose name
+that `control_poses` does not define for the group is reported at startup and
+the blend is skipped.
 
 Blends are device-agnostic: they live at the top level, so `ps4.yaml`,
 `keyboard.yaml` and `quest.yaml` can all define them. The Quest hand keeps its

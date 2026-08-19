@@ -211,11 +211,11 @@ configは同梱済みで，新しいロボットへの移植はこのディレ�
         open_button: -1
         speed: 0.6          # 最大変位時の1周期（50 ms換算）あたりrad
         group: hand_right   # 軌道トピックの取得元
-        joints_name:
-          - hand_right_finger_c_mcp_joint
-        hand_right_finger_c_mcp_joint:
-          open_pos: 1.571
-          close_pos: -0.5
+        open:  hand_open    # control_posesのポーズ名．下記のインライン形式も可
+        close: hand_close
+        # ポーズにするまでもない場合はインラインで書ける：
+        # joints_name: [ hand_right_finger_c_mcp_joint ]
+        # hand_right_finger_c_mcp_joint: { open_pos: 1.571, close_pos: -0.5 }
       pre_manipulation_pose:
         button: 3           # `groups`なし -> MoveToPoseアクションを使用
 
@@ -247,6 +247,12 @@ configは同梱済みで，新しいロボットへの移植はこのディレ�
 | `close_button` / `open_button` | 軸のないデバイス向けのボタン指定 |
 | `speed` | 最大変位時の1周期（50 ms換算）あたりrad |
 | `group` | 出力先の軌道トピックを持つグループ |
+| `open` / `close` | その端点として使う`control_poses`のポーズ名 |
+
+`open`/`close`にポーズ名を書くと，そのポーズの関節と目標値をグループから取得
+するため，値の定義は一箇所で済みます．書かない場合は`joints_name`を並べ，各関節
+に`open_pos`/`close_pos`を与えます．`control_poses`がそのグループに対して定義
+していないポーズ名は起動時に報告され，そのブレンドはスキップされます.
 
 ブレンドはトップレベルに定義するためデバイス非依存で，`ps4.yaml`、
 `keyboard.yaml`、`quest.yaml`のいずれからでも使えます．Questのハンドは
