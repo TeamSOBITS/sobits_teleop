@@ -178,8 +178,6 @@ bool SOBITSTeleop::any_arm_enable_held()
   return false;
 }
 
-// Reports which optional config blocks this device.yaml supplies, so a block
-// missing on one robot is visible at startup instead of silently doing nothing.
 // Endpoint is either a pose name already in control_poses, or joints and
 // positions written under the blend itself.
 bool SOBITSTeleop::resolve_blend_endpoint(
@@ -223,6 +221,8 @@ std::string SOBITSTeleop::group_trajectory_topic(const std::string & group)
   return topic;
 }
 
+// Reports which optional config blocks this device.yaml supplies, so a block
+// missing on one robot is visible at startup instead of silently doing nothing.
 void SOBITSTeleop::report_config_summary()
 {
   const std::pair<const char *, bool> blocks[] = {
