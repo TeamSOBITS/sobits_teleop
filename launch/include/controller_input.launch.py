@@ -32,7 +32,9 @@ def generate_launch_description() -> LaunchDescription:
         cmd=['ds4drv'],
         output='screen',
         condition=IfCondition(AndSubstitution(
-            EqualsSubstitution(LaunchConfiguration('device'), 'ps4'),
+            OrSubstitution(
+                EqualsSubstitution(LaunchConfiguration('device'), 'ps4'),
+                EqualsSubstitution(LaunchConfiguration('device'), 'ps5')),
             EqualsSubstitution(LaunchConfiguration('use_ds4drv'), 'true'))),
     )
 
