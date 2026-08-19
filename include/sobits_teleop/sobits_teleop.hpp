@@ -95,6 +95,17 @@ struct PoseBlendMap
   double speed = 0.0;       // rad per legacy 50 ms tick at full deflection
 };
 
+// Steps through an ordered list of poses, one per button press.
+struct PoseCycleMap
+{
+  std::string name;
+  std::string group;            // empty = whole pose, else that group only
+  std::vector<std::string> poses;
+  int button = -1;
+  size_t index = 0;
+  rclcpp::Time last_press{0, 0, RCL_ROS_TIME};
+};
+
 struct CmdVelMap
 {
   std::string topic;
@@ -247,6 +258,7 @@ private:
   void process_joints();
   void process_poses();
   void process_pose_blends();
+  void process_pose_cycles();
   // The named pose's entry for one group, or nullptr if it defines none.
   const PoseJointGroup * find_pose_group(const std::string & pose, const std::string & group);
   void process_cmd_vel();
@@ -323,6 +335,7 @@ private:
   std::vector<std::string> pose_list;
   std::vector<PoseMap> pose_mappings;
   std::vector<PoseBlendMap> pose_blends;
+  std::vector<PoseCycleMap> pose_cycles;
 
   std::vector<float> latest_axes;
   std::vector<int> latest_buttons;

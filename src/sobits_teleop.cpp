@@ -573,6 +573,31 @@ void SOBITSTeleop::load_parameters()
     RCLCPP_INFO(get_logger(), "Loaded %zu pose blend(s) from rosparam", pose_blends.size());
   }
 
+  std::vector<std::string> cycle_names;
+  if (get_param("control_poses.cycles_name", cycle_names)) {
+    for (const auto & cname : cycle_names) {
+      const std::string base = "control_poses." + cname;
+      PoseCycleMap pc;
+      pc.name = cname;
+      get_param(base + ".button", pc.button);
+      get_param(base + ".group", pc.group);
+      get_param(base + ".poses", pc.poses);
+
+      std::vector<std::string> missing;
+      for (const auto & pn : pc.poses) {
+        if (!find_pose_group(pn, pc.group)) {missing.push_back(pn);}
+      }
+      if (pc.poses.size() < 2 || !missing.empty()) {
+        RCLCPP_ERROR(get_logger(),
+          "Cycle '%s': needs two or more poses that define group '%s' — skipping",
+          cname.c_str(), pc.group.c_str());
+        continue;
+      }
+      pose_cycles.push_back(pc);
+    }
+    RCLCPP_INFO(get_logger(), "Loaded %zu pose cycle(s) from rosparam", pose_cycles.size());
+  }
+
   // Load cmd_vel parameters. Either button-based or axis-based enable is allowed.
   if (has_param("control_velocity.button") ||
     has_param("control_velocity.axis"))
@@ -1098,6 +1123,31 @@ void SOBITSTeleop::process_pose_blends()
   }
 }
 
+// Each press sends the next pose in the list, wrapping at the end.
+void SOBITSTeleop::process_pose_cycles()
+{
+  for (auto & pc : pose_cycles) {
+    if (!button_pressed(pc.button)) {continue;}
+    // Debounce: the pose motion takes far longer than a button repeat.
+    if (pc.last_press.nanoseconds() > 0 &&
+      (this->now() - pc.last_press).seconds() < 0.4)
+    {
+      continue;
+    }
+    pc.last_press = this->now();
+
+    const std::string & pose_name = pc.poses[pc.index];
+    for (const auto & pm : pose_mappings) {
+      if (pm.pose_name != pose_name) {continue;}
+      const PoseJointGroup * only =
+        pc.group.empty() ? nullptr : find_pose_group(pose_name, pc.group);
+      send_pose(pm, only);
+      break;
+    }
+    pc.index = (pc.index + 1) % pc.poses.size();
+  }
+}
+
 void SOBITSTeleop::process_cmd_vel()
 {
   // Skip entirely if cmd_vel isn't configured — avoids flooding zero twists.
@@ -1236,6 +1286,7 @@ void SOBITSTeleop::teleop()
   process_joints();
   process_poses();
   process_pose_blends();
+  process_pose_cycles();
   process_cmd_vel();
 
   // Quest controllers: Unity publishes Quest frames directly under base_footprint.
