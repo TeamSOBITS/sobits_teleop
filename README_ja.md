@@ -214,6 +214,33 @@ configは同梱済みで，新しいロボットへの移植はこのディレ�
 
 </details>
 
+#### ポーズブレンド
+
+`blends_name`に並べた`control_poses`のエントリは，1つのグループを2つのポーズ間で
+掃引します．入力の符号が行き先のポーズを，大きさが速度を決めるため，離すと
+その位置で停止します．グリッパが物体を保持し続けられるのはこのためです．
+
+```yaml
+control_poses:
+  pose_list:  [hand_open, hand_close]
+  blends_name: [hand_right_grip]
+  hand_right_grip:
+    group: hand_right     # 2つのポーズのどのグループを駆動するか
+    from:  hand_open
+    to:    hand_close
+    enable_axis: 6        # enable_buttonとも-1なら常時有効
+    axis: 4               # 符号で行き先，大きさで速度
+    axis_sign: -1
+    to_button: -1         # 軸のないデバイス用のボタン指定
+    from_button: -1
+    speed: 0.6            # 最大変位時の1周期（50 ms換算）あたりrad
+```
+
+端点はポーズから取得するため，関節の値の定義は一箇所で済みます．2つのポーズが
+共有する関節すべてを駆動し，片方にしかない関節はスキップします．該当グループを
+定義していないポーズや，共有する関節がない組み合わせは起動時に報告され，その
+ブレンドはスキップされます．
+
 #### ポーズのバックエンド
 
 `control_poses`の各エントリは，ポーズごとに次の2通りのいずれかで解決されます．

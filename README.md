@@ -217,6 +217,34 @@ robot-independent.
 
 </details>
 
+#### Pose blends
+
+A `control_poses` entry listed in `blends_name` sweeps one group between two
+poses. The input's sign picks which pose it heads for and its size sets the
+speed, so releasing leaves the joints where they are — that is what lets a
+gripper hold an object.
+
+```yaml
+control_poses:
+  pose_list:  [hand_open, hand_close]
+  blends_name: [hand_right_grip]
+  hand_right_grip:
+    group: hand_right     # which group of the two poses to drive
+    from:  hand_open
+    to:    hand_close
+    enable_axis: 6        # -1 with no enable_button = always live
+    axis: 4               # sign picks the pose, size the speed
+    axis_sign: -1
+    to_button: -1         # button alternative for devices with no axis
+    from_button: -1
+    speed: 0.6            # rad per legacy 50 ms tick at full deflection
+```
+
+The endpoints come from the poses, so the joint values live in one place. The
+blend drives every joint the two poses share; a joint listed in only one is
+skipped. A pose that defines no such group, or two poses sharing no joints,
+is reported at startup and the blend is skipped.
+
 #### Pose backends
 
 `control_poses` entries resolve one of two ways, chosen per pose:
