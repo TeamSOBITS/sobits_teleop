@@ -33,7 +33,7 @@ def generate_launch_description() -> LaunchDescription:
         output='screen',
         condition=IfCondition(AndSubstitution(
             EqualsSubstitution(LaunchConfiguration('device'), 'ps4'),
-            EqualsSubstitution(LaunchConfiguration('use_ds4drv'), 'True'))),
+            EqualsSubstitution(LaunchConfiguration('use_ds4drv'), 'true'))),
     )
 
     # joy_linux node for joy controllers (ps4, ps5)
@@ -112,7 +112,7 @@ def generate_launch_description() -> LaunchDescription:
             'ros_ip', default_value='127.0.0.1',
             description='ROS IP for ros_tcp_endpoint (Meta Quest)'),
         DeclareLaunchArgument(
-            'use_ds4drv', default_value='True',
+            'use_ds4drv', default_value='false',
             description='Whether to launch ds4drv for PS4 controller support'),
         DeclareLaunchArgument(
             'use_sim_time', default_value='false',

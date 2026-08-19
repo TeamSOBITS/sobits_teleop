@@ -38,7 +38,7 @@ def generate_launch_description():
     )
     declare_use_ds4drv_cmd = DeclareLaunchArgument(
         'use_ds4drv',
-        default_value='True',
+        default_value='false',
         description='Whether to launch ds4drv for PS4 controller support'
     )
     declare_use_sim_time_cmd = DeclareLaunchArgument(
