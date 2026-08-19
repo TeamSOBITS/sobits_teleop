@@ -138,7 +138,7 @@
 
     control_poses:
       trigger : 8        # 8 key
-      pose_list:
+      poses_name:
         - initial_pose
         - ninja_pose
         - detecting_high_pose

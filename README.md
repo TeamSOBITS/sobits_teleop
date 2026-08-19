@@ -183,7 +183,7 @@ robot-independent.
     control_poses:        # Move to predefined poses
       trigger: 8            # Optional modifier button; omit for none
       time_from_start: 3.0  # Default seconds to reach a pose
-      pose_list:
+      poses_name:
         - initial_pose
         - pre_manipulation_pose
       initial_pose:
@@ -224,7 +224,7 @@ of poses, one per button press, wrapping at the end.
 
 ```yaml
 control_poses:
-  pose_list:   [grip_open, grip_two, grip_three]
+  poses_name:   [grip_open, grip_two, grip_three]
   cycles_name: [hand_right_grip]
   hand_right_grip:
     button: 6
@@ -245,7 +245,7 @@ gripper hold an object.
 
 ```yaml
 control_poses:
-  pose_list:  [hand_open, hand_close]
+  poses_name:  [hand_open, hand_close]
   blends_name: [hand_right_grip]
   hand_right_grip:
     group: hand_right     # which group of the two poses to drive

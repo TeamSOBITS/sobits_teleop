@@ -180,7 +180,7 @@ configは同梱済みで，新しいロボットへの移植はこのディレ�
     control_poses:        # 定義済みポーズへの移動
       trigger: 8            # 任意の修飾ボタン．不要なら省略
       time_from_start: 3.0  # ポーズ到達までの既定秒数
-      pose_list:
+      poses_name:
         - initial_pose
         - pre_manipulation_pose
       initial_pose:
@@ -221,7 +221,7 @@ configは同梱済みで，新しいロボットへの移植はこのディレ�
 
 ```yaml
 control_poses:
-  pose_list:   [grip_open, grip_two, grip_three]
+  poses_name:   [grip_open, grip_two, grip_three]
   cycles_name: [hand_right_grip]
   hand_right_grip:
     button: 6
@@ -241,7 +241,7 @@ control_poses:
 
 ```yaml
 control_poses:
-  pose_list:  [hand_open, hand_close]
+  poses_name:  [hand_open, hand_close]
   blends_name: [hand_right_grip]
   hand_right_grip:
     group: hand_right     # 2つのポーズのどのグループを駆動するか

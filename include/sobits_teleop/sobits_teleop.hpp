@@ -332,7 +332,7 @@ private:
   // Scales legacy per-50ms-tick config speeds to the actual loop period.
   double jog_tick_scale_ = 1.0;
 
-  std::vector<std::string> pose_list;
+  std::vector<std::string> poses_name;
   std::vector<PoseMap> pose_mappings;
   std::vector<PoseBlendMap> pose_blends;
   std::vector<PoseCycleMap> pose_cycles;

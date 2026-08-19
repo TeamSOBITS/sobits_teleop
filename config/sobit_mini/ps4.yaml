@@ -106,7 +106,7 @@
 
     control_poses:
       trigger : 8        # shareボタン
-      pose_list:
+      poses_name:
         - initial_pose
         - detecting_pose
       initial_pose:

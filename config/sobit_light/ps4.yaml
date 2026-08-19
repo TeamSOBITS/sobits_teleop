@@ -76,7 +76,7 @@
 
     control_poses:
       trigger : 8        # shareボタン
-      pose_list:
+      poses_name:
         - initial_pose
         - shutdown_pose
         - detecting_pose

@@ -446,9 +446,9 @@ void SOBITSTeleop::load_parameters()
 
   // Load pose parameters. "trigger" is an optional modifier button held while
   // pressing the pose button; omit it to bind the pose button on its own.
-  if (has_param("control_poses.pose_list")) {
-    get_param("control_poses.pose_list", pose_list);
-    for (const auto & pose_name : pose_list) {
+  if (has_param("control_poses.poses_name")) {
+    get_param("control_poses.poses_name", poses_name);
+    for (const auto & pose_name : poses_name) {
       PoseMap pm{};
       pm.pose_name = pose_name;
       get_param("control_poses.trigger", pm.trigger);

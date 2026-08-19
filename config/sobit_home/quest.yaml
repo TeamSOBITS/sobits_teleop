@@ -13,7 +13,7 @@
     control_poses:
       pose_action: move_to_pose
       time_from_start: 3.0
-      pose_list:
+      poses_name:
       - initial_pose
       - hand_right_open
       - hand_right_close
