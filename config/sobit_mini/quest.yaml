@@ -1,6 +1,8 @@
 /**:
   ros__parameters:
-    control_velocity:
+    controllers_name:
+    - controller_velocity
+    controller_velocity:
       enable_axis: 6
       fast_enable_axis: 7
       axis_sign: 1

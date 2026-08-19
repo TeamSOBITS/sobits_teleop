@@ -153,7 +153,7 @@ robot-independent.
         arm_right: arm_right_position_controller/joint_trajectory
       cmd_vel_topic: cmd_vel
 
-    # Base limits [m/s, rad/s]; control_velocity scales are fractions of these.
+    # Base limits [m/s, rad/s]; controller_velocity scales are fractions of these.
     base_max_speed:
       linear:  1.0
       angular: 1.0
@@ -168,7 +168,14 @@ robot-independent.
 /**:
   ros__parameters:
 
-    control_joints:       # Joint trajectory groups to control
+    # Only the controllers listed here load; comment one out to disable it.
+    # Omit the whole list to enable every block defined below.
+    controllers_name:
+      - controller_joints
+      - controller_poses
+      - controller_velocity
+
+    controller_joints:       # Joint trajectory groups to control
       groups_name:
         - head
         - arm_left
@@ -185,7 +192,7 @@ robot-independent.
           speed:       0.1  # Speed when button pressed
           fast_speed:  0.5  # Speed when fast_button pressed
 
-    control_poses:        # Move to predefined poses
+    controller_poses:        # Move to predefined poses
       trigger: 8            # Optional modifier button; omit for none
       time_from_start: 3.0  # Default seconds to reach a pose
       poses:                # Poses, blends and cycles each have a block
@@ -208,7 +215,7 @@ robot-independent.
         pre_manipulation_pose:
           button: 3         # No `groups_name` -> MoveToPose action backend
 
-    control_velocity:     # Mobile base control
+    controller_velocity:     # Mobile base control
       enable_button: 5      # Enable; arms both linear and angular
       fast_enable_button: 7 # enable_axis / fast_enable_axis also work
       axis_sign:   1
@@ -227,11 +234,11 @@ robot-independent.
 
 #### Pose cycles
 
-A `control_poses` entry listed in `cycles_name` steps through an ordered list
+A `controller_poses` entry listed in `cycles_name` steps through an ordered list
 of poses, one per button press, wrapping at the end.
 
 ```yaml
-control_poses:
+controller_poses:
   poses:
     poses_name: [grip_open, grip_two, grip_three]
   cycles:
@@ -248,13 +255,13 @@ reported at startup and skipped.
 
 #### Pose blends
 
-A `control_poses` entry listed in `blends_name` sweeps one group between two
+A `controller_poses` entry listed in `blends_name` sweeps one group between two
 poses. The input's sign picks which pose it heads for and its size sets the
 speed, so releasing leaves the joints where they are — that is what lets a
 gripper hold an object.
 
 ```yaml
-control_poses:
+controller_poses:
   poses:
     poses_name: [hand_open, hand_close]
   blends:
@@ -278,7 +285,7 @@ sharing no joints, is reported at startup and the blend is skipped.
 
 #### Pose backends
 
-`control_poses` entries resolve one of two ways, chosen per pose:
+`controller_poses` entries resolve one of two ways, chosen per pose:
 
 | Pose defines `groups_name` | Backend | Behaviour |
 |---|---|---|
@@ -487,20 +494,20 @@ fetches the robot model from it at startup.
 
 | Input | Action |
 |---|---|
-| Grip button (`enable_axis`) | Hold to track the arm (`control_cartesian`) |
-| Pose button | Step the grip poses (a `control_poses` cycle) |
-| Trigger + stick left/right | Sweep between the grip poses (a `control_poses` blend) |
-| Trigger + stick up/down | Rotate the grip-type joint (a `control_joints` entry) |
+| Grip button (`enable_axis`) | Hold to track the arm (`controller_cartesian`) |
+| Pose button | Step the grip poses (a `controller_poses` cycle) |
+| Trigger + stick left/right | Sweep between the grip poses (a `controller_poses` blend) |
+| Trigger + stick up/down | Rotate the grip-type joint (a `controller_joints` entry) |
 
 #### Tracked joint groups (Quest)
 
-A `control_tracking` group follows a TF frame: each
+A `controller_tracking` group follows a TF frame: each
 joint takes one component of that frame's movement since the latch. The group
 name is free — `head`, `neck`, `torso` — and any number of groups may exist,
 each with its own latch.
 
 ```yaml
-control_tracking:
+controller_tracking:
   groups_name: [head, body]
   head:
     enable_axis: 2                  # hold to latch
@@ -535,11 +542,11 @@ startup and skipped.
 
 #### Cartesian groups (Quest)
 
-A `control_cartesian` group drives an end effector from a controller's pose,
+A `controller_cartesian` group drives an end effector from a controller's pose,
 handed to the arm-tracking backend rather than published as joint positions.
 
 ```yaml
-control_cartesian:
+controller_cartesian:
   groups_name: [arm_right, arm_left]
   arm_right:
     enable_axis: 7                  # grip; hold to track
@@ -552,9 +559,9 @@ control_cartesian:
     proximity_angle_threshold: 0.0  # rad
 ```
 
-The two blocks are independent: `control_tracking` maps a frame's motion onto
-named joints, while `control_cartesian` gives an arm a pose to solve for. Both
-arm-backend launchers read `control_cartesian.groups_name` to pick the arms
+The two blocks are independent: `controller_tracking` maps a frame's motion onto
+named joints, while `controller_cartesian` gives an arm a pose to solve for. Both
+arm-backend launchers read `controller_cartesian.groups_name` to pick the arms
 they drive.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
@@ -565,7 +572,7 @@ they drive.
 
 1. Create `config/{robot_name}/` with `robot.yaml` (controller topics) and one
    `{device}.yaml` per input device you use.
-2. For Quest arm teleop, add `arm_<side>` groups to `control_cartesian` in `quest.yaml`
+2. For Quest arm teleop, add `arm_<side>` groups to `controller_cartesian` in `quest.yaml`
    (`target_frame_name:`, `end_effector_frame_name:`, gripper mapping) — this is
    the single source of arm identity for both backends.
 3. Copy `arm_backend_plan.yaml` / `arm_backend_servo.yaml` from an existing

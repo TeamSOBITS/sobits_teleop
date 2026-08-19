@@ -1,9 +1,11 @@
 /**:
   ros__parameters:
+    controllers_name:
+    - controller_velocity
     base_max_speed:
       linear: 1.0
       angular: 1.0
-    control_velocity:
+    controller_velocity:
       enable_button: 6
       fast_enable_button: 7
       enable_axis: -1

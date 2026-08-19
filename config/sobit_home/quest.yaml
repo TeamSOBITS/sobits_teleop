@@ -1,6 +1,12 @@
 /**:
   ros__parameters:
-    control_velocity:
+    controllers_name:
+    - controller_velocity
+    - controller_poses
+    - controller_joints
+    - controller_tracking
+    - controller_cartesian
+    controller_velocity:
       enable_axis: 3
       axis_sign: -1
       linear:
@@ -12,7 +18,7 @@
         axis: 4
         scale: 0.2
         fast_scale: 0.6
-    control_poses:
+    controller_poses:
       pose_action: move_to_pose
       time_from_start: 3.0
       poses:
@@ -225,7 +231,7 @@
           poses:
           - hand_left_open
           - hand_left_close
-    control_joints:
+    controller_joints:
       groups_name:
       - hand_right
       - hand_left
@@ -249,7 +255,7 @@
           dominant_over: 0
           speed: 0.6
           fast_speed: 0.6
-    control_tracking:
+    controller_tracking:
       groups_name:
       - head
       - body
@@ -278,7 +284,7 @@
           type: prismatic
           axis: z
           sign: 1
-    control_cartesian:
+    controller_cartesian:
       groups_name:
       - arm_right
       - arm_left

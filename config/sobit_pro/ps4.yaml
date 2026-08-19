@@ -1,6 +1,10 @@
 /**:
   ros__parameters:
-    control_joints:
+    controllers_name:
+    - controller_joints
+    - controller_poses
+    - controller_velocity
+    controller_joints:
       groups_name:
       - head
       - arm
@@ -64,7 +68,7 @@
           axis_sign: -1
           speed: 0.1
           fast_speed: 0.5
-    control_poses:
+    controller_poses:
       trigger: 8
       poses:
         poses_name:
@@ -80,7 +84,7 @@
           button: 0
         navigation_pose:
           button: 3
-    control_velocity:
+    controller_velocity:
       enable_button: 5
       fast_enable_button: 7
       axis_sign: 1

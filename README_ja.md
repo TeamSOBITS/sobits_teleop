@@ -150,7 +150,7 @@ configは同梱済みで，新しいロボットへの移植はこのディレ�
         arm_right: arm_right_position_controller/joint_trajectory
       cmd_vel_topic: cmd_vel
 
-    # 台車の上限 [m/s, rad/s]．control_velocityのscaleはこれに対する割合．
+    # 台車の上限 [m/s, rad/s]．controller_velocityのscaleはこれに対する割合．
     base_max_speed:
       linear:  1.0
       angular: 1.0
@@ -165,7 +165,14 @@ configは同梱済みで，新しいロボットへの移植はこのディレ�
 /**:
   ros__parameters:
 
-    control_joints:       # 操作するjoint_trajectory_controllerを定義
+    # ここに列挙したcontrollerだけが読み込まれる．1行コメントアウトで無効化．
+    # リスト自体を省略すると，定義されているブロックをすべて有効にする．
+    controllers_name:
+      - controller_joints
+      - controller_poses
+      - controller_velocity
+
+    controller_joints:       # 操作するjoint_trajectory_controllerを定義
       groups_name:
         - head
         - arm_left
@@ -182,7 +189,7 @@ configは同梱済みで，新しいロボットへの移植はこのディレ�
           speed:       0.1  # 通常速度
           fast_speed:  0.5  # 高速モード時の速度
 
-    control_poses:        # 定義済みポーズへの移動
+    controller_poses:        # 定義済みポーズへの移動
       trigger: 8            # 任意の修飾ボタン．不要なら省略
       time_from_start: 3.0  # ポーズ到達までの既定秒数
       poses:                # poses / blends / cycles をブロックに分ける
@@ -205,7 +212,7 @@ configは同梱済みで，新しいロボットへの移植はこのディレ�
         pre_manipulation_pose:
           button: 3         # `groups_name`なし -> MoveToPoseアクションを使用
 
-    control_velocity:     # 台車制御
+    controller_velocity:     # 台車制御
       enable_button: 5      # 有効化．linear/angular 双方を armする
       fast_enable_button: 7 # enable_axis / fast_enable_axis も使用可
       axis_sign:   1
@@ -224,11 +231,11 @@ configは同梱済みで，新しいロボットへの移植はこのディレ�
 
 #### ポーズサイクル
 
-`cycles_name`に並べた`control_poses`のエントリは，ボタンを押すたびに指定した
+`cycles_name`に並べた`controller_poses`のエントリは，ボタンを押すたびに指定した
 順序でポーズを1つずつ送り，末尾で先頭に戻ります．
 
 ```yaml
-control_poses:
+controller_poses:
   poses:
     poses_name: [grip_open, grip_two, grip_three]
   cycles:
@@ -245,12 +252,12 @@ control_poses:
 
 #### ポーズブレンド
 
-`blends_name`に並べた`control_poses`のエントリは，1つのグループを2つのポーズ間で
+`blends_name`に並べた`controller_poses`のエントリは，1つのグループを2つのポーズ間で
 掃引します．入力の符号が行き先のポーズを，大きさが速度を決めるため，離すと
 その位置で停止します．グリッパが物体を保持し続けられるのはこのためです．
 
 ```yaml
-control_poses:
+controller_poses:
   poses_name:  [hand_open, hand_close]
   blends_name: [hand_right_grip]
   hand_right_grip:
@@ -272,7 +279,7 @@ control_poses:
 
 #### ポーズのバックエンド
 
-`control_poses`の各エントリは，ポーズごとに次の2通りのいずれかで解決されます．
+`controller_poses`の各エントリは，ポーズごとに次の2通りのいずれかで解決されます．
 
 | `groups_name`の記述 | バックエンド | 動作 |
 |---|---|---|
@@ -478,20 +485,20 @@ Servoバックエンドには`ros-$ROS_DISTRO-moveit-servo`（`install.sh`でイ
 
 | 入力 | 動作 |
 |---|---|
-| グリップボタン（`enable_axis`） | 押している間アームを追従（`control_cartesian`） |
-| ポーズボタン | 把持ポーズを順に送る（`control_poses`のcycle） |
-| トリガ + スティック左右 | 把持ポーズ間を掃引（`control_poses`のblend） |
-| トリガ + スティック上下 | 把持タイプ関節を回転（`control_joints`のエントリ） |
+| グリップボタン（`enable_axis`） | 押している間アームを追従（`controller_cartesian`） |
+| ポーズボタン | 把持ポーズを順に送る（`controller_poses`のcycle） |
+| トリガ + スティック左右 | 把持ポーズ間を掃引（`controller_poses`のblend） |
+| トリガ + スティック上下 | 把持タイプ関節を回転（`controller_joints`のエントリ） |
 
 #### 追従関節グループ（Quest）
 
-`control_tracking`グループはTFフレームに追従します．各関節は
+`controller_tracking`グループはTFフレームに追従します．各関節は
 ラッチ以降のフレーム移動量のうち1成分を受け取ります．グループ名は自由で
 （`head`、`neck`、`torso`など），それぞれ独立したラッチを持ち，いくつでも
 定義できます．
 
 ```yaml
-control_tracking:
+controller_tracking:
   groups_name: [head, body]
   head:
     enable_axis: 2                  # 押している間ラッチ
@@ -525,11 +532,11 @@ control_tracking:
 
 #### Cartesianグループ（Quest）
 
-`control_cartesian`グループはコントローラの姿勢からエンドエフェクタを駆動します．
+`controller_cartesian`グループはコントローラの姿勢からエンドエフェクタを駆動します．
 関節位置として配信するのではなく，アーム追従バックエンドに渡されます．
 
 ```yaml
-control_cartesian:
+controller_cartesian:
   groups_name: [arm_right, arm_left]
   arm_right:
     enable_axis: 7                  # グリップ．押している間追従
@@ -542,9 +549,9 @@ control_cartesian:
     proximity_angle_threshold: 0.0  # rad
 ```
 
-2つのブロックは独立しています．`control_tracking`はフレームの移動量を指定した
-関節に割り当て，`control_cartesian`はアームに解くべき姿勢を与えます．どちらの
-アームバックエンドのlauncherも`control_cartesian.groups_name`から対象アームを
+2つのブロックは独立しています．`controller_tracking`はフレームの移動量を指定した
+関節に割り当て，`controller_cartesian`はアームに解くべき姿勢を与えます．どちらの
+アームバックエンドのlauncherも`controller_cartesian.groups_name`から対象アームを
 決定します．
 
 <p align="right">(<a href="#readme-top">上に戻る</a>)</p>

@@ -1,6 +1,10 @@
 /**:
   ros__parameters:
-    control_velocity:
+    controllers_name:
+    - controller_velocity
+    - controller_joints
+    - controller_poses
+    controller_velocity:
       enable_button: 5
       fast_enable_button: 7
       axis_sign: 1
@@ -13,7 +17,7 @@
         axis: 3
         scale: 0.2
         fast_scale: 0.6
-    control_joints:
+    controller_joints:
       groups_name:
       - head
       - body
@@ -147,7 +151,7 @@
           axis_sign: -1
           speed: 0.1
           fast_speed: 0.5
-    control_poses:
+    controller_poses:
       trigger: 8
       poses:
         poses_name:

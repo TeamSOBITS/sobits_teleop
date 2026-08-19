@@ -20,7 +20,7 @@ SOBITSTeleop::SOBITSTeleop(const rclcpp::NodeOptions & options)
   // Action server name is configurable so this works for any robot exposing a
   // MoveToPose server under a different name; defaults to "move_to_pose".
   std::string pose_action_name = "move_to_pose";
-  get_param("control_poses.pose_action", pose_action_name);
+  get_param("controller_poses.pose_action", pose_action_name);
   move_to_pose_client = rclcpp_action::create_client<sobits_interfaces::action::MoveToPose>(
       this, pose_action_name);
 
@@ -213,14 +213,23 @@ std::string SOBITSTeleop::topic_group_name(const std::string & topic)
   return std::string();
 }
 
+// Omitting controllers_name enables every block; listing it enables only those
+// named, so commenting one line out disables that controller.
+bool SOBITSTeleop::controller_enabled(const std::string & name)
+{
+  if (enabled_controllers_.empty()) {return true;}
+  return std::find(enabled_controllers_.begin(), enabled_controllers_.end(), name) !=
+         enabled_controllers_.end();
+}
+
 void SOBITSTeleop::report_config_summary()
 {
   const std::pair<const char *, bool> blocks[] = {
-    {"control_joints", !joint_mappings.empty()},
-    {"control_poses", !pose_mappings.empty()},
-    {"control_velocity", cvm.button >= 0 || cvm.axis >= 0},
-    {"control_tracking", !quest_tracked_groups.empty()},
-    {"control_cartesian", has_cartesian_groups},
+    {"controller_joints", !joint_mappings.empty()},
+    {"controller_poses", !pose_mappings.empty()},
+    {"controller_velocity", cvm.button >= 0 || cvm.axis >= 0},
+    {"controller_tracking", !quest_tracked_groups.empty()},
+    {"controller_cartesian", has_cartesian_groups},
   };
 
   std::string configured, absent;
@@ -405,6 +414,10 @@ void SOBITSTeleop::load_parameters()
 {
   get_param("robot_topic_name.joint_states_topic", joint_states_topic);
   get_param("robot_topic_name.base_frame", base_frame);
+  get_param("controllers_name", enabled_controllers_);
+  // Robot limits; controller_velocity scales are fractions of these.
+  get_param("base_max_speed.linear", cvm.linear_max);
+  get_param("base_max_speed.angular", cvm.angular_max);
 
   // robot.yaml lists every group's topic; a device.yaml only uses a subset.
   mark_visited("robot_topic_name.joint_trajectory_topic");
@@ -414,12 +427,14 @@ void SOBITSTeleop::load_parameters()
     cvm.topic, 10);
 
   // Load joint parameters
-  if (has_param("control_joints.groups_name")) {
-    get_param("control_joints.groups_name", joint_groups);
+  if (controller_enabled("controller_joints") &&
+    has_param("controller_joints.groups_name"))
+  {
+    get_param("controller_joints.groups_name", joint_groups);
 
     for (const auto & joint_group : joint_groups) {
-      if (!get_param("control_joints." + joint_group + ".joints_name", joint_names)) {
-        mark_visited("control_joints." + joint_group);
+      if (!get_param("controller_joints." + joint_group + ".joints_name", joint_names)) {
+        mark_visited("controller_joints." + joint_group);
         continue;
       }
 
@@ -427,22 +442,22 @@ void SOBITSTeleop::load_parameters()
         JointMap jm;
         jm.joint_group = joint_group;
         jm.joint_name = joint_name;
-        get_param("control_joints." + joint_group + "." + joint_name + ".button",
+        get_param("controller_joints." + joint_group + "." + joint_name + ".button",
             jm.button);
-        get_param("control_joints." + joint_group + "." + joint_name + ".enable_axis",
+        get_param("controller_joints." + joint_group + "." + joint_name + ".enable_axis",
             jm.enable_axis);
-        get_param("control_joints." + joint_group + "." + joint_name + ".fast_button",
+        get_param("controller_joints." + joint_group + "." + joint_name + ".fast_button",
             jm.fast_button);
-        get_param("control_joints." + joint_group + "." + joint_name + ".fast_axis",
+        get_param("controller_joints." + joint_group + "." + joint_name + ".fast_axis",
             jm.fast_axis);
-        get_param("control_joints." + joint_group + "." + joint_name + ".axis", jm.axis);
-        get_param("control_joints." + joint_group + "." + joint_name + ".axis_sign",
+        get_param("controller_joints." + joint_group + "." + joint_name + ".axis", jm.axis);
+        get_param("controller_joints." + joint_group + "." + joint_name + ".axis_sign",
             jm.axis_sign);
-        get_param("control_joints." + joint_group + "." + joint_name + ".dominant_over",
+        get_param("controller_joints." + joint_group + "." + joint_name + ".dominant_over",
             jm.dominant_over);
-        get_param("control_joints." + joint_group + "." + joint_name + ".speed",
+        get_param("controller_joints." + joint_group + "." + joint_name + ".speed",
             jm.speed);
-        get_param("control_joints." + joint_group + "." + joint_name + ".fast_speed",
+        get_param("controller_joints." + joint_group + "." + joint_name + ".fast_speed",
             jm.fast_speed);
         jm.joint_trajectory_topic = group_trajectory_topic(joint_group);
         if (jm.joint_trajectory_topic.empty()) {continue;}
@@ -457,17 +472,19 @@ void SOBITSTeleop::load_parameters()
 
   // Load pose parameters. "trigger" is an optional modifier button held while
   // pressing the pose button; omit it to bind the pose button on its own.
-  if (has_param("control_poses.poses.poses_name")) {
-    get_param("control_poses.poses.poses_name", poses_name);
+  if (controller_enabled("controller_poses") &&
+    has_param("controller_poses.poses.poses_name"))
+  {
+    get_param("controller_poses.poses.poses_name", poses_name);
     for (const auto & pose_name : poses_name) {
       PoseMap pm{};
       pm.pose_name = pose_name;
-      get_param("control_poses.trigger", pm.trigger);
-      get_param("control_poses.poses." + pose_name + ".button", pm.button);
+      get_param("controller_poses.trigger", pm.trigger);
+      get_param("controller_poses.poses." + pose_name + ".button", pm.button);
 
-      const std::string base = "control_poses.poses." + pose_name;
+      const std::string base = "controller_poses.poses." + pose_name;
       // Shared default first, then the per-pose override.
-      get_param("control_poses.time_from_start", pm.time_from_start);
+      get_param("controller_poses.time_from_start", pm.time_from_start);
       get_param(base + ".time_from_start", pm.time_from_start);
 
       // A pose defined in YAML lists the groups it drives; each group names the
@@ -534,9 +551,11 @@ void SOBITSTeleop::load_parameters()
 
   // Blends sweep one group between two poses, so they load after the poses.
   std::vector<std::string> blend_names;
-  if (get_param("control_poses.blends.blends_name", blend_names)) {
+  if (controller_enabled("controller_poses") &&
+    get_param("controller_poses.blends.blends_name", blend_names))
+  {
     for (const auto & bname : blend_names) {
-      const std::string base = "control_poses.blends." + bname;
+      const std::string base = "controller_poses.blends." + bname;
       PoseBlendMap bl;
       bl.name = bname;
       get_param(base + ".enable_axis", bl.enable_axis);
@@ -599,9 +618,11 @@ void SOBITSTeleop::load_parameters()
   }
 
   std::vector<std::string> cycle_names;
-  if (get_param("control_poses.cycles.cycles_name", cycle_names)) {
+  if (controller_enabled("controller_poses") &&
+    get_param("controller_poses.cycles.cycles_name", cycle_names))
+  {
     for (const auto & cname : cycle_names) {
-      const std::string base = "control_poses.cycles." + cname;
+      const std::string base = "controller_poses.cycles." + cname;
       PoseCycleMap pc;
       pc.name = cname;
       get_param(base + ".button", pc.button);
@@ -624,34 +645,34 @@ void SOBITSTeleop::load_parameters()
   }
 
   // Load cmd_vel parameters. Either button-based or axis-based enable is allowed.
-  if (has_param("control_velocity.enable_button") ||
-    has_param("control_velocity.enable_axis"))
+  if (controller_enabled("controller_velocity") &&
+    (has_param("controller_velocity.enable_button") ||
+    has_param("controller_velocity.enable_axis")))
   {
-    get_param("control_velocity.enable_button", cvm.button);
-    get_param("control_velocity.fast_enable_button", cvm.fast_button);
-    get_param("control_velocity.enable_axis", cvm.axis);
-    get_param("control_velocity.fast_enable_axis", cvm.fast_axis);
-    get_param("control_velocity.axis_sign", cvm.axis_sign);
-    // Robot limits live in robot.yaml; the scales below are fractions of them.
-    get_param("base_max_speed.linear", cvm.linear_max);
-    get_param("base_max_speed.angular", cvm.angular_max);
-    get_param("control_velocity.linear.x_axis", cvm.linear_x_axis);
-    get_param("control_velocity.linear.y_axis", cvm.linear_y_axis);
-    get_param("control_velocity.linear.scale", cvm.linear_scale);
-    get_param("control_velocity.linear.fast_scale", cvm.fast_linear_scale);
-    get_param("control_velocity.angular.axis", cvm.angular_axis);
-    get_param("control_velocity.angular.scale", cvm.angular_scale);
-    get_param("control_velocity.angular.fast_scale", cvm.fast_angular_scale);
+    get_param("controller_velocity.enable_button", cvm.button);
+    get_param("controller_velocity.fast_enable_button", cvm.fast_button);
+    get_param("controller_velocity.enable_axis", cvm.axis);
+    get_param("controller_velocity.fast_enable_axis", cvm.fast_axis);
+    get_param("controller_velocity.axis_sign", cvm.axis_sign);
+    get_param("controller_velocity.linear.x_axis", cvm.linear_x_axis);
+    get_param("controller_velocity.linear.y_axis", cvm.linear_y_axis);
+    get_param("controller_velocity.linear.scale", cvm.linear_scale);
+    get_param("controller_velocity.linear.fast_scale", cvm.fast_linear_scale);
+    get_param("controller_velocity.angular.axis", cvm.angular_axis);
+    get_param("controller_velocity.angular.scale", cvm.angular_scale);
+    get_param("controller_velocity.angular.fast_scale", cvm.fast_angular_scale);
     RCLCPP_INFO(get_logger(), "Loaded control_velocity parameters from rosparam");
   }
   // Tracked groups: joints follow a frame's motion since the latch.
   std::vector<std::string> tracking_groups;
-  if (has_param("control_tracking.groups_name")) {
-    get_param("control_tracking.groups_name", tracking_groups);
+  if (controller_enabled("controller_tracking") &&
+    has_param("controller_tracking.groups_name"))
+  {
+    get_param("controller_tracking.groups_name", tracking_groups);
     for (const auto & group : tracking_groups) {
       // A group lists its joints in joints_name, then describes each one below.
       std::vector<std::string> joint_names;
-      get_param("control_tracking." + group + ".joints_name", joint_names);
+      get_param("controller_tracking." + group + ".joints_name", joint_names);
 
       if (joint_names.empty()) {
         RCLCPP_ERROR(get_logger(),
@@ -663,12 +684,12 @@ void SOBITSTeleop::load_parameters()
           this->get_node_parameters_interface()->get_parameter_overrides();
         QuestTrackedGroup g{};
         g.group = group;
-        get_param("control_tracking." + group + ".enable_axis", g.enable_axis);
-        get_param("control_tracking." + group + ".target_frame_name", g.target_frame_name);
-        get_param("control_tracking." + group + ".motion_scale", g.motion_scale);
+        get_param("controller_tracking." + group + ".enable_axis", g.enable_axis);
+        get_param("controller_tracking." + group + ".target_frame_name", g.target_frame_name);
+        get_param("controller_tracking." + group + ".motion_scale", g.motion_scale);
 
         for (const auto & jname : joint_names) {
-          const std::string jprefix = "control_tracking." + group + "." + jname;
+          const std::string jprefix = "controller_tracking." + group + "." + jname;
           std::string type, axis;
           get_param(jprefix + ".type", type);
           get_param(jprefix + ".axis", axis);
@@ -737,36 +758,38 @@ void SOBITSTeleop::load_parameters()
   }
 
   // Cartesian groups: an end effector follows a controller's pose.
-  if (has_param("control_cartesian.groups_name")) {
-    get_param("control_cartesian.groups_name", quest_groups);
+  if (controller_enabled("controller_cartesian") &&
+    has_param("controller_cartesian.groups_name"))
+  {
+    get_param("controller_cartesian.groups_name", quest_groups);
     for (const auto & group : quest_groups) {
-      const bool is_arm = has_param("control_cartesian." + group +
+      const bool is_arm = has_param("controller_cartesian." + group +
           ".end_effector_frame_name");
 
       if (is_arm) {
         QuestArmMap am{};
         am.group = group;
-        get_param("control_cartesian." + group + ".end_effector_frame_name",
+        get_param("controller_cartesian." + group + ".end_effector_frame_name",
             am.end_effector_frame_name);
-        get_param("control_cartesian." + group + ".target_frame_name", am.target_frame_name);
-        get_param("control_cartesian." + group + ".motion_scale", am.motion_scale);
-        get_param("control_cartesian." + group + ".enable_axis", am.enable_axis);
+        get_param("controller_cartesian." + group + ".target_frame_name", am.target_frame_name);
+        get_param("controller_cartesian." + group + ".motion_scale", am.motion_scale);
+        get_param("controller_cartesian." + group + ".enable_axis", am.enable_axis);
         am.arm_joint_trajectory_topic = group_trajectory_topic(group);
         if (am.arm_joint_trajectory_topic.empty()) {continue;}
         // Optional proximity thresholds — defaults are set in the struct
-        if (has_param("control_cartesian." + group + ".proximity_threshold")) {
-          get_param("control_cartesian." + group + ".proximity_threshold",
+        if (has_param("controller_cartesian." + group + ".proximity_threshold")) {
+          get_param("controller_cartesian." + group + ".proximity_threshold",
               am.proximity_threshold);
         }
-        if (has_param("control_cartesian." + group + ".proximity_angle_threshold")) {
-          get_param("control_cartesian." + group + ".proximity_angle_threshold",
+        if (has_param("controller_cartesian." + group + ".proximity_angle_threshold")) {
+          get_param("controller_cartesian." + group + ".proximity_angle_threshold",
               am.proximity_angle_threshold);
         }
 
         // Frames default from the controller side so older configs still work.
-        get_param("control_cartesian." + group + ".controller_frame_name",
+        get_param("controller_cartesian." + group + ".controller_frame_name",
             am.controller_frame_name);
-        get_param("control_cartesian." + group + ".controller_echo_frame_name",
+        get_param("controller_cartesian." + group + ".controller_echo_frame_name",
             am.controller_echo_frame_name);
         // Log label only; the frames below carry the real identity.
         am.controller = group;
@@ -786,7 +809,7 @@ void SOBITSTeleop::load_parameters()
         st.controller_frame_name = am.controller_frame_name;
         st.controller_echo_frame_name = am.controller_echo_frame_name;
       } else {
-        mark_visited("control_cartesian." + group);
+        mark_visited("controller_cartesian." + group);
         RCLCPP_WARN(get_logger(), "Cartesian group '%s' defines no end effector — skipping",
             group.c_str());
       }
@@ -839,8 +862,8 @@ void SOBITSTeleop::load_parameters()
 void SOBITSTeleop::warn_unknown_parameters()
 {
   static const char * kPrefixes[] = {
-    "control_joints.", "control_poses.", "control_velocity.",
-    "control_tracking.", "control_cartesian.", "robot_topic_name.", "base_max_speed."
+    "controller_joints.", "controller_poses.", "controller_velocity.",
+    "controller_tracking.", "controller_cartesian.", "robot_topic_name.", "base_max_speed."
   };
 
   const auto & overrides = this->get_node_parameters_interface()->get_parameter_overrides();
@@ -852,6 +875,11 @@ void SOBITSTeleop::warn_unknown_parameters()
     }
     if (!matches_prefix) {continue;}
     if (read_keys_.count(name)) {continue;}
+
+    // A controller left out of controllers_name is off on purpose; its keys
+    // are unread by design, not typos.
+    const std::string block = name.substr(0, name.find('.'));
+    if (block.rfind("controller_", 0) == 0 && !controller_enabled(block)) {continue;}
 
     bool under_visited = false;
     for (const auto & prefix : visited_prefixes_) {
@@ -1312,7 +1340,7 @@ void SOBITSTeleop::teleop()
   // Quest controllers: Unity publishes Quest frames directly under base_footprint.
   bool base_odom_ok = true;  // always ready; kept as guard variable for structure
 
-  if (this->has_parameter("control_cartesian.groups_name")) {
+  if (this->has_parameter("controller_cartesian.groups_name")) {
     // Head / HMD — also used as body reference for arm target scaling
     bool head_tf_ok = false;
     tf2::Transform current_tf;  // controller pose this tick, base_footprint
