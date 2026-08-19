@@ -219,7 +219,8 @@ void SOBITSTeleop::report_config_summary()
     {"control_joints", !joint_mappings.empty()},
     {"control_poses", !pose_mappings.empty()},
     {"control_velocity", cvm.button >= 0 || cvm.axis >= 0},
-    {"control_target", has_control_targets},
+    {"control_tracking", !quest_tracked_groups.empty()},
+    {"control_cartesian", has_cartesian_groups},
   };
 
   std::string configured, absent;
@@ -643,26 +644,31 @@ void SOBITSTeleop::load_parameters()
     get_param("control_velocity.angular.fast_scale", cvm.fast_angular_scale);
     RCLCPP_INFO(get_logger(), "Loaded control_velocity parameters from rosparam");
   }
-  // Load quest parameters
-  if (has_param("control_target.groups_name")) {
-    get_param("control_target.groups_name", quest_groups);
-    for (const auto & group : quest_groups) {
-      // A tracked group lists its joints in `names`, then describes each one
-      // below it — the same shape as control_joints and the hand's adaptive block.
+  // Tracked groups: joints follow a frame's motion since the latch.
+  std::vector<std::string> tracking_groups;
+  if (has_param("control_tracking.groups_name")) {
+    get_param("control_tracking.groups_name", tracking_groups);
+    for (const auto & group : tracking_groups) {
+      // A group lists its joints in joints_name, then describes each one below.
       std::vector<std::string> joint_names;
-      get_param("control_target." + group + ".joints_name", joint_names);
+      get_param("control_tracking." + group + ".joints_name", joint_names);
 
-      if (!joint_names.empty()) {
+      if (joint_names.empty()) {
+        RCLCPP_ERROR(get_logger(),
+          "Tracking group '%s' lists no joints_name — skipping", group.c_str());
+        continue;
+      }
+      {
         const auto & overrides =
           this->get_node_parameters_interface()->get_parameter_overrides();
         QuestTrackedGroup g{};
         g.group = group;
-        get_param("control_target." + group + ".enable_axis", g.enable_axis);
-        get_param("control_target." + group + ".target_frame_name", g.target_frame_name);
-        get_param("control_target." + group + ".motion_scale", g.motion_scale);
+        get_param("control_tracking." + group + ".enable_axis", g.enable_axis);
+        get_param("control_tracking." + group + ".target_frame_name", g.target_frame_name);
+        get_param("control_tracking." + group + ".motion_scale", g.motion_scale);
 
         for (const auto & jname : joint_names) {
-          const std::string jprefix = "control_target." + group + "." + jname;
+          const std::string jprefix = "control_tracking." + group + "." + jname;
           std::string type, axis;
           get_param(jprefix + ".type", type);
           get_param(jprefix + ".axis", axis);
@@ -724,38 +730,44 @@ void SOBITSTeleop::load_parameters()
           this->create_publisher<trajectory_msgs::msg::JointTrajectory>(
           g.joint_trajectory_topic, 10);
         quest_tracked_groups[group] = g;
-        continue;
       }
+    }
+    RCLCPP_INFO(get_logger(), "Loaded %zu tracking group(s) from rosparam",
+      quest_tracked_groups.size());
+  }
 
-      // Group type is inferred from which fields are present.
-      const bool is_arm = has_param("control_target." + group +
+  // Cartesian groups: an end effector follows a controller's pose.
+  if (has_param("control_cartesian.groups_name")) {
+    get_param("control_cartesian.groups_name", quest_groups);
+    for (const auto & group : quest_groups) {
+      const bool is_arm = has_param("control_cartesian." + group +
           ".end_effector_frame_name");
-      const bool is_hand = has_param("control_target." + group + ".pose_action");
+      const bool is_hand = has_param("control_cartesian." + group + ".pose_action");
 
       if (is_arm) {
         QuestArmMap am{};
         am.group = group;
-        get_param("control_target." + group + ".end_effector_frame_name",
+        get_param("control_cartesian." + group + ".end_effector_frame_name",
             am.end_effector_frame_name);
-        get_param("control_target." + group + ".target_frame_name", am.target_frame_name);
-        get_param("control_target." + group + ".motion_scale", am.motion_scale);
-        get_param("control_target." + group + ".enable_axis", am.enable_axis);
+        get_param("control_cartesian." + group + ".target_frame_name", am.target_frame_name);
+        get_param("control_cartesian." + group + ".motion_scale", am.motion_scale);
+        get_param("control_cartesian." + group + ".enable_axis", am.enable_axis);
         am.arm_joint_trajectory_topic = group_trajectory_topic(group);
         if (am.arm_joint_trajectory_topic.empty()) {continue;}
         // Optional proximity thresholds — defaults are set in the struct
-        if (has_param("control_target." + group + ".proximity_threshold")) {
-          get_param("control_target." + group + ".proximity_threshold",
+        if (has_param("control_cartesian." + group + ".proximity_threshold")) {
+          get_param("control_cartesian." + group + ".proximity_threshold",
               am.proximity_threshold);
         }
-        if (has_param("control_target." + group + ".proximity_angle_threshold")) {
-          get_param("control_target." + group + ".proximity_angle_threshold",
+        if (has_param("control_cartesian." + group + ".proximity_angle_threshold")) {
+          get_param("control_cartesian." + group + ".proximity_angle_threshold",
               am.proximity_angle_threshold);
         }
 
         // Frames default from the controller side so older configs still work.
-        get_param("control_target." + group + ".controller_frame_name",
+        get_param("control_cartesian." + group + ".controller_frame_name",
             am.controller_frame_name);
-        get_param("control_target." + group + ".controller_echo_frame_name",
+        get_param("control_cartesian." + group + ".controller_echo_frame_name",
             am.controller_echo_frame_name);
         // Log label only; the frames below carry the real identity.
         am.controller = group;
@@ -778,24 +790,24 @@ void SOBITSTeleop::load_parameters()
         QuestHandMap hm{};
         hm.group = group;
 
-        if (has_param("control_target." + group + ".pose_button")) {
-          get_param("control_target." + group + ".pose_button", hm.pose_button);
+        if (has_param("control_cartesian." + group + ".pose_button")) {
+          get_param("control_cartesian." + group + ".pose_button", hm.pose_button);
         }
-        if (has_param("control_target." + group + ".pose_open")) {
-          get_param("control_target." + group + ".pose_open", hm.pose_open);
-          get_param("control_target." + group + ".pose_close", hm.pose_close);
-          get_param("control_target." + group + ".pose_action", hm.pose_action);
+        if (has_param("control_cartesian." + group + ".pose_open")) {
+          get_param("control_cartesian." + group + ".pose_open", hm.pose_open);
+          get_param("control_cartesian." + group + ".pose_close", hm.pose_close);
+          get_param("control_cartesian." + group + ".pose_action", hm.pose_action);
         }
         quest_hand_mappings[group] = hm;
       } else {
-        mark_visited("control_target." + group);
-        RCLCPP_WARN(get_logger(), "Target group '%s' is neither arm nor hand — skipping",
+        mark_visited("control_cartesian." + group);
+        RCLCPP_WARN(get_logger(), "Cartesian group '%s' defines no end effector — skipping",
             group.c_str());
       }
     }
-    RCLCPP_INFO(get_logger(), "Loaded %zu target arm and %zu target hand parameters from rosparam",
+    RCLCPP_INFO(get_logger(), "Loaded %zu cartesian arm and %zu hand parameters from rosparam",
       quest_arm_mappings.size(), quest_hand_mappings.size());
-    has_control_targets = !quest_groups.empty();
+    has_cartesian_groups = !quest_groups.empty();
 
     // Create one enable-publisher per arm (planning group)
     for (const auto & [arm_name, am] : quest_arm_mappings) {
@@ -826,7 +838,8 @@ void SOBITSTeleop::load_parameters()
     }
   }
 
-  requires_joint_states = !joint_mappings.empty() || has_control_targets;
+  requires_joint_states = !joint_mappings.empty() || has_cartesian_groups ||
+    !quest_tracked_groups.empty();
 
   report_config_summary();
 
@@ -838,7 +851,7 @@ void SOBITSTeleop::load_parameters()
     quest_arm_mappings.clear();
     quest_hand_mappings.clear();
     quest_groups.clear();
-    has_control_targets = false;
+    has_cartesian_groups = false;
     requires_joint_states = false;
   }
 
@@ -857,7 +870,7 @@ void SOBITSTeleop::warn_unknown_parameters()
 {
   static const char * kPrefixes[] = {
     "control_joints.", "control_poses.", "control_velocity.",
-    "control_target.", "robot_topic_name.", "base_max_speed."
+    "control_tracking.", "control_cartesian.", "robot_topic_name.", "base_max_speed."
   };
 
   const auto & overrides = this->get_node_parameters_interface()->get_parameter_overrides();
@@ -1246,7 +1259,7 @@ void SOBITSTeleop::process_cmd_vel()
   }
 }
 
-// Latch/track one control_target group. Trigger comes from /joy so releasing
+// Latch/track one control_tracking group. Trigger comes from /joy so releasing
 // always unlatches, even while the group's own TF is stale.
 void SOBITSTeleop::process_tracked_group(QuestTrackedGroup & g)
 {
@@ -1329,7 +1342,7 @@ void SOBITSTeleop::teleop()
   // Quest controllers: Unity publishes Quest frames directly under base_footprint.
   bool base_odom_ok = true;  // always ready; kept as guard variable for structure
 
-  if (this->has_parameter("control_target.groups_name")) {
+  if (this->has_parameter("control_cartesian.groups_name")) {
     // Head / HMD — also used as body reference for arm target scaling
     bool head_tf_ok = false;
     tf2::Transform current_tf;  // controller pose this tick, base_footprint

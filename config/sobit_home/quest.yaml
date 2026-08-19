@@ -249,12 +249,10 @@
           dominant_over: 0
           speed: 0.6
           fast_speed: 0.6
-    control_target:
+    control_tracking:
       groups_name:
       - head
       - body
-      - arm_right
-      - arm_left
       head:
         enable_axis: 2
         target_frame_name: hmd_odom
@@ -280,6 +278,10 @@
           type: prismatic
           axis: z
           sign: 1
+    control_cartesian:
+      groups_name:
+      - arm_right
+      - arm_left
       arm_right:
         controller_frame_name: right_controller_odom
         controller_echo_frame_name: right_controller_link

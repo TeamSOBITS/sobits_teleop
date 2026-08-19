@@ -43,13 +43,13 @@ def _make_nodes(context, *args, **kwargs):
         # Fall back to whatever the node can fetch from move_group.
         pass
 
-    control_target = quest_params['control_target']
+    control_cartesian = quest_params['control_cartesian']
     arm_params = {}
     arms = []
     # An arm group is one that names an end effector; the group name IS the
     # planning group, matching how the node itself identifies an arm.
-    for arm in control_target.get('groups_name', []):
-        block = control_target.get(arm, {})
+    for arm in control_cartesian.get('groups_name', []):
+        block = control_cartesian.get(arm, {})
         if isinstance(block, dict) and 'end_effector_frame_name' in block:
             arms.append(arm)
             arm_params[f'arm_teleop.{arm}.planning_group'] = arm

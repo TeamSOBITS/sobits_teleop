@@ -485,14 +485,14 @@ Servoバックエンドには`ros-$ROS_DISTRO-moveit-servo`（`install.sh`でイ
 
 #### 追従関節グループ（Quest）
 
-`joints_name`を持つ`control_target`グループはTFフレームに追従します．各関節は
+`control_tracking`グループはTFフレームに追従します．各関節は
 ラッチ以降のフレーム移動量のうち1成分を受け取ります．グループ名は自由で
 （`head`、`neck`、`torso`など），それぞれ独立したラッチを持ち，いくつでも
 定義できます．
 
 ```yaml
-control_target:
-  groups_name: [head, body, ...]
+control_tracking:
+  groups_name: [head, body]
   head:
     enable_axis: 2                  # 押している間ラッチ
     target_frame_name: "hmd_odom"   # 追従するフレーム
@@ -522,6 +522,30 @@ control_target:
 ため，途切れていた分の差分が一度にジャンプとして現れることはありません．
 不正な`type`，その`type`に存在しない`axis`，使用可能な関節が1つも残らない
 グループは，起動時に報告してスキップします．
+
+#### Cartesianグループ（Quest）
+
+`control_cartesian`グループはコントローラの姿勢からエンドエフェクタを駆動します．
+関節位置として配信するのではなく，アーム追従バックエンドに渡されます．
+
+```yaml
+control_cartesian:
+  groups_name: [arm_right, arm_left]
+  arm_right:
+    enable_axis: 7                  # グリップ．押している間追従
+    controller_frame_name: "right_controller_odom"
+    controller_echo_frame_name: "right_controller_link"
+    end_effector_frame_name: "hand_right_end_effector_link"
+    target_frame_name: "right_target_link"
+    motion_scale: 2.0
+    proximity_threshold: 0.0        # m．0で即ラッチ
+    proximity_angle_threshold: 0.0  # rad
+```
+
+2つのブロックは独立しています．`control_tracking`はフレームの移動量を指定した
+関節に割り当て，`control_cartesian`はアームに解くべき姿勢を与えます．どちらの
+アームバックエンドのlauncherも`control_cartesian.groups_name`から対象アームを
+決定します．
 
 <p align="right">(<a href="#readme-top">上に戻る</a>)</p>
 

@@ -30,7 +30,7 @@ namespace sobits_teleop
 
 struct ServoBridgeArmConfig
 {
-  // Same frame vocabulary as the control_target blocks in quest.yaml:
+  // Same frame vocabulary as the control_cartesian blocks in quest.yaml:
   // target_frame_name / base_frame_name / end_effector_frame_name.
   std::string target_frame;
   std::string base_frame;

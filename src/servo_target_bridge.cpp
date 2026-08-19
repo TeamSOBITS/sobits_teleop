@@ -92,7 +92,7 @@ ServoTargetBridge::ServoTargetBridge(const rclcpp::NodeOptions & options)
       throw std::runtime_error(
               "servo_bridge: arm '" + arm_name + "' has no " +
               (cfg.target_frame.empty() ? "target_frame_name" : "end_effector_frame_name") +
-              ". It is normally forwarded from control_target." + arm_name +
+              ". It is normally forwarded from control_cartesian." + arm_name +
               " by arm_backend_servo.launch.py; set servo_bridge." + arm_name +
               ".* or servo_bridge.naming.* to run this node standalone.");
     }

@@ -494,14 +494,14 @@ fetches the robot model from it at startup.
 
 #### Tracked joint groups (Quest)
 
-A `control_target` group that lists `joints_name` follows a TF frame: each
+A `control_tracking` group follows a TF frame: each
 joint takes one component of that frame's movement since the latch. The group
 name is free — `head`, `neck`, `torso` — and any number of groups may exist,
 each with its own latch.
 
 ```yaml
-control_target:
-  groups_name: [head, body, ...]
+control_tracking:
+  groups_name: [head, body]
   head:
     enable_axis: 2                  # hold to latch
     target_frame_name: "hmd_odom"   # frame whose motion is followed
@@ -533,6 +533,30 @@ replaying the whole gap as one jump. An unknown `type`, an `axis` that does not
 belong to its type, or a group left with no usable joints is reported at
 startup and skipped.
 
+#### Cartesian groups (Quest)
+
+A `control_cartesian` group drives an end effector from a controller's pose,
+handed to the arm-tracking backend rather than published as joint positions.
+
+```yaml
+control_cartesian:
+  groups_name: [arm_right, arm_left]
+  arm_right:
+    enable_axis: 7                  # grip; hold to track
+    controller_frame_name: "right_controller_odom"
+    controller_echo_frame_name: "right_controller_link"
+    end_effector_frame_name: "hand_right_end_effector_link"
+    target_frame_name: "right_target_link"
+    motion_scale: 2.0
+    proximity_threshold: 0.0        # m; 0 = latch immediately
+    proximity_angle_threshold: 0.0  # rad
+```
+
+The two blocks are independent: `control_tracking` maps a frame's motion onto
+named joints, while `control_cartesian` gives an arm a pose to solve for. Both
+arm-backend launchers read `control_cartesian.groups_name` to pick the arms
+they drive.
+
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ---
@@ -541,7 +565,7 @@ startup and skipped.
 
 1. Create `config/{robot_name}/` with `robot.yaml` (controller topics) and one
    `{device}.yaml` per input device you use.
-2. For Quest arm teleop, add `arm_<side>`/`hand_<side>` groups to `quest.yaml`
+2. For Quest arm teleop, add `arm_<side>` groups to `control_cartesian` in `quest.yaml`
    (`target_frame_name:`, `end_effector_frame_name:`, gripper mapping) — this is
    the single source of arm identity for both backends.
 3. Copy `arm_backend_plan.yaml` / `arm_backend_servo.yaml` from an existing

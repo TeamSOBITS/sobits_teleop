@@ -233,17 +233,17 @@ def _fetch_move_group_params(context, *args, **kwargs):
         robot_params = pyyaml.safe_load(f)['/**']['ros__parameters']
     traj_topics = robot_params['robot_topic_name']['joint_trajectory_topic']
 
-    control_target = quest_params['control_target']
+    control_cartesian = quest_params['control_cartesian']
     arm_entries = []  # (planning_group, quest controller block)
     # An arm group is one that names an end effector; the group name IS the
     # planning group, so no separate list or 'arm' key is needed.
-    for group in control_target.get('groups_name', []):
-        block = control_target.get(group, {})
+    for group in control_cartesian.get('groups_name', []):
+        block = control_cartesian.get(group, {})
         if isinstance(block, dict) and 'end_effector_frame_name' in block:
             arm_entries.append((group, block))
     if not arm_entries:
         raise RuntimeError(
-            'arm_backend_servo.launch.py: no control_target group defines '
+            'arm_backend_servo.launch.py: no control_cartesian group defines '
             f"end_effector_frame_name in quest.yaml for robot '{robot_name}' — "
             'nothing to servo.')
 
