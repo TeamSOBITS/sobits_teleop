@@ -60,6 +60,8 @@ struct PoseJointGroup
   std::string joint_trajectory_topic;
   std::vector<std::string> joint_names;
   std::vector<double> positions;
+  // Fires this group alone; the pose-level button still fires every group.
+  int button = -1;
 };
 
 struct PoseMap
@@ -234,7 +236,8 @@ private:
   bool clamp_to_limits_checked(const std::string & joint, double & value);
 
   // Send one configured pose. Shared by the joy buttons and the reset service.
-  bool send_pose(const PoseMap & pose_map);
+  // only != nullptr publishes just that group of the pose.
+  bool send_pose(const PoseMap & pose_map, const PoseJointGroup * only = nullptr);
   // Publish the tracking enable/disable state for one arm's planning group.
   void publish_arm_tracking(const std::string & arm, bool enabled);
   // True if any arm mapping's own enable axis is currently held.

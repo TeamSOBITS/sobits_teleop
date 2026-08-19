@@ -476,6 +476,7 @@ void SOBITSTeleop::load_parameters()
           continue;
         }
 
+        get_param(gbase + ".button", pg.button);
         // Topic: explicit override, else the joint group's robot.yaml topic.
         get_param(gbase + ".joint_trajectory_topic", pg.joint_trajectory_topic);
         if (pg.joint_trajectory_topic.empty() && !g.empty()) {
@@ -867,11 +868,12 @@ void SOBITSTeleop::robot_tf_static_callback(const tf2_msgs::msg::TFMessage::Shar
 }
 
 
-bool SOBITSTeleop::send_pose(const PoseMap & pose_map)
+bool SOBITSTeleop::send_pose(const PoseMap & pose_map, const PoseJointGroup * only)
 {
   // YAML-defined pose: publish straight to the controllers, no action server.
   if (!pose_map.joint_groups.empty()) {
     for (const auto & pg : pose_map.joint_groups) {
+      if (only && &pg != only) {continue;}
       auto it = joint_pub.find(pg.joint_trajectory_topic);
       if (it == joint_pub.end()) {continue;}
 
@@ -888,7 +890,8 @@ bool SOBITSTeleop::send_pose(const PoseMap & pose_map)
       it->second->publish(traj);
     }
     RCLCPP_INFO(get_logger(), "Sending pose '%s' over %zu joint group(s), %.1f s",
-      pose_map.pose_name.c_str(), pose_map.joint_groups.size(), pose_map.time_from_start);
+      pose_map.pose_name.c_str(), only ? 1u : pose_map.joint_groups.size(),
+      pose_map.time_from_start);
     return true;
   }
 
@@ -1016,9 +1019,15 @@ void SOBITSTeleop::process_poses()
       continue;
     }
 
-    if (!button_pressed(pose_map.button)) {continue;}
+    if (button_pressed(pose_map.button)) {
+      send_pose(pose_map);
+      continue;
+    }
 
-    send_pose(pose_map);
+    // A group may carry its own button that sends only its part of the pose.
+    for (const auto & pg : pose_map.joint_groups) {
+      if (button_pressed(pg.button)) {send_pose(pose_map, &pg);}
+    }
   }
 }
 
