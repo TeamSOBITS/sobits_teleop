@@ -217,6 +217,25 @@ robot-independent.
 
 </details>
 
+#### Pose cycles
+
+A `control_poses` entry listed in `cycles_name` steps through an ordered list
+of poses, one per button press, wrapping at the end.
+
+```yaml
+control_poses:
+  pose_list:   [grip_open, grip_two, grip_three]
+  cycles_name: [hand_right_grip]
+  hand_right_grip:
+    button: 6
+    group: hand_right     # optional: send only this group's part
+    poses: [grip_open, grip_two, grip_three]
+```
+
+Omit `group` to send each pose whole. A cycle with fewer than two poses, or
+naming a pose that does not define the group, is reported at startup and
+skipped.
+
 #### Pose blends
 
 A `control_poses` entry listed in `blends_name` sweeps one group between two

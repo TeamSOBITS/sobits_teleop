@@ -214,6 +214,25 @@ configは同梱済みで，新しいロボットへの移植はこのディレ�
 
 </details>
 
+#### ポーズサイクル
+
+`cycles_name`に並べた`control_poses`のエントリは，ボタンを押すたびに指定した
+順序でポーズを1つずつ送り，末尾で先頭に戻ります．
+
+```yaml
+control_poses:
+  pose_list:   [grip_open, grip_two, grip_three]
+  cycles_name: [hand_right_grip]
+  hand_right_grip:
+    button: 6
+    group: hand_right     # 任意：このグループの分だけ送る
+    poses: [grip_open, grip_two, grip_three]
+```
+
+`group`を省略するとポーズ全体を送ります．ポーズが2つ未満の場合や，指定した
+グループを定義していないポーズを含む場合は起動時に報告され，そのサイクルは
+スキップされます．
+
 #### ポーズブレンド
 
 `blends_name`に並べた`control_poses`のエントリは，1つのグループを2つのポーズ間で
