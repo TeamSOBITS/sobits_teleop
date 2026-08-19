@@ -16,9 +16,9 @@ import yaml
 @pytest.mark.launch_test
 @launch_testing.markers.keep_alive
 def generate_test_description():
-    """Start sobits_teleop with robot.yaml + quest.yaml and wait for it to load."""
+    """Start sobits_teleop with common.yaml + quest.yaml and wait for it to load."""
     share_dir = get_package_share_directory('sobits_teleop')
-    robot_yaml = os.path.join(share_dir, 'config', 'sobit_home', 'robot.yaml')
+    common_yaml = os.path.join(share_dir, 'config', 'sobit_home', 'common.yaml')
     quest_yaml = os.path.join(share_dir, 'config', 'sobit_home', 'quest.yaml')
     exe = os.path.join(
         get_package_prefix('sobits_teleop'), 'lib', 'sobits_teleop', 'sobits_teleop')
@@ -29,7 +29,7 @@ def generate_test_description():
 
     sobits_teleop_process = launch.actions.ExecuteProcess(
         cmd=[exe, '--ros-args',
-             '--params-file', robot_yaml,
+             '--params-file', common_yaml,
              '--params-file', quest_yaml],
         additional_env=env,
         output='screen',

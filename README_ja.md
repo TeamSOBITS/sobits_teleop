@@ -124,19 +124,19 @@ configは同梱済みで，新しいロボットへの移植はこのディレ�
 
 | ファイル | 役割 |
 |---|---|
-| `robot.yaml` | ジョイントコントローラとcmd_velのトピック名 |
+| `common.yaml` | ジョイントコントローラとcmd_velのトピック名 |
 | `{device}.yaml` | 使用するデバイスのボタン・軸マッピング |
 | `arm_backend_plan.yaml` | Plan-and-replaceアーム追跡バックエンドのチューニング（Quest使用時のみ） |
 | `arm_backend_servo.yaml` | MoveIt Servoアーム追跡バックエンドのチューニング（Quest使用時のみ） |
 | `arm_scale_calibrator.yaml` | アームリーチキャリブレーションパラメータ（Quest使用時のみ） |
 
 **アームの構成情報**（アームの一覧・planning group・目標/エンドエフェクタのフレーム・
-コントローラトピック）は`{device}.yaml`（アームごとの`arm:`ブロック）と`robot.yaml`
+コントローラトピック）は`{device}.yaml`（アームごとの`arm:`ブロック）と`common.yaml`
 （trajectoryトピックのマップ）に一度だけ定義します．launcherが起動するバックエンドへ
 注入するため，2つの`arm_backend_*.yaml`はチューニングのみを持ち，ほぼロボット非依存です．
 
 <details>
-<summary>robot.yaml（例）</summary>
+<summary>common.yaml（例）</summary>
 
 ```yaml
 /**:
@@ -286,7 +286,7 @@ controller_poses:
 | あり | 関節軌道トピック | YAMLに書いた関節と目標値をそのまま各グループのコントローラへ配信する．アクションサーバは不要． |
 | なし | `MoveToPose`アクション | `pose_name`のみを送り，ポーズはサーバ側で解決される． |
 
-`groups_name`に並べる名前は`robot.yaml`で定義した関節グループである必要があり，
+`groups_name`に並べる名前は`common.yaml`で定義した関節グループである必要があり，
 そこから軌道トピックが決まります（グループごとに`joint_trajectory_topic`で
 上書き可）．`joints_name`と`positions`は同じ要素数でなければならず，不一致の
 グループはロボットを動かす前に起動時エラーとしてスキップされます．記載しない
@@ -384,7 +384,7 @@ ros2 launch sobits_teleop sobits_teleop.launch.py \
   use_servo:=true        # 省略するとPlan-and-replaceバックエンド
 ```
 
-両launcherは`launch/include/`にあり，アーム構成を`quest.yaml`/`robot.yaml`から
+両launcherは`launch/include/`にあり，アーム構成を`quest.yaml`/`common.yaml`から
 注入するため，バックエンドのconfigはチューニングのみです．
 
 #### Plan-and-replaceのチューニング — `config/{robot_name}/arm_backend_plan.yaml`
@@ -560,7 +560,7 @@ controller_cartesian:
 
 ### 新しいロボットへの移植
 
-1. `config/{robot_name}/`を作成し，`robot.yaml`（コントローラトピック）と使用する
+1. `config/{robot_name}/`を作成し，`common.yaml`（コントローラトピック）と使用する
    デバイスごとの`{device}.yaml`を用意する．
 2. Questでアームテレオペを行う場合，`quest.yaml`に`arm_<side>`/`hand_<side>`
    グループ（`target_frame_name:`、`end_effector_frame_name:`、グリッパのマッピング）を
@@ -570,7 +570,7 @@ controller_cartesian:
 4. `robot_name:={robot_name}`で起動する — それ以外の変更は不要です．
 
 前提条件：アームが`joint_trajectory_controller`のトピックインタフェースで駆動される
-こと（`robot.yaml`参照），アームごとに1つのplanning groupを持ち，SRDFの最後のリンクが
+こと（`common.yaml`参照），アームごとに1つのplanning groupを持ち，SRDFの最後のリンクが
 エンドエフェクタであるMoveIt configがあること，`/{robot_name}`名前空間で`move_group`
 が動作していること．
 

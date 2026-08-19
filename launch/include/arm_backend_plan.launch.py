@@ -2,7 +2,7 @@
 Plan-and-replace arm-tracking backend (moveit_arm_controller).
 
 Arm identity (arms, planning groups, target frames, controller topics) is
-declared once in quest.yaml / robot.yaml and injected here; the backend's own
+declared once in quest.yaml / common.yaml and injected here; the backend's own
 yaml (arm_backend_plan.yaml) carries tuning only.
 """
 
@@ -25,7 +25,7 @@ def _make_nodes(context, *args, **kwargs):
 
     with open(os.path.join(cfg_dir, 'quest.yaml')) as f:
         quest_params = pyyaml.safe_load(f)['/**']['ros__parameters']
-    with open(os.path.join(cfg_dir, 'robot.yaml')) as f:
+    with open(os.path.join(cfg_dir, 'common.yaml')) as f:
         robot_params = pyyaml.safe_load(f)['/**']['ros__parameters']
     traj_topics = robot_params['robot_topic_name']['joint_trajectory_topic']
 

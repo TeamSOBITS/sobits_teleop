@@ -64,11 +64,11 @@ def generate_launch_description():
     joystick_device = LaunchConfiguration('joystick_device')
     ros_ip = LaunchConfiguration('ros_ip')
     use_ds4drv = LaunchConfiguration('use_ds4drv')
-    robot_config = PathJoinSubstitution([
+    common_config = PathJoinSubstitution([
         get_package_share_directory(pkg_name),
         'config',
         robot_name,
-        'robot'
+        'common'
     ])
 
     controller_config = PathJoinSubstitution([
@@ -86,7 +86,7 @@ def generate_launch_description():
         output='screen',
         namespace=robot_name,
         parameters=[
-            [robot_config, '.yaml'],
+            [common_config, '.yaml'],
             [controller_config, '.yaml'],
             {'use_sim_time': LaunchConfiguration('use_sim_time')},
         ],

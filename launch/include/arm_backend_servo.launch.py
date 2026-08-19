@@ -222,14 +222,14 @@ def _fetch_move_group_params(context, *args, **kwargs):
         **kinematics_params,
     }
 
-    # Per-arm identity comes from quest.yaml / robot.yaml; this yaml carries only
+    # Per-arm identity comes from quest.yaml / common.yaml; this yaml carries only
     # tuning shared by all nodes.
     servo_yaml = f'{pkg_share}/config/{robot_name}/arm_backend_servo.yaml'
 
     import yaml as pyyaml
     with open(f'{pkg_share}/config/{robot_name}/quest.yaml') as f:
         quest_params = pyyaml.safe_load(f)['/**']['ros__parameters']
-    with open(f'{pkg_share}/config/{robot_name}/robot.yaml') as f:
+    with open(f'{pkg_share}/config/{robot_name}/common.yaml') as f:
         robot_params = pyyaml.safe_load(f)['/**']['ros__parameters']
     traj_topics = robot_params['robot_topic_name']['joint_trajectory_topic']
 

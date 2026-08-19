@@ -125,7 +125,7 @@ is the only robot-specific part of the package:
 
 | File | Purpose |
 |---|---|
-| `robot.yaml` | ROS topic names for joint controllers and cmd_vel |
+| `common.yaml` | Topic names, loop rate and base speed limits |
 | `{device}.yaml` | Button/axis mappings for the selected input device |
 | `arm_backend_plan.yaml` | Plan-and-replace arm-tracking backend tuning (Quest only) |
 | `arm_backend_servo.yaml` | MoveIt Servo arm-tracking backend tuning (Quest only) |
@@ -133,13 +133,13 @@ is the only robot-specific part of the package:
 
 The **arm identity** — which arms exist, their planning groups, target/EE
 frames and controller topics — is declared once, in `{device}.yaml`
-(the per-arm `arm:` blocks) and `robot.yaml` (the trajectory-topic map).
+(the per-arm `arm:` blocks) and `common.yaml` (the trajectory-topic map).
 The launchers inject it into whichever arm-tracking backend runs, so the
 two `arm_backend_*.yaml` files contain tuning only and are largely
 robot-independent.
 
 <details>
-<summary>robot.yaml (example)</summary>
+<summary>common.yaml (example)</summary>
 
 ```yaml
 /**:
@@ -292,7 +292,7 @@ sharing no joints, is reported at startup and the blend is skipped.
 | Yes | Joint trajectory topics | Joints/positions come straight from the YAML and are published to each group's controller. No action server needed. |
 | No | `MoveToPose` action | Only `pose_name` is sent; the pose is resolved server-side. |
 
-Each name under `groups_name` must be a joint group declared in `robot.yaml`, which
+Each name under `groups_name` must be a joint group declared in `common.yaml`, which
 supplies the trajectory topic (override per group with `joint_trajectory_topic`).
 `joints_name` and `positions` must be the same length — a mismatched group is skipped
 with an error at startup instead of moving the robot. Joints not listed are not
@@ -391,7 +391,7 @@ ros2 launch sobits_teleop sobits_teleop.launch.py \
 ```
 
 Both launchers live in `launch/include/` and inject the arm identity from
-`quest.yaml` / `robot.yaml`, so the backend configs are tuning-only.
+`quest.yaml` / `common.yaml`, so the backend configs are tuning-only.
 
 #### Plan-and-replace tuning — `config/{robot_name}/arm_backend_plan.yaml`
 
@@ -570,7 +570,7 @@ they drive.
 
 ### Porting to a New Robot
 
-1. Create `config/{robot_name}/` with `robot.yaml` (controller topics) and one
+1. Create `config/{robot_name}/` with `common.yaml` (controller topics) and one
    `{device}.yaml` per input device you use.
 2. For Quest arm teleop, add `arm_<side>` groups to `controller_cartesian` in `quest.yaml`
    (`target_frame_name:`, `end_effector_frame_name:`, gripper mapping) — this is
@@ -581,7 +581,7 @@ they drive.
 4. Launch with `robot_name:={robot_name}` — nothing else changes.
 
 Assumptions: arms driven by `joint_trajectory_controller` topic interfaces
-(see `robot.yaml`), a MoveIt config with one planning group per arm whose last
+(see `common.yaml`), a MoveIt config with one planning group per arm whose last
 SRDF link is the end-effector, and `move_group` running under
 `/{robot_name}`.
 
