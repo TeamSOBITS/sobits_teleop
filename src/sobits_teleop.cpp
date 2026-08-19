@@ -416,6 +416,8 @@ void SOBITSTeleop::load_parameters()
         get_param("control_joints." + joint_group + "." + joint_name + ".axis", jm.axis);
         get_param("control_joints." + joint_group + "." + joint_name + ".axis_sign",
             jm.axis_sign);
+        get_param("control_joints." + joint_group + "." + joint_name + ".dominant_over",
+            jm.dominant_over);
         get_param("control_joints." + joint_group + "." + joint_name + ".speed",
             jm.speed);
         get_param("control_joints." + joint_group + "." + joint_name + ".fast_speed",
@@ -663,19 +665,6 @@ void SOBITSTeleop::load_parameters()
         hm.group = group;
         get_param("control_target." + group + ".speed", hm.speed);
 
-        if (has_param("control_target." + group + ".single_joint.axis")) {
-          get_param("control_target." + group + ".single_joint.axis", hm.type_axis);
-          get_param("control_target." + group + ".single_joint.name", hm.type_joint);
-          if (has_param("control_target." + group + ".single_joint.axis_sign")) {
-            get_param("control_target." + group + ".single_joint.axis_sign", hm.type_sign);
-          }
-          if (has_param("control_target." + group + ".single_joint.min")) {
-            get_param("control_target." + group + ".single_joint.min", hm.type_min);
-          }
-          if (has_param("control_target." + group + ".single_joint.max")) {
-            get_param("control_target." + group + ".single_joint.max", hm.type_max);
-          }
-        }
         if (has_param("control_target." + group + ".pose_button")) {
           get_param("control_target." + group + ".pose_button", hm.pose_button);
         }
@@ -974,6 +963,12 @@ void SOBITSTeleop::process_joints()
 
     float axis_val = axis_value(m.axis);
     if (std::abs(axis_val) < 1e-3) {continue;}
+    // Shared stick: ignore a push that leans toward the guarded axis.
+    if (m.dominant_over >= 0 &&
+      std::abs(axis_val) <= std::abs(axis_value(m.dominant_over)))
+    {
+      continue;
+    }
 
     const bool fast = button_down(m.fast_button) || axis_held(m.fast_axis);
 
@@ -1360,65 +1355,10 @@ void SOBITSTeleop::process_hand(const std::string & name, QuestHandMap & m)
 
           // Vertical stick rotates the grip-type knuckle while the trigger is held.
           // Small deadzone rejects noise; rescaled past it so the step ramps from zero.
-    constexpr float kVjogDeadzone = 0.15f;
-    float vjog_stick = 0.0f;
-    if (m.type_axis >= 0 && m.type_axis < static_cast<int>(latest_axes.size())) {
-      const float raw = latest_axes[m.type_axis];
-      if (std::abs(raw) > kVjogDeadzone) {
-        vjog_stick = std::copysign(
-          (std::abs(raw) - kVjogDeadzone) / (1.0f - kVjogDeadzone), raw);
-      }
-    }
-
-          // Endpoint-swing mode (single_joint.min/max set): the servo can't break the gear
-          // spring with small errors, so one flick = one full swing; recenter stick to re-arm.
-    const bool vjog_has_range = (m.type_min > -1e8f && m.type_max < 1e8f);
-          // Fire only on a decisive, dominantly-vertical push — the same stick's horizontal
-          // axis drives open/close and must not flip the 2f/3f pose mid-grasp.
-    constexpr float kFlickThreshold = 0.6f;
-    float vjog_h = 0.0f;
-    if (m.adaptive_stick_axis >= 0 &&
-      m.adaptive_stick_axis < static_cast<int>(latest_axes.size()))
-    {
-      vjog_h = latest_axes[m.adaptive_stick_axis];
-    }
-    const float vjog_raw =
-      (m.type_axis >= 0 && m.type_axis < static_cast<int>(latest_axes.size())) ?
-      latest_axes[m.type_axis] : 0.0f;
-    const bool vjog_decisive = std::abs(vjog_raw) > kFlickThreshold &&
-      std::abs(vjog_raw) > std::abs(vjog_h);
-    const bool vjog_fire = vjog_has_range && vjog_decisive && m.vjog_armed;
-    if (vjog_has_range && vjog_stick == 0.0f) {m.vjog_armed = true;}
-          // Keep goals flowing while a swing is in progress even with the stick
-          // released — the endpoint command must persist until arrival.
-    const bool vjog_request =
-      vjog_has_range ? (vjog_fire || m.vjog_swing_active) : (vjog_stick != 0.0f);
-
-    if (deflection >= 0.1f || vjog_request) {
+    if (deflection >= 0.1f) {
       const bool closing = (close_frac >= open_frac);
             // Config speeds are radians per legacy 50 ms tick — scale to the actual loop rate.
       float step = m.speed * deflection * static_cast<float>(jog_tick_scale_);
-      float vjog_step = m.speed * vjog_stick * static_cast<float>(m.type_sign) *
-        static_cast<float>(jog_tick_scale_);
-
-            // A flick starts a persistent swing: every goal re-commands the endpoint until
-            // arrival, so open/close rides in the same goals instead of blocking behind one.
-      if (vjog_fire) {
-        m.vjog_armed = false;
-        m.vjog_swing_active = true;
-        m.vjog_swing_target = (vjog_step > 0.0f) ? m.type_max : m.type_min;
-        m.vjog_swing_deadline = this->now() + rclcpp::Duration::from_seconds(2.5);
-      }
-      if (m.vjog_swing_active) {
-              // Only check arrival if the joint is known; else rely on the deadline.
-        const bool arrived = joint_pos.count(m.type_joint) &&
-          std::abs(static_cast<float>(joint_pos.at(m.type_joint)) - m.vjog_swing_target) <
-          0.08f;
-        if (arrived || this->now() >= m.vjog_swing_deadline) {
-          m.vjog_swing_active = false;
-        }
-      }
-
       auto clamp_to_limits = [&](const std::string & jname, float value) -> float {
           if (!joint_limits.count(jname)) {return value;}
           return std::clamp(value,
@@ -1445,17 +1385,8 @@ void SOBITSTeleop::process_hand(const std::string & name, QuestHandMap & m)
           static_cast<float>(joint_pos.at(ajt.name)) : ajt.close_pos;
         float tgt;
         if (ajt.fixed) {
-                // Fixed joints hold position — except the grip-type knuckle, driven by the stick.
+          // Held here; a control_joints entry may drive it independently.
           tgt = cur;
-          if (ajt.name == m.type_joint) {
-            if (m.vjog_swing_active) {
-                    // Swing in progress: command the endpoint (large sustained
-                    // error) in every goal until the knuckle arrives.
-              tgt = clamp_to_limits(ajt.name, m.vjog_swing_target);
-            } else if (!vjog_has_range && vjog_stick != 0.0f) {
-              tgt = clamp_to_limits(ajt.name, cur + vjog_step);
-            }
-          }
           goal.target_joint_rad.push_back(tgt);
         } else if (deflection >= 0.1f) {
           tgt = closing ? ajt.close_pos : ajt.open_pos;

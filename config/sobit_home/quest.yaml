@@ -62,6 +62,33 @@
                     hand_right_finger_r_dip_joint ]
           positions: [ 1.57, 0.0, 1.57, 1.57, 0.0, -1.57, 0.0 ]
 
+    # Grip-type knuckles: same stick as the adaptive grip, so each is gated on
+    # its hand's trigger and must dominate the horizontal axis to move.
+    control_joints:
+      groups:
+      - hand_right
+      - hand_left
+      hand_right:
+        joints_name:
+        - hand_right_finger_l_mcp_joint
+        hand_right_finger_l_mcp_joint:
+          enable_axis: 6      # right trigger
+          axis: 5             # right stick up/down
+          axis_sign: -1
+          dominant_over: 4    # same stick's horizontal axis
+          speed: 0.6
+          fast_speed: 0.6
+      hand_left:
+        joints_name:
+        - hand_left_finger_l_mcp_joint
+        hand_left_finger_l_mcp_joint:
+          enable_axis: 2      # left trigger
+          axis: 1             # left stick up/down
+          axis_sign: 1
+          dominant_over: 0    # same stick's horizontal axis
+          speed: 0.6
+          fast_speed: 0.6
+
     control_target:
       groups:
         - head
@@ -146,12 +173,6 @@
             close_pos: 1.571
             open_pos: 1.571
             fixed: true
-        single_joint:
-          name: "hand_right_finger_l_mcp_joint"
-          axis: 5
-          axis_sign: -1
-          min: 0.80   # mirror of the left hand's spring-capture margin
-          max: 1.575  # margin covers servo overshoot past the clamp
 
       arm_left:
         controller_frame_name: "left_controller_odom"
@@ -199,9 +220,3 @@
             close_pos: -1.571
             open_pos: -1.571
             fixed: true
-        single_joint:
-          name: "hand_left_finger_l_mcp_joint"
-          axis: 1
-          axis_sign: 1
-          min: -1.575  # functional 2f/3f zone; gear jams outside it
-          max: -0.80   # spring captures the gear above ~-0.55; margin for overshoot

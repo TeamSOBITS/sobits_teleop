@@ -47,6 +47,9 @@ struct JointMap
   int fast_axis = -1;
   int axis = -1;
   int axis_sign = 1;
+  // Only drive when |axis| exceeds this one, so a diagonal push on a shared
+  // stick does not move both of its joints. -1 = no guard.
+  int dominant_over = -1;
   float speed = 0.0f;
   float fast_speed = 0.0f;
   double min_pos = 0.0;
@@ -161,19 +164,6 @@ struct QuestHandMap
   int adaptive_stick_axis = -1;     // stick axis that controls open/close
   int adaptive_close_sign = 1;      // +1: positive stick = close, -1: negative stick = close
   std::vector<AdaptiveJointTarget> adaptive_joints;  // per-joint targets for adaptive grip
-  std::string type_joint;
-  int type_axis = -1;   // single_joint.axis: -1 = feature off
-  int type_sign = 1;    // single_joint.axis_sign: +1/-1 flips the vertical-jog direction
-  // Functional range for the vjog joint (single_joint.min/max) — the
-  // switching-gear mechanism can jam outside it.
-  float type_min = -1e9f;
-  float type_max = 1e9f;
-  // Endpoint-swing state: one swing per stick flick, re-armed at stick center;
-  // the endpoint is re-commanded every goal until arrival (beats the gear spring).
-  bool vjog_armed = true;
-  bool vjog_swing_active = false;
-  float vjog_swing_target = 0.0f;
-  rclcpp::Time vjog_swing_deadline{0, 0, RCL_ROS_TIME};
   // One adaptive MoveJoint goal in flight per hand; deadline backstops a lost result.
   bool jog_goal_in_flight = false;
   rclcpp::Time jog_goal_deadline{0, 0, RCL_ROS_TIME};
