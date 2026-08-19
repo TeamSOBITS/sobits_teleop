@@ -161,7 +161,7 @@ configは同梱済みで，新しいロボットへの移植はこのディレ�
   ros__parameters:
 
     control_joints:       # 操作するjoint_trajectory_controllerを定義
-      groups:
+      groups_name:
         - head
         - arm_left
       head:
@@ -186,19 +186,19 @@ configは同梱済みで，新しいロボットへの移植はこのディレ�
         - pre_manipulation_pose
         initial_pose:
           button: 2
-          # `groups`を書くとポーズをこの場で定義し，関節軌道として配信する．
+          # `groups_name`を書くとポーズをこの場で定義し，関節軌道として配信する．
           # 省略した場合はpose_nameをMoveToPoseアクションで解決する．
-          groups:
+          groups_name:
             - head
             - arm_left
           head:
-            joints:    [ head_pan_joint, head_tilt_joint ]
+            joints_name:    [ head_pan_joint, head_tilt_joint ]
             positions: [ 0.0,            0.0             ]
           arm_left:
-            joints:    [ arm_left_elbow_joint ]
+            joints_name:    [ arm_left_elbow_joint ]
             positions: [ 2.5 ]
         pre_manipulation_pose:
-          button: 3         # `groups`なし -> MoveToPoseアクションを使用
+          button: 3         # `groups_name`なし -> MoveToPoseアクションを使用
 
     control_velocity:     # 台車制御
       enable_button: 5      # 有効化．linear/angular 双方を armする
@@ -269,17 +269,17 @@ control_poses:
 
 `control_poses`の各エントリは，ポーズごとに次の2通りのいずれかで解決されます．
 
-| `groups`の記述 | バックエンド | 動作 |
+| `groups_name`の記述 | バックエンド | 動作 |
 |---|---|---|
 | あり | 関節軌道トピック | YAMLに書いた関節と目標値をそのまま各グループのコントローラへ配信する．アクションサーバは不要． |
 | なし | `MoveToPose`アクション | `pose_name`のみを送り，ポーズはサーバ側で解決される． |
 
-`groups`に並べる名前は`robot.yaml`で定義した関節グループである必要があり，
+`groups_name`に並べる名前は`robot.yaml`で定義した関節グループである必要があり，
 そこから軌道トピックが決まります（グループごとに`joint_trajectory_topic`で
-上書き可）．`joints`と`positions`は同じ要素数でなければならず，不一致の
+上書き可）．`joints_name`と`positions`は同じ要素数でなければならず，不一致の
 グループはロボットを動かす前に起動時エラーとしてスキップされます．記載しない
 関節には指令を出さないため，コントローラが最後に保持した値のままになります．
-単一グループのポーズなら`groups`を省略し，`joints`/`positions`をポーズ直下に
+単一グループのポーズなら`groups_name`を省略し，`joints_name`/`positions`をポーズ直下に
 書くこともできます．
 
 <p align="right">(<a href="#readme-top">上に戻る</a>)</p>
@@ -487,7 +487,7 @@ Servoバックエンドには`ros-$ROS_DISTRO-moveit-servo`（`install.sh`でイ
 
 ```yaml
 control_target:
-  groups: [head, body, ...]
+  groups_name: [head, body, ...]
   head:
     enable_axis: 2                  # 押している間ラッチ
     target_frame_name: "hmd_odom"   # 追従するフレーム

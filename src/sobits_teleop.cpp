@@ -413,8 +413,8 @@ void SOBITSTeleop::load_parameters()
     cvm.topic, 10);
 
   // Load joint parameters
-  if (has_param("control_joints.groups")) {
-    get_param("control_joints.groups", joint_groups);
+  if (has_param("control_joints.groups_name")) {
+    get_param("control_joints.groups_name", joint_groups);
 
     for (const auto & joint_group : joint_groups) {
       if (!get_param("control_joints." + joint_group + ".joints_name", joint_names)) {
@@ -472,10 +472,10 @@ void SOBITSTeleop::load_parameters()
       // A pose defined in YAML lists the groups it drives; each group names the
       // robot.yaml joint group whose trajectory topic carries it.
       std::vector<std::string> groups;
-      get_param(base + ".groups", groups);
+      get_param(base + ".groups_name", groups);
 
       // Single-group shorthand: joints/positions directly under the pose.
-      if (groups.empty() && has_param(base + ".joints")) {
+      if (groups.empty() && has_param(base + ".joints_name")) {
         groups.push_back("");
       }
 
@@ -483,7 +483,7 @@ void SOBITSTeleop::load_parameters()
         const std::string gbase = g.empty() ? base : base + "." + g;
         mark_visited(gbase);
         PoseJointGroup pg{};
-        get_param(gbase + ".joints", pg.joint_names);
+        get_param(gbase + ".joints_name", pg.joint_names);
         get_param(gbase + ".positions", pg.positions);
 
         if (pg.joint_names.empty()) {
@@ -641,8 +641,8 @@ void SOBITSTeleop::load_parameters()
     RCLCPP_INFO(get_logger(), "Loaded control_velocity parameters from rosparam");
   }
   // Load quest parameters
-  if (has_param("control_target.groups")) {
-    get_param("control_target.groups", quest_groups);
+  if (has_param("control_target.groups_name")) {
+    get_param("control_target.groups_name", quest_groups);
     for (const auto & group : quest_groups) {
       // A tracked group lists its joints in `names`, then describes each one
       // below it — the same shape as control_joints and the hand's adaptive block.
@@ -1324,7 +1324,7 @@ void SOBITSTeleop::teleop()
   // Quest controllers: Unity publishes Quest frames directly under base_footprint.
   bool base_odom_ok = true;  // always ready; kept as guard variable for structure
 
-  if (this->has_parameter("control_target.groups")) {
+  if (this->has_parameter("control_target.groups_name")) {
     // Head / HMD — also used as body reference for arm target scaling
     bool head_tf_ok = false;
     tf2::Transform current_tf;  // controller pose this tick, base_footprint

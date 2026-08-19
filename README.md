@@ -164,7 +164,7 @@ robot-independent.
   ros__parameters:
 
     control_joints:       # Joint trajectory groups to control
-      groups:
+      groups_name:
         - head
         - arm_left
       head:
@@ -189,19 +189,19 @@ robot-independent.
         - pre_manipulation_pose
         initial_pose:
           button: 2
-          # Listing `groups` defines the pose HERE and publishes joint
+          # Listing `groups_name` defines the pose HERE and publishes joint
           # trajectories; omit it to resolve pose_name via the MoveToPose action.
-          groups:
+          groups_name:
             - head
             - arm_left
           head:
-            joints:    [ head_pan_joint, head_tilt_joint ]
+            joints_name:    [ head_pan_joint, head_tilt_joint ]
             positions: [ 0.0,            0.0             ]
           arm_left:
-            joints:    [ arm_left_elbow_joint ]
+            joints_name:    [ arm_left_elbow_joint ]
             positions: [ 2.5 ]
         pre_manipulation_pose:
-          button: 3         # No `groups` -> MoveToPose action backend
+          button: 3         # No `groups_name` -> MoveToPose action backend
 
     control_velocity:     # Mobile base control
       enable_button: 5      # Enable; arms both linear and angular
@@ -275,17 +275,17 @@ sharing no joints, is reported at startup and the blend is skipped.
 
 `control_poses` entries resolve one of two ways, chosen per pose:
 
-| Pose defines `groups` | Backend | Behaviour |
+| Pose defines `groups_name` | Backend | Behaviour |
 |---|---|---|
 | Yes | Joint trajectory topics | Joints/positions come straight from the YAML and are published to each group's controller. No action server needed. |
 | No | `MoveToPose` action | Only `pose_name` is sent; the pose is resolved server-side. |
 
-Each name under `groups` must be a joint group declared in `robot.yaml`, which
+Each name under `groups_name` must be a joint group declared in `robot.yaml`, which
 supplies the trajectory topic (override per group with `joint_trajectory_topic`).
-`joints` and `positions` must be the same length — a mismatched group is skipped
+`joints_name` and `positions` must be the same length — a mismatched group is skipped
 with an error at startup instead of moving the robot. Joints not listed are not
 commanded, so they hold whatever the controller last had. For a single-group
-pose you may put `joints`/`positions` directly under the pose and drop `groups`.
+pose you may put `joints_name`/`positions` directly under the pose and drop `groups_name`.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -496,7 +496,7 @@ each with its own latch.
 
 ```yaml
 control_target:
-  groups: [head, body, ...]
+  groups_name: [head, body, ...]
   head:
     enable_axis: 2                  # hold to latch
     target_frame_name: "hmd_odom"   # frame whose motion is followed

@@ -48,7 +48,7 @@ def _make_nodes(context, *args, **kwargs):
     arms = []
     # An arm group is one that names an end effector; the group name IS the
     # planning group, matching how the node itself identifies an arm.
-    for arm in control_target.get('groups', []):
+    for arm in control_target.get('groups_name', []):
         block = control_target.get(arm, {})
         if isinstance(block, dict) and 'end_effector_frame_name' in block:
             arms.append(arm)

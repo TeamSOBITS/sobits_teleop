@@ -1,7 +1,7 @@
 /**:
   ros__parameters:
     control_joints:
-      groups:
+      groups_name:
       - head
       - body
       - arm_left

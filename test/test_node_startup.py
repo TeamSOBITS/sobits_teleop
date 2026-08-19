@@ -46,7 +46,7 @@ def _target_arm_groups():
     share_dir = get_package_share_directory('sobits_teleop')
     with open(os.path.join(share_dir, 'config', 'sobit_home', 'quest.yaml')) as f:
         params = yaml.safe_load(f)['/**']['ros__parameters']
-    return [g for g in params['control_target']['groups'] if g.startswith('arm_')]
+    return [g for g in params['control_target']['groups_name'] if g.startswith('arm_')]
 
 
 class TestNodeStartup(unittest.TestCase):

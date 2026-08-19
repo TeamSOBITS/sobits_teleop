@@ -24,7 +24,7 @@
         - hand_left_close
         initial_pose:
           button: 0
-          groups:
+          groups_name:
           - head
           - body
           - arm_left
@@ -32,19 +32,19 @@
           - hand_left
           - hand_right
           head:
-            joints:
+            joints_name:
             - head_pan_joint
             - head_tilt_joint
             positions:
             - 0.0
             - 0.0
           body:
-            joints:
+            joints_name:
             - body_lift_joint
             positions:
             - 0.3
           arm_left:
-            joints:
+            joints_name:
             - arm_left_shoulder_tilt_joint
             - arm_left_upper_roll_joint
             - arm_left_upper_flex_joint
@@ -61,7 +61,7 @@
             - 0.0
             - 0.0
           arm_right:
-            joints:
+            joints_name:
             - arm_right_shoulder_tilt_joint
             - arm_right_upper_roll_joint
             - arm_right_upper_flex_joint
@@ -78,7 +78,7 @@
             - 0.0
             - 0.0
           hand_left:
-            joints:
+            joints_name:
             - hand_left_finger_c_mcp_joint
             - hand_left_finger_c_ip_joint
             - hand_left_finger_l_mcp_joint
@@ -95,7 +95,7 @@
             - -1.57
             - 0.0
           hand_right:
-            joints:
+            joints_name:
             - hand_right_finger_c_mcp_joint
             - hand_right_finger_c_ip_joint
             - hand_right_finger_l_mcp_joint
@@ -113,10 +113,10 @@
             - 0.0
         hand_right_open:
           button: -1
-          groups:
+          groups_name:
           - hand_right
           hand_right:
-            joints:
+            joints_name:
             - hand_right_finger_l_pip_joint
             - hand_right_finger_l_dip_joint
             - hand_right_finger_r_pip_joint
@@ -132,10 +132,10 @@
             - 0.0
         hand_right_close:
           button: -1
-          groups:
+          groups_name:
           - hand_right
           hand_right:
-            joints:
+            joints_name:
             - hand_right_finger_l_pip_joint
             - hand_right_finger_l_dip_joint
             - hand_right_finger_r_pip_joint
@@ -151,10 +151,10 @@
             - -1.571
         hand_left_open:
           button: -1
-          groups:
+          groups_name:
           - hand_left
           hand_left:
-            joints:
+            joints_name:
             - hand_left_finger_l_pip_joint
             - hand_left_finger_l_dip_joint
             - hand_left_finger_r_pip_joint
@@ -170,10 +170,10 @@
             - 0.0
         hand_left_close:
           button: -1
-          groups:
+          groups_name:
           - hand_left
           hand_left:
-            joints:
+            joints_name:
             - hand_left_finger_l_pip_joint
             - hand_left_finger_l_dip_joint
             - hand_left_finger_r_pip_joint
@@ -226,7 +226,7 @@
           - hand_left_open
           - hand_left_close
     control_joints:
-      groups:
+      groups_name:
       - hand_right
       - hand_left
       hand_right:
@@ -250,7 +250,7 @@
           speed: 0.6
           fast_speed: 0.6
     control_target:
-      groups:
+      groups_name:
       - head
       - body
       - arm_right

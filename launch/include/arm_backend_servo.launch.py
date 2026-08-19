@@ -237,7 +237,7 @@ def _fetch_move_group_params(context, *args, **kwargs):
     arm_entries = []  # (planning_group, quest controller block)
     # An arm group is one that names an end effector; the group name IS the
     # planning group, so no separate list or 'arm' key is needed.
-    for group in control_target.get('groups', []):
+    for group in control_target.get('groups_name', []):
         block = control_target.get(group, {})
         if isinstance(block, dict) and 'end_effector_frame_name' in block:
             arm_entries.append((group, block))
