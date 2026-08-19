@@ -188,7 +188,6 @@
       - hand_right_grip
       - hand_left_grip
       hand_right_grip:
-        group: hand_right
         from: hand_right_open
         to: hand_right_close
         enable_axis: 6
@@ -199,7 +198,6 @@
         from_button: -1
         speed: 0.6
       hand_left_grip:
-        group: hand_left
         from: hand_left_open
         to: hand_left_close
         enable_axis: 2
@@ -214,13 +212,11 @@
       - hand_left_toggle
       hand_right_toggle:
         button: 6
-        group: hand_right
         poses:
         - hand_right_open
         - hand_right_close
       hand_left_toggle:
         button: 2
-        group: hand_left
         poses:
         - hand_left_open
         - hand_left_close

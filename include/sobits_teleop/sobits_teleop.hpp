@@ -77,15 +77,21 @@ struct PoseMap
   double time_from_start = 3.0;  // seconds to reach the pose
 };
 
-// Sweeps one group between two poses. The input's sign picks the endpoint and
-// its size the speed, so releasing leaves the joints where they are.
-struct PoseBlendMap
+// One group's share of a blend: the joints and the two poses' values for them.
+struct PoseBlendGroup
 {
-  std::string name;
   std::string joint_trajectory_topic;
   std::vector<std::string> joint_names;
   std::vector<double> from_positions;
   std::vector<double> to_positions;
+};
+
+// Sweeps between two poses. The input's sign picks the endpoint and its size
+// the speed, so releasing leaves the joints where they are.
+struct PoseBlendMap
+{
+  std::string name;
+  std::vector<PoseBlendGroup> groups;
   int enable_axis = -1;     // -1 with no enable_button = always live
   int enable_button = -1;
   int axis = -1;
@@ -99,7 +105,7 @@ struct PoseBlendMap
 struct PoseCycleMap
 {
   std::string name;
-  std::string group;            // empty = whole pose, else that group only
+  std::vector<std::string> exclude_groups;
   std::vector<std::string> poses;
   int button = -1;
   size_t index = 0;
@@ -235,8 +241,10 @@ private:
   bool clamp_to_limits_checked(const std::string & joint, double & value);
 
   // Send one configured pose. Shared by the joy buttons and the reset service.
-  // only != nullptr publishes just that group of the pose.
-  bool send_pose(const PoseMap & pose_map, const PoseJointGroup * only = nullptr);
+  // Publishes the pose, skipping any group named in exclude.
+  bool send_pose(
+    const PoseMap & pose_map, const std::vector<std::string> & exclude = {},
+    const PoseJointGroup * only = nullptr);
   // Publish the tracking enable/disable state for one arm's planning group.
   void publish_arm_tracking(const std::string & arm, bool enabled);
   // True if any arm mapping's own enable axis is currently held.
@@ -259,8 +267,9 @@ private:
   void process_poses();
   void process_pose_blends();
   void process_pose_cycles();
-  // The named pose's entry for one group, or nullptr if it defines none.
-  const PoseJointGroup * find_pose_group(const std::string & pose, const std::string & group);
+  const PoseMap * find_pose(const std::string & pose);
+  // Reverse of group_trajectory_topic, for matching exclude_groups entries.
+  std::string topic_group_name(const std::string & topic);
   void process_cmd_vel();
   void process_tracked_group(QuestTrackedGroup & g);
   void process_hand(const std::string & name, QuestHandMap & m);
