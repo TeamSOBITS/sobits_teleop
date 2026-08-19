@@ -1,69 +1,214 @@
 /**:
   ros__parameters:
-
-    # Mobile base. Hold left grip to enable; sticks drive. No fast_axis: right
-    # grip (7) is taken by both arms' enable_axis.
     control_velocity:
-      axis : 3              # left grip
-      linear_x_axis : 1     # left stick up/down
-      linear_y_axis : 0     # left stick left/right
-      angular_axis : 4      # right stick left/right
-      axis_sign : -1
-      linear_scale : 0.1
-      angular_scale : 0.3
-      fast_linear_scale : 0.2
-      fast_angular_scale : 0.6
-
-    # X sends the pose below. "groups" = publish joint trajectories; omit them to
-    # resolve pose_name via MoveToPose. Unlisted joints hold position.
+      axis: 3
+      linear_x_axis: 1
+      linear_y_axis: 0
+      angular_axis: 4
+      axis_sign: -1
+      linear_scale: 0.1
+      angular_scale: 0.3
+      fast_linear_scale: 0.2
+      fast_angular_scale: 0.6
     control_poses:
-      pose_action : "move_to_pose"   # MoveToPose action server name (action backend)
-      time_from_start : 3.0          # default seconds to reach a pose
+      pose_action: move_to_pose
+      time_from_start: 3.0
       pose_list:
-        - initial_pose
+      - initial_pose
+      - hand_right_open
+      - hand_right_close
+      - hand_left_open
+      - hand_left_close
       initial_pose:
-        button : 0            # X button (left controller)
-        # Each entry names a robot.yaml joint group, which supplies the topic.
+        button: 0
         groups:
-          - head
-          - body
-          - arm_left
-          - arm_right
-          - hand_left
-          - hand_right
+        - head
+        - body
+        - arm_left
+        - arm_right
+        - hand_left
+        - hand_right
         head:
-          joints:    [ head_pan_joint, head_tilt_joint ]
-          positions: [ 0.0,            0.0             ]
+          joints:
+          - head_pan_joint
+          - head_tilt_joint
+          positions:
+          - 0.0
+          - 0.0
         body:
-          joints:    [ body_lift_joint ]
-          positions: [ 0.3             ]
+          joints:
+          - body_lift_joint
+          positions:
+          - 0.3
         arm_left:
-          joints: [ arm_left_shoulder_tilt_joint, arm_left_upper_roll_joint,
-                    arm_left_upper_flex_joint,    arm_left_elbow_joint,
-                    arm_left_lower_flex_joint,    arm_left_wrist_tilt_joint,
-                    arm_left_wrist_roll_joint ]
-          positions: [ -0.75, -1.22, -0.2, 2.5, 0.0, 0.0, 0.0 ]
+          joints:
+          - arm_left_shoulder_tilt_joint
+          - arm_left_upper_roll_joint
+          - arm_left_upper_flex_joint
+          - arm_left_elbow_joint
+          - arm_left_lower_flex_joint
+          - arm_left_wrist_tilt_joint
+          - arm_left_wrist_roll_joint
+          positions:
+          - -0.75
+          - -1.22
+          - -0.2
+          - 2.5
+          - 0.0
+          - 0.0
+          - 0.0
         arm_right:
-          joints: [ arm_right_shoulder_tilt_joint, arm_right_upper_roll_joint,
-                    arm_right_upper_flex_joint,    arm_right_elbow_joint,
-                    arm_right_lower_flex_joint,    arm_right_wrist_tilt_joint,
-                    arm_right_wrist_roll_joint ]
-          positions: [ -0.75, -1.22, -0.2, 2.5, 0.0, 0.0, 0.0 ]
+          joints:
+          - arm_right_shoulder_tilt_joint
+          - arm_right_upper_roll_joint
+          - arm_right_upper_flex_joint
+          - arm_right_elbow_joint
+          - arm_right_lower_flex_joint
+          - arm_right_wrist_tilt_joint
+          - arm_right_wrist_roll_joint
+          positions:
+          - -0.75
+          - -1.22
+          - -0.2
+          - 2.5
+          - 0.0
+          - 0.0
+          - 0.0
         hand_left:
-          joints: [ hand_left_finger_c_mcp_joint, hand_left_finger_c_ip_joint,
-                    hand_left_finger_l_mcp_joint, hand_left_finger_l_pip_joint,
-                    hand_left_finger_l_dip_joint, hand_left_finger_r_pip_joint,
-                    hand_left_finger_r_dip_joint ]
-          positions: [ -1.57, 0.0, -1.5707, 1.57, 0.0, -1.57, 0.0 ]
+          joints:
+          - hand_left_finger_c_mcp_joint
+          - hand_left_finger_c_ip_joint
+          - hand_left_finger_l_mcp_joint
+          - hand_left_finger_l_pip_joint
+          - hand_left_finger_l_dip_joint
+          - hand_left_finger_r_pip_joint
+          - hand_left_finger_r_dip_joint
+          positions:
+          - -1.57
+          - 0.0
+          - -1.5707
+          - 1.57
+          - 0.0
+          - -1.57
+          - 0.0
         hand_right:
-          joints: [ hand_right_finger_c_mcp_joint, hand_right_finger_c_ip_joint,
-                    hand_right_finger_l_mcp_joint, hand_right_finger_l_pip_joint,
-                    hand_right_finger_l_dip_joint, hand_right_finger_r_pip_joint,
-                    hand_right_finger_r_dip_joint ]
-          positions: [ 1.57, 0.0, 1.57, 1.57, 0.0, -1.57, 0.0 ]
-
-    # Grip-type knuckles: same stick as the adaptive grip, so each is gated on
-    # its hand's trigger and must dominate the horizontal axis to move.
+          joints:
+          - hand_right_finger_c_mcp_joint
+          - hand_right_finger_c_ip_joint
+          - hand_right_finger_l_mcp_joint
+          - hand_right_finger_l_pip_joint
+          - hand_right_finger_l_dip_joint
+          - hand_right_finger_r_pip_joint
+          - hand_right_finger_r_dip_joint
+          positions:
+          - 1.57
+          - 0.0
+          - 1.57
+          - 1.57
+          - 0.0
+          - -1.57
+          - 0.0
+      hand_right_open:
+        button: -1
+        groups:
+        - hand_right
+        hand_right:
+          joints:
+          - hand_right_finger_l_pip_joint
+          - hand_right_finger_l_dip_joint
+          - hand_right_finger_r_pip_joint
+          - hand_right_finger_r_dip_joint
+          - hand_right_finger_c_mcp_joint
+          - hand_right_finger_c_ip_joint
+          positions:
+          - 1.571
+          - 0.0
+          - -1.571
+          - 0.0
+          - 1.571
+          - 0.0
+      hand_right_close:
+        button: -1
+        groups:
+        - hand_right
+        hand_right:
+          joints:
+          - hand_right_finger_l_pip_joint
+          - hand_right_finger_l_dip_joint
+          - hand_right_finger_r_pip_joint
+          - hand_right_finger_r_dip_joint
+          - hand_right_finger_c_mcp_joint
+          - hand_right_finger_c_ip_joint
+          positions:
+          - -0.5
+          - -1.571
+          - 0.5
+          - 1.571
+          - -0.5
+          - -1.571
+      hand_left_open:
+        button: -1
+        groups:
+        - hand_left
+        hand_left:
+          joints:
+          - hand_left_finger_l_pip_joint
+          - hand_left_finger_l_dip_joint
+          - hand_left_finger_r_pip_joint
+          - hand_left_finger_r_dip_joint
+          - hand_left_finger_c_mcp_joint
+          - hand_left_finger_c_ip_joint
+          positions:
+          - 1.571
+          - 0.0
+          - -1.571
+          - 0.0
+          - -1.571
+          - 0.0
+      hand_left_close:
+        button: -1
+        groups:
+        - hand_left
+        hand_left:
+          joints:
+          - hand_left_finger_l_pip_joint
+          - hand_left_finger_l_dip_joint
+          - hand_left_finger_r_pip_joint
+          - hand_left_finger_r_dip_joint
+          - hand_left_finger_c_mcp_joint
+          - hand_left_finger_c_ip_joint
+          positions:
+          - -0.5
+          - -1.571
+          - 0.5
+          - 1.571
+          - 0.5
+          - 1.571
+      blends_name:
+      - hand_right_grip
+      - hand_left_grip
+      hand_right_grip:
+        group: hand_right
+        from: hand_right_open
+        to: hand_right_close
+        enable_axis: 6
+        enable_button: -1
+        axis: 4
+        axis_sign: -1
+        to_button: -1
+        from_button: -1
+        speed: 0.6
+      hand_left_grip:
+        group: hand_left
+        from: hand_left_open
+        to: hand_left_close
+        enable_axis: 2
+        enable_button: -1
+        axis: 0
+        axis_sign: 1
+        to_button: -1
+        from_button: -1
+        speed: 0.6
     control_joints:
       groups:
       - hand_right
@@ -72,35 +217,33 @@
         joints_name:
         - hand_right_finger_l_mcp_joint
         hand_right_finger_l_mcp_joint:
-          enable_axis: 6      # right trigger
-          axis: 5             # right stick up/down
+          enable_axis: 6
+          axis: 5
           axis_sign: -1
-          dominant_over: 4    # same stick's horizontal axis
+          dominant_over: 4
           speed: 0.6
           fast_speed: 0.6
       hand_left:
         joints_name:
         - hand_left_finger_l_mcp_joint
         hand_left_finger_l_mcp_joint:
-          enable_axis: 2      # left trigger
-          axis: 1             # left stick up/down
+          enable_axis: 2
+          axis: 1
           axis_sign: 1
-          dominant_over: 0    # same stick's horizontal axis
+          dominant_over: 0
           speed: 0.6
           fast_speed: 0.6
-
     control_target:
       groups:
-        - head
-        - body
-        - arm_right
-        - hand_right
-        - arm_left
-        - hand_left
-
+      - head
+      - body
+      - arm_right
+      - hand_right
+      - arm_left
+      - hand_left
       head:
-        enable_axis: 2        # left trigger
-        target_frame_name: "hmd_odom"
+        enable_axis: 2
+        target_frame_name: hmd_odom
         motion_scale: 1.0
         joints_name:
         - head_pan_joint
@@ -113,12 +256,9 @@
           type: rotation
           axis: pitch
           sign: -1
-
-      # Vertical lift from target_frame_name's z travel. Shares the head's axis
-      # here, but latches separately — give it its own axis to split them.
       body:
-        enable_axis: 2        # left trigger, same as head
-        target_frame_name: "hmd_odom"   # z travel of this frame drives the lift
+        enable_axis: 2
+        target_frame_name: hmd_odom
         motion_scale: 1.0
         joints_name:
         - body_lift_joint
@@ -126,97 +266,33 @@
           type: prismatic
           axis: z
           sign: 1
-
       arm_right:
-        controller_frame_name: "right_controller_odom"
-        controller_echo_frame_name: "right_controller_link"
-        enable_axis: 7        # right grip
-        motion_scale: 2.0     # anatomical ratio is 1.41; raised to 2.0 for reach
-        end_effector_frame_name: "hand_right_end_effector_link"
-        target_frame_name: "right_target_link"
-        proximity_threshold: 0.0        # m; 0 = latch immediately
-        proximity_angle_threshold: 0.0  # rad; 0 = latch immediately
-
+        controller_frame_name: right_controller_odom
+        controller_echo_frame_name: right_controller_link
+        enable_axis: 7
+        motion_scale: 2.0
+        end_effector_frame_name: hand_right_end_effector_link
+        target_frame_name: right_target_link
+        proximity_threshold: 0.0
+        proximity_angle_threshold: 0.0
       hand_right:
-        pose_button: 6        # B button: toggle open/grasp pose
-        pose_open: "two_fingers_open_pose"
-        pose_close: "two_fingers_grasp_pose"
-        pose_action: "move_right_hand_to_pose"
-        speed: 0.6            # rad per 50 ms tick at full stick
-        adaptive:
-          trigger_axis: 6     # right trigger holds adaptive mode
-          stick_axis: 4       # right stick left/right
-          axis_sign: -1       # stick right = close
-          joints_name: [ hand_right_finger_l_pip_joint, hand_right_finger_l_dip_joint,
-                    hand_right_finger_r_pip_joint, hand_right_finger_r_dip_joint,
-                    hand_right_finger_c_mcp_joint, hand_right_finger_c_ip_joint,
-                    hand_right_finger_l_mcp_joint ]
-          hand_right_finger_l_pip_joint:
-            close_pos: -0.5
-            open_pos: 1.571
-          hand_right_finger_l_dip_joint:
-            close_pos: -1.571
-            open_pos: 0.0
-          hand_right_finger_r_pip_joint:
-            close_pos: 0.5
-            open_pos: -1.571
-          hand_right_finger_r_dip_joint:
-            close_pos: 1.571
-            open_pos: 0.0
-          hand_right_finger_c_mcp_joint:
-            close_pos: -0.5
-            open_pos: 1.571
-          hand_right_finger_c_ip_joint:
-            close_pos: -1.571
-            open_pos: 0.0
-          hand_right_finger_l_mcp_joint:
-            close_pos: 1.571
-            open_pos: 1.571
-            fixed: true
-
+        pose_button: 6
+        pose_open: two_fingers_open_pose
+        pose_close: two_fingers_grasp_pose
+        pose_action: move_right_hand_to_pose
+        speed: 0.6
       arm_left:
-        controller_frame_name: "left_controller_odom"
-        controller_echo_frame_name: "left_controller_link"
-        enable_axis: 7        # right grip
-        motion_scale: 2.0     # anatomical ratio is 1.41; raised to 2.0 for reach
-        end_effector_frame_name: "hand_left_end_effector_link"
-        target_frame_name: "left_target_link"
-        proximity_threshold: 0.0        # m; 0 = latch immediately
-        proximity_angle_threshold: 0.0  # rad; 0 = latch immediately
-
+        controller_frame_name: left_controller_odom
+        controller_echo_frame_name: left_controller_link
+        enable_axis: 7
+        motion_scale: 2.0
+        end_effector_frame_name: hand_left_end_effector_link
+        target_frame_name: left_target_link
+        proximity_threshold: 0.0
+        proximity_angle_threshold: 0.0
       hand_left:
-        pose_button: 2        # toggle open/grasp pose (NOT X — X is button 0; verify via /joy)
-        pose_open: "two_fingers_open_pose"
-        pose_close: "two_fingers_grasp_pose"
-        pose_action: "move_left_hand_to_pose"
-        speed: 0.6            # rad per 50 ms tick at full stick
-        adaptive:
-          trigger_axis: 2     # left trigger holds adaptive mode
-          stick_axis: 0       # left stick left/right
-          axis_sign: 1        # stick right = close
-          joints_name: [ hand_left_finger_l_pip_joint, hand_left_finger_l_dip_joint,
-                    hand_left_finger_r_pip_joint, hand_left_finger_r_dip_joint,
-                    hand_left_finger_c_mcp_joint, hand_left_finger_c_ip_joint,
-                    hand_left_finger_l_mcp_joint ]
-          hand_left_finger_l_pip_joint:
-            close_pos: -0.5
-            open_pos: 1.571
-          hand_left_finger_l_dip_joint:
-            close_pos: -1.571
-            open_pos: 0.0
-          hand_left_finger_r_pip_joint:
-            close_pos: 0.5
-            open_pos: -1.571
-          hand_left_finger_r_dip_joint:
-            close_pos: 1.571
-            open_pos: 0.0
-          hand_left_finger_c_mcp_joint:
-            close_pos: 0.5
-            open_pos: -1.571
-          hand_left_finger_c_ip_joint:
-            close_pos: 1.571
-            open_pos: 0.0
-          hand_left_finger_l_mcp_joint:
-            close_pos: -1.571
-            open_pos: -1.571
-            fixed: true
+        pose_button: 2
+        pose_open: two_fingers_open_pose
+        pose_close: two_fingers_grasp_pose
+        pose_action: move_left_hand_to_pose
+        speed: 0.6

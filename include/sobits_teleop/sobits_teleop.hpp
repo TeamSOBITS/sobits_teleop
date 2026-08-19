@@ -11,7 +11,6 @@
 #include <std_msgs/msg/bool.hpp>
 #include <tf2_msgs/msg/tf_message.hpp>
 #include "sobits_interfaces/action/move_to_pose.hpp"
-#include "sobits_interfaces/action/move_joint.hpp"
 
 #include <string>
 #include <map>
@@ -140,17 +139,6 @@ struct QuestTrackedGroup
   std::vector<double> latched_positions;   // parallel to joints
 };
 
-// Per-joint adaptive gripper target (close and open positions).
-// Joints omitted from this list are not commanded by the adaptive gripper.
-struct AdaptiveJointTarget
-{
-  std::string name;
-  float close_pos;
-  float open_pos;
-  bool fixed = false;  // true: always commanded at close_pos regardless of direction
-};
-
-// One per arm_* group (planning group tracked by an arm controller).
 struct QuestArmMap
 {
   std::string group;        // planning group, e.g. "arm_left"
@@ -178,15 +166,8 @@ struct QuestHandMap
   std::string pose_close;  // pose name sent when toggling close
   std::string pose_action; // action server name for hand pose (e.g. "move_left_hand_to_pose")
   float speed = 0.2f;
-  int adaptive_trigger_axis = -1;   // trigger axis that enables adaptive grip
-  int adaptive_stick_axis = -1;     // stick axis that controls open/close
-  int adaptive_close_sign = 1;      // +1: positive stick = close, -1: negative stick = close
-  std::vector<AdaptiveJointTarget> adaptive_joints;  // per-joint targets for adaptive grip
-  // One adaptive MoveJoint goal in flight per hand; deadline backstops a lost result.
-  bool jog_goal_in_flight = false;
-  rclcpp::Time jog_goal_deadline{0, 0, RCL_ROS_TIME};
-  // Adaptive stream pauses while a pose action runs, else per-tick "hold" goals
-  // override the pose trajectory; deadline backstops a lost result.
+  // A pose action in flight suppresses this hand's blend; the deadline
+  // backstops a lost result.
   bool hand_pose_in_flight = false;
   rclcpp::Time hand_pose_deadline{0, 0, RCL_ROS_TIME};
 };
@@ -292,7 +273,6 @@ private:
   arm_track_pubs_;
 
   rclcpp_action::Client<sobits_interfaces::action::MoveToPose>::SharedPtr move_to_pose_client;
-  rclcpp_action::Client<sobits_interfaces::action::MoveJoint>::SharedPtr move_joint_client;
   // Hand pose action clients, keyed by hand group name (e.g. "hand_left").
   // Created at startup from pose_action in each hand group's config.
   std::map<std::string,

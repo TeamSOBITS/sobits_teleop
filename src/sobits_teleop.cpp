@@ -23,8 +23,6 @@ SOBITSTeleop::SOBITSTeleop(const rclcpp::NodeOptions & options)
   get_param("control_poses.pose_action", pose_action_name);
   move_to_pose_client = rclcpp_action::create_client<sobits_interfaces::action::MoveToPose>(
       this, pose_action_name);
-  move_joint_client = rclcpp_action::create_client<sobits_interfaces::action::MoveJoint>(
-      this, "move_joint");
 
   joy_sub = create_subscription<sensor_msgs::msg::Joy>(
     "joy", 10,
@@ -680,8 +678,7 @@ void SOBITSTeleop::load_parameters()
       // Group type is inferred from which fields are present.
       const bool is_arm = has_param("control_target." + group +
           ".end_effector_frame_name");
-      const bool is_hand = has_param("control_target." + group + ".pose_action") ||
-        has_param("control_target." + group + ".adaptive.trigger_axis");
+      const bool is_hand = has_param("control_target." + group + ".pose_action");
 
       if (is_arm) {
         QuestArmMap am{};
@@ -737,33 +734,6 @@ void SOBITSTeleop::load_parameters()
           get_param("control_target." + group + ".pose_open", hm.pose_open);
           get_param("control_target." + group + ".pose_close", hm.pose_close);
           get_param("control_target." + group + ".pose_action", hm.pose_action);
-        }
-        if (has_param("control_target." + group + ".adaptive.trigger_axis")) {
-          get_param("control_target." + group + ".adaptive.trigger_axis",
-              hm.adaptive_trigger_axis);
-          get_param("control_target." + group + ".adaptive.stick_axis",
-              hm.adaptive_stick_axis);
-          get_param("control_target." + group + ".adaptive.axis_sign",
-              hm.adaptive_close_sign);
-
-          // Load adaptive joint list: adaptive.names is a list of joint names,
-          // each with close_pos, open_pos, and optional fixed flag.
-          const std::string aj_prefix = "control_target." + group + ".adaptive";
-          if (has_param(aj_prefix + ".joints_name")) {
-            std::vector<std::string> aj_names;
-            get_param(aj_prefix + ".joints_name", aj_names);
-            for (const auto & jname : aj_names) {
-              mark_visited(aj_prefix + "." + jname);
-              AdaptiveJointTarget ajt;
-              ajt.name = jname;
-              get_param(aj_prefix + "." + jname + ".close_pos", ajt.close_pos);
-              get_param(aj_prefix + "." + jname + ".open_pos", ajt.open_pos);
-              if (has_param(aj_prefix + "." + jname + ".fixed")) {
-                get_param(aj_prefix + "." + jname + ".fixed", ajt.fixed);
-              }
-              hm.adaptive_joints.push_back(ajt);
-            }
-          }
         }
         quest_hand_mappings[group] = hm;
       } else {
@@ -1441,93 +1411,8 @@ void SOBITSTeleop::process_hand(const std::string & name, QuestHandMap & m)
     }
   }
 
-        // ── 2. Adaptive gripper control (trigger held + thumbstick) ──────────
-        // A pose toggle still executing takes precedence over the adaptive stream.
   if (m.hand_pose_in_flight && this->now() >= m.hand_pose_deadline) {
     m.hand_pose_in_flight = false;
-  }
-  if (m.adaptive_trigger_axis >= 0 && !m.adaptive_joints.empty() &&
-    !m.hand_pose_in_flight &&
-    m.adaptive_trigger_axis < static_cast<int>(latest_axes.size()) &&
-    m.adaptive_stick_axis < static_cast<int>(latest_axes.size()) &&
-    latest_axes[m.adaptive_trigger_axis] > 0.1)
-  {
-    float raw_stick = latest_axes[m.adaptive_stick_axis];
-    float close_frac = std::clamp(raw_stick * m.adaptive_close_sign, 0.0f, 1.0f);
-    float open_frac = std::clamp(-raw_stick * m.adaptive_close_sign, 0.0f, 1.0f);
-    float deflection = std::max(close_frac, open_frac);
-
-          // Vertical stick rotates the grip-type knuckle while the trigger is held.
-          // Small deadzone rejects noise; rescaled past it so the step ramps from zero.
-    if (deflection >= 0.1f) {
-      const bool closing = (close_frac >= open_frac);
-            // Config speeds are radians per legacy 50 ms tick — scale to the actual loop rate.
-      float step = m.speed * deflection * static_cast<float>(jog_tick_scale_);
-      auto clamp_to_limits = [&](const std::string & jname, float value) -> float {
-          if (!joint_limits.count(jname)) {return value;}
-          return std::clamp(value,
-                static_cast<float>(std::min(joint_limits.at(jname).lower,
-                joint_limits.at(jname).upper)),
-                static_cast<float>(std::max(joint_limits.at(jname).lower,
-                joint_limits.at(jname).upper)));
-        };
-
-      auto step_toward = [&](const std::string & jname, float target) -> float {
-          if (joint_pos.find(jname) == joint_pos.end()) {return target;}
-          float cur = static_cast<float>(joint_pos.at(jname));
-          float dir = (target > cur) ? 1.0f : -1.0f;
-          float next = cur + dir * step;
-          if ((dir > 0 && next > target) || (dir < 0 && next < target)) {next = target;}
-          return clamp_to_limits(jname, next);
-        };
-
-      auto goal = sobits_interfaces::action::MoveJoint::Goal();
-      float max_delta = 0.f;
-      for (const auto & ajt : m.adaptive_joints) {
-        goal.target_joint_names.push_back(ajt.name);
-        float cur = joint_pos.count(ajt.name) ?
-          static_cast<float>(joint_pos.at(ajt.name)) : ajt.close_pos;
-        float tgt;
-        if (ajt.fixed) {
-          // Held here; a control_joints entry may drive it independently.
-          tgt = cur;
-          goal.target_joint_rad.push_back(tgt);
-        } else if (deflection >= 0.1f) {
-          tgt = closing ? ajt.close_pos : ajt.open_pos;
-          tgt = step_toward(ajt.name, tgt);
-          goal.target_joint_rad.push_back(tgt);
-        } else {
-          tgt = cur;
-          goal.target_joint_rad.push_back(cur);        // vertical-only: hold curl
-        }
-        max_delta = std::max(max_delta, std::abs(tgt - cur));
-      }
-            // Scale duration to the largest excursion so a swing isn't ballistic.
-      constexpr double kMaxHandJointVel = 3.0;        // rad/s — hand servo jog ceiling
-      const double goal_sec = std::max(1.0 / teleop_rate_hz, max_delta / kMaxHandJointVel);
-      goal.time_allowance = rclcpp::Duration::from_seconds(goal_sec);
-
-            // One jog goal in flight per hand (server runs goals unpreempted on detached
-            // threads; a global gate made hands block each other). Deadline backstops a lost result.
-      if (move_joint_client->action_server_is_ready() &&
-        (!m.jog_goal_in_flight || this->now() >= m.jog_goal_deadline))
-      {
-        m.jog_goal_in_flight = true;
-              // Backstop must outlive the goal's own allowance.
-        m.jog_goal_deadline = this->now() +
-          rclcpp::Duration::from_seconds(std::max(1.0, goal_sec + 0.5));
-        bool * in_flight = &m.jog_goal_in_flight;
-        auto opts =
-          rclcpp_action::Client<sobits_interfaces::action::MoveJoint>::SendGoalOptions();
-        opts.goal_response_callback =
-          [in_flight](rclcpp_action::ClientGoalHandle<sobits_interfaces::action::MoveJoint>::
-          SharedPtr h) {
-            if (!h) {*in_flight = false;}      // rejected: free the slot
-          };
-        opts.result_callback = [in_flight](const auto &) {*in_flight = false;};
-        move_joint_client->async_send_goal(goal, opts);
-      }
-    }
   }
 }
 
