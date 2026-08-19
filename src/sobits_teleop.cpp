@@ -407,8 +407,12 @@ void SOBITSTeleop::load_parameters()
         jm.joint_name = joint_name;
         get_param("control_joints." + joint_group + "." + joint_name + ".button",
             jm.button);
+        get_param("control_joints." + joint_group + "." + joint_name + ".enable_axis",
+            jm.enable_axis);
         get_param("control_joints." + joint_group + "." + joint_name + ".fast_button",
             jm.fast_button);
+        get_param("control_joints." + joint_group + "." + joint_name + ".fast_axis",
+            jm.fast_axis);
         get_param("control_joints." + joint_group + "." + joint_name + ".axis", jm.axis);
         get_param("control_joints." + joint_group + "." + joint_name + ".axis_sign",
             jm.axis_sign);
@@ -961,12 +965,14 @@ void SOBITSTeleop::process_joints()
 
   for (auto &[name, m] : joint_mappings) {
 
-    if (!button_down(m.button)) {continue;}
+    // Either enable source arms the joint; with neither set it is always live.
+    const bool gated = m.button >= 0 || m.enable_axis >= 0;
+    if (gated && !button_down(m.button) && !axis_held(m.enable_axis)) {continue;}
 
     float axis_val = axis_value(m.axis);
     if (std::abs(axis_val) < 1e-3) {continue;}
 
-    const bool fast = button_down(m.fast_button);
+    const bool fast = button_down(m.fast_button) || axis_held(m.fast_axis);
 
     // Config speeds are radians per legacy 50 ms tick — scale to the actual loop rate.
     double delta_pos = axis_val * m.axis_sign * (fast ? m.fast_speed : m.speed) * jog_tick_scale_;

@@ -40,8 +40,11 @@ struct JointMap
   std::string joint_group;
   std::string joint_name;
   std::string joint_trajectory_topic;
+  // Enable: button and/or enable_axis. Both -1 means always enabled.
   int button = -1;
+  int enable_axis = -1;
   int fast_button = -1;
+  int fast_axis = -1;
   int axis = -1;
   int axis_sign = 1;
   float speed = 0.0f;
