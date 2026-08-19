@@ -228,13 +228,13 @@ control_poses:
   cycles_name: [hand_right_grip]
   hand_right_grip:
     button: 6
-    group: hand_right     # optional: send only this group's part
+    exclude_groups: []    # groups of each pose to leave alone
     poses: [grip_open, grip_two, grip_three]
 ```
 
-Omit `group` to send each pose whole. A cycle with fewer than two poses, or
-naming a pose that does not define the group, is reported at startup and
-skipped.
+Each press sends every group of the pose except those in `exclude_groups`. A
+cycle with fewer than two poses, or naming a pose that is not defined, is
+reported at startup and skipped.
 
 #### Pose blends
 
@@ -248,7 +248,7 @@ control_poses:
   poses_name:  [hand_open, hand_close]
   blends_name: [hand_right_grip]
   hand_right_grip:
-    group: hand_right     # which group of the two poses to drive
+    exclude_groups: []    # groups of the two poses to leave alone
     from:  hand_open
     to:    hand_close
     enable_axis: 6        # -1 with no enable_button = always live
@@ -260,9 +260,9 @@ control_poses:
 ```
 
 The endpoints come from the poses, so the joint values live in one place. The
-blend drives every joint the two poses share; a joint listed in only one is
-skipped. A pose that defines no such group, or two poses sharing no joints,
-is reported at startup and the blend is skipped.
+blend drives every group the two poses share, minus `exclude_groups`, and
+within each group every joint they share. An undefined pose, or two poses
+sharing no joints, is reported at startup and the blend is skipped.
 
 #### Pose backends
 

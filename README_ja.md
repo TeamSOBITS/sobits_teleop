@@ -225,12 +225,12 @@ control_poses:
   cycles_name: [hand_right_grip]
   hand_right_grip:
     button: 6
-    group: hand_right     # 任意：このグループの分だけ送る
+    exclude_groups: []    # 送らないグループ
     poses: [grip_open, grip_two, grip_three]
 ```
 
-`group`を省略するとポーズ全体を送ります．ポーズが2つ未満の場合や，指定した
-グループを定義していないポーズを含む場合は起動時に報告され，そのサイクルは
+1回の押下で`exclude_groups`以外のすべてのグループを送ります．ポーズが2つ未満の
+場合や，定義されていないポーズを含む場合は起動時に報告され，そのサイクルは
 スキップされます．
 
 #### ポーズブレンド
@@ -244,7 +244,7 @@ control_poses:
   poses_name:  [hand_open, hand_close]
   blends_name: [hand_right_grip]
   hand_right_grip:
-    group: hand_right     # 2つのポーズのどのグループを駆動するか
+    exclude_groups: []    # 駆動しないグループ
     from:  hand_open
     to:    hand_close
     enable_axis: 6        # enable_buttonとも-1なら常時有効
@@ -256,9 +256,9 @@ control_poses:
 ```
 
 端点はポーズから取得するため，関節の値の定義は一箇所で済みます．2つのポーズが
-共有する関節すべてを駆動し，片方にしかない関節はスキップします．該当グループを
-定義していないポーズや，共有する関節がない組み合わせは起動時に報告され，その
-ブレンドはスキップされます．
+共有するグループ（`exclude_groups`を除く）と，その中で共有する関節すべてを駆動
+します．定義されていないポーズや，共有する関節がない組み合わせは起動時に報告
+され，そのブレンドはスキップされます．
 
 #### ポーズのバックエンド
 
