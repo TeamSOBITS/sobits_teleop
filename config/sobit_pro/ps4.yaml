@@ -1,6 +1,5 @@
 /**:
   ros__parameters:
-
     control_joints:
       groups:
       - head
@@ -10,86 +9,85 @@
         - head_tilt_joint
         - head_pan_joint
         head_tilt_joint:
-          button : 2           # △
-          fast_button : 6      # L2
-          axis : 1             # 左スティック上下
-          axis_sign : 1
-          speed : 0.1
-          fast_speed : 0.5
+          button: 2
+          fast_button: 6
+          axis: 1
+          axis_sign: 1
+          speed: 0.1
+          fast_speed: 0.5
         head_pan_joint:
-          button : 2           # △
-          fast_button : 6      # L2
-          axis : 0             # 左スティック左右
-          axis_sign : 1
-          speed : 0.1
-          fast_speed : 0.5
+          button: 2
+          fast_button: 6
+          axis: 0
+          axis_sign: 1
+          speed: 0.1
+          fast_speed: 0.5
       arm:
-        joints_name: 
+        joints_name:
         - arm_shoulder_1_tilt_joint
         - arm_elbow_upper_1_tilt_joint
         - arm_elbow_lower_tilt_joint
         - arm_elbow_lower_pan_joint
         - arm_wrist_tilt_joint
         arm_shoulder_1_tilt_joint:
-          button : 1           # ◯
-          fast_button : 6      # L2
-          axis : 1             # 左スティック上下
-          axis_sign : -1
-          speed : 0.1
-          fast_speed : 0.5
+          button: 1
+          fast_button: 6
+          axis: 1
+          axis_sign: -1
+          speed: 0.1
+          fast_speed: 0.5
         arm_elbow_upper_1_tilt_joint:
-          button : 1           # ◯
-          fast_button : 6      # L2
-          axis : 0             # 左スティック左右
-          axis_sign : 1
-          speed : 0.1
-          fast_speed : 0.5
+          button: 1
+          fast_button: 6
+          axis: 0
+          axis_sign: 1
+          speed: 0.1
+          fast_speed: 0.5
         arm_elbow_lower_tilt_joint:
-          button : 0           # ✕
-          fast_button : 6      # L2
-          axis : 0             # 左スティック左右
-          axis_sign : -1
-          speed : 0.1
-          fast_speed : 0.5
+          button: 0
+          fast_button: 6
+          axis: 0
+          axis_sign: -1
+          speed: 0.1
+          fast_speed: 0.5
         arm_elbow_lower_pan_joint:
-          button : 0           # ✕
-          fast_button : 6      # L2
-          axis : 1             # 左スティック上下
-          axis_sign : -1
-          speed : 0.1
-          fast_speed : 0.5
+          button: 0
+          fast_button: 6
+          axis: 1
+          axis_sign: -1
+          speed: 0.1
+          fast_speed: 0.5
         arm_wrist_tilt_joint:
-          button : 7           # R2
-          fast_button : 6      # L2
-          axis : 1             # 左スティック上下
-          axis_sign : -1
-          speed : 0.1
-          fast_speed : 0.5
-
+          button: 7
+          fast_button: 6
+          axis: 1
+          axis_sign: -1
+          speed: 0.1
+          fast_speed: 0.5
     control_poses:
-      trigger : 8        # shareボタン
-      poses_name:
+      trigger: 8
+      poses:
+        poses_name:
         - initial_pose
         - detecting_pose
         - trash_pose
         - navigation_pose
-      initial_pose:
-        button : 2            # △ボタン
-      detecting_pose:
-        button : 1            # ◯ボタン
-      trash_pose:
-        button : 0            # ✕ボタン
-      navigation_pose:
-        button : 3            # □ボタン
-
+        initial_pose:
+          button: 2
+        detecting_pose:
+          button: 1
+        trash_pose:
+          button: 0
+        navigation_pose:
+          button: 3
     control_velocity:
-      button : 5            # R1
-      fast_button : 7       # R2
-      linear_x_axis : 1     # 左スティック上下
-      linear_y_axis : 0     # 左スティック左右
-      angular_axis : 3      # 右スティック左右
-      axis_sign : 1
-      linear_scale : 0.1
-      angular_scale : 0.3
-      fast_linear_scale : 0.2
-      fast_angular_scale : 0.6
+      button: 5
+      fast_button: 7
+      linear_x_axis: 1
+      linear_y_axis: 0
+      angular_axis: 3
+      axis_sign: 1
+      linear_scale: 0.1
+      angular_scale: 0.3
+      fast_linear_scale: 0.2
+      fast_angular_scale: 0.6

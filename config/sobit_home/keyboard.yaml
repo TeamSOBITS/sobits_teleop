@@ -1,6 +1,5 @@
 /**:
   ros__parameters:
-
     control_joints:
       groups:
       - head
@@ -12,31 +11,31 @@
         - head_tilt_joint
         - head_pan_joint
         head_tilt_joint:
-          button : 1           # 1 key
-          fast_button : 7      # 7 key
-          axis : 1             # w, s keys
-          axis_sign : 1
-          speed : 0.1
-          fast_speed : 0.5
+          button: 1
+          fast_button: 7
+          axis: 1
+          axis_sign: 1
+          speed: 0.1
+          fast_speed: 0.5
         head_pan_joint:
-          button : 1           # 1 key
-          fast_button : 7      # 7 key
-          axis : 0             # a, d keys
-          axis_sign : 1
-          speed : 0.1
-          fast_speed : 0.5
+          button: 1
+          fast_button: 7
+          axis: 0
+          axis_sign: 1
+          speed: 0.1
+          fast_speed: 0.5
       body:
         joints_name:
         - body_lift_joint
         body_lift_joint:
-          button : 2           # 2 key
-          fast_button : 7      # 7 key
-          axis : 1             # w, s keys
-          axis_sign : 1
-          speed : 0.1
-          fast_speed : 0.2
+          button: 2
+          fast_button: 7
+          axis: 1
+          axis_sign: 1
+          speed: 0.1
+          fast_speed: 0.2
       arm_left:
-        joints_name: 
+        joints_name:
         - arm_left_shoulder_tilt_joint
         - arm_left_upper_roll_joint
         - arm_left_upper_flex_joint
@@ -44,49 +43,49 @@
         - arm_left_wrist_tilt_joint
         - arm_left_wrist_roll_joint
         arm_left_shoulder_tilt_joint:
-          button : 3           # 3 key
-          fast_button : 7      # 7 key
-          axis : 1             # w, s keys
-          axis_sign : -1
-          speed : 0.1
-          fast_speed : 0.5
+          button: 3
+          fast_button: 7
+          axis: 1
+          axis_sign: -1
+          speed: 0.1
+          fast_speed: 0.5
         arm_left_upper_roll_joint:
-          button : 3           # 3 key
-          fast_button : 7      # 7 key
-          axis : 0             # a, d keys
-          axis_sign : 1
-          speed : 0.1
-          fast_speed : 0.5
+          button: 3
+          fast_button: 7
+          axis: 0
+          axis_sign: 1
+          speed: 0.1
+          fast_speed: 0.5
         arm_left_upper_flex_joint:
-          button : 4           # 4 key
-          fast_button : 7      # 7 key
-          axis : 0             # a, d keys
-          axis_sign : -1
-          speed : 0.1
-          fast_speed : 0.5
+          button: 4
+          fast_button: 7
+          axis: 0
+          axis_sign: -1
+          speed: 0.1
+          fast_speed: 0.5
         arm_left_elbow_joint:
-          button : 4           # 4 key
-          fast_button : 7      # 7 key
-          axis : 1             # w, s keys
-          axis_sign : -1
-          speed : 0.1
-          fast_speed : 0.5
+          button: 4
+          fast_button: 7
+          axis: 1
+          axis_sign: -1
+          speed: 0.1
+          fast_speed: 0.5
         arm_left_wrist_tilt_joint:
-          button : 5           # 5 key
-          fast_button : 7      # 7 key
-          axis : 1             # w, s keys
-          axis_sign : -1
-          speed : 0.1
-          fast_speed : 0.5
+          button: 5
+          fast_button: 7
+          axis: 1
+          axis_sign: -1
+          speed: 0.1
+          fast_speed: 0.5
         arm_left_wrist_roll_joint:
-          button : 5           # 5 key
-          fast_button : 7      # 7 key
-          axis : 0             # a, d keys
-          axis_sign : -1
-          speed : 0.1
-          fast_speed : 0.5
+          button: 5
+          fast_button: 7
+          axis: 0
+          axis_sign: -1
+          speed: 0.1
+          fast_speed: 0.5
       arm_right:
-        joints_name: 
+        joints_name:
         - arm_right_shoulder_tilt_joint
         - arm_right_upper_roll_joint
         - arm_right_upper_flex_joint
@@ -94,72 +93,71 @@
         - arm_right_wrist_tilt_joint
         - arm_right_wrist_roll_joint
         arm_right_shoulder_tilt_joint:
-          button : 3           # 3 key
-          fast_button : 7      # 7 key
-          axis : 4             # arrow up, down keys
-          axis_sign : 1
-          speed : 0.1
-          fast_speed : 0.5
+          button: 3
+          fast_button: 7
+          axis: 4
+          axis_sign: 1
+          speed: 0.1
+          fast_speed: 0.5
         arm_right_upper_roll_joint:
-          button : 3           # 3 key
-          fast_button : 7      # 7 key
-          axis : 3             # arrow left, right keys
-          axis_sign : 1
-          speed : 0.1
-          fast_speed : 0.5
+          button: 3
+          fast_button: 7
+          axis: 3
+          axis_sign: 1
+          speed: 0.1
+          fast_speed: 0.5
         arm_right_upper_flex_joint:
-          button : 4           # 4 key
-          fast_button : 7      # 7 key
-          axis : 3             # arrow left, right keys
-          axis_sign : -1
-          speed : 0.1
-          fast_speed : 0.5
+          button: 4
+          fast_button: 7
+          axis: 3
+          axis_sign: -1
+          speed: 0.1
+          fast_speed: 0.5
         arm_right_elbow_joint:
-          button : 4           # 4 key
-          fast_button : 7      # 7 key
-          axis : 4             # arrow up, down keys
-          axis_sign : 1
-          speed : 0.1
-          fast_speed : 0.5
+          button: 4
+          fast_button: 7
+          axis: 4
+          axis_sign: 1
+          speed: 0.1
+          fast_speed: 0.5
         arm_right_wrist_tilt_joint:
-          button : 5           # 5 key
-          fast_button : 7      # 7 key
-          axis : 4             # arrow up, down keys
-          axis_sign : 1
-          speed : 0.1
-          fast_speed : 0.5
+          button: 5
+          fast_button: 7
+          axis: 4
+          axis_sign: 1
+          speed: 0.1
+          fast_speed: 0.5
         arm_right_wrist_roll_joint:
-          button : 5           # 5 key
-          fast_button : 7      # 7 key
-          axis : 3             # arrow left, right keys
-          axis_sign : -1
-          speed : 0.1
-          fast_speed : 0.5
-
+          button: 5
+          fast_button: 7
+          axis: 3
+          axis_sign: -1
+          speed: 0.1
+          fast_speed: 0.5
     control_poses:
-      trigger : 8        # 8 key
-      poses_name:
+      trigger: 8
+      poses:
+        poses_name:
         - initial_pose
         - ninja_pose
         - detecting_high_pose
         - pre_manipulation_pose
-      initial_pose:
-        button : 2            # 2 key
-      ninja_pose:
-        button : 1            # 1 key
-      detecting_high_pose:
-        button : 0            # 0 key
-      pre_manipulation_pose:
-        button : 3            # 3 key
-
+        initial_pose:
+          button: 2
+        ninja_pose:
+          button: 1
+        detecting_high_pose:
+          button: 0
+        pre_manipulation_pose:
+          button: 3
     control_velocity:
-      button : 6            # 6 key
-      fast_button : 7       # 7 key
-      linear_x_axis : 4     # arrow up, down keys
-      linear_y_axis : 3     # arrow left, right keys
-      angular_axis : 0      # a, d keys
-      axis_sign : 1
-      linear_scale : 0.1
-      angular_scale : 0.3
-      fast_linear_scale : 0.2
-      fast_angular_scale : 0.6
+      button: 6
+      fast_button: 7
+      linear_x_axis: 4
+      linear_y_axis: 3
+      angular_axis: 0
+      axis_sign: 1
+      linear_scale: 0.1
+      angular_scale: 0.3
+      fast_linear_scale: 0.2
+      fast_angular_scale: 0.6

@@ -456,15 +456,15 @@ void SOBITSTeleop::load_parameters()
 
   // Load pose parameters. "trigger" is an optional modifier button held while
   // pressing the pose button; omit it to bind the pose button on its own.
-  if (has_param("control_poses.poses_name")) {
-    get_param("control_poses.poses_name", poses_name);
+  if (has_param("control_poses.poses.poses_name")) {
+    get_param("control_poses.poses.poses_name", poses_name);
     for (const auto & pose_name : poses_name) {
       PoseMap pm{};
       pm.pose_name = pose_name;
       get_param("control_poses.trigger", pm.trigger);
-      get_param("control_poses." + pose_name + ".button", pm.button);
+      get_param("control_poses.poses." + pose_name + ".button", pm.button);
 
-      const std::string base = "control_poses." + pose_name;
+      const std::string base = "control_poses.poses." + pose_name;
       // Shared default first, then the per-pose override.
       get_param("control_poses.time_from_start", pm.time_from_start);
       get_param(base + ".time_from_start", pm.time_from_start);
@@ -533,9 +533,9 @@ void SOBITSTeleop::load_parameters()
 
   // Blends sweep one group between two poses, so they load after the poses.
   std::vector<std::string> blend_names;
-  if (get_param("control_poses.blends_name", blend_names)) {
+  if (get_param("control_poses.blends.blends_name", blend_names)) {
     for (const auto & bname : blend_names) {
-      const std::string base = "control_poses." + bname;
+      const std::string base = "control_poses.blends." + bname;
       PoseBlendMap bl;
       bl.name = bname;
       get_param(base + ".enable_axis", bl.enable_axis);
@@ -598,9 +598,9 @@ void SOBITSTeleop::load_parameters()
   }
 
   std::vector<std::string> cycle_names;
-  if (get_param("control_poses.cycles_name", cycle_names)) {
+  if (get_param("control_poses.cycles.cycles_name", cycle_names)) {
     for (const auto & cname : cycle_names) {
-      const std::string base = "control_poses." + cname;
+      const std::string base = "control_poses.cycles." + cname;
       PoseCycleMap pc;
       pc.name = cname;
       get_param(base + ".button", pc.button);
