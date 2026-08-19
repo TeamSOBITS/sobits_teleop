@@ -83,6 +83,15 @@ struct BlendJoint
   double close_pos = 0.0;
 };
 
+// Resolves a blend endpoint: a pose name if control_poses defines it, else
+// the joints/positions written inline under the blend.
+struct BlendEndpoint
+{
+  std::string pose_name;
+  std::vector<std::string> joint_names;
+  std::vector<double> positions;
+};
+
 // Drives a group of joints toward one of two configurations at a rate set by
 // the input's deflection. Device-agnostic: any axis or button pair works.
 struct BlendMap
@@ -270,6 +279,10 @@ private:
   void report_config_summary();
   // robot.yaml topic for a group; empty (and reported) if the group has none.
   std::string group_trajectory_topic(const std::string & group);
+  // Endpoint joints/positions from a named pose, else from the blend's own keys.
+  bool resolve_blend_endpoint(
+    const std::string & base, const std::string & key, const std::string & group,
+    BlendEndpoint & out);
   // True if the button index is valid and currently down.
   bool button_down(int idx) const;
   // True on the rising edge of a button (down now, up on the previous tick).

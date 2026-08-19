@@ -180,6 +180,37 @@ bool SOBITSTeleop::any_arm_enable_held()
 
 // Reports which optional config blocks this device.yaml supplies, so a block
 // missing on one robot is visible at startup instead of silently doing nothing.
+// Endpoint is either a pose name already in control_poses, or joints and
+// positions written under the blend itself.
+bool SOBITSTeleop::resolve_blend_endpoint(
+  const std::string & base, const std::string & key, const std::string & group,
+  BlendEndpoint & out)
+{
+  get_param(base + "." + key, out.pose_name);
+
+  if (!out.pose_name.empty()) {
+    for (const auto & pm : pose_mappings) {
+      if (pm.pose_name != out.pose_name) {continue;}
+      for (const auto & pg : pm.joint_groups) {
+        if (!group.empty() && pg.joint_trajectory_topic != group_trajectory_topic(group)) {
+          continue;
+        }
+        out.joint_names = pg.joint_names;
+        out.positions = pg.positions;
+        return true;
+      }
+    }
+    RCLCPP_ERROR(get_logger(),
+      "Blend endpoint '%s' names pose '%s', which no control_poses entry defines "
+      "for group '%s'", key.c_str(), out.pose_name.c_str(), group.c_str());
+    return false;
+  }
+
+  get_param(base + "." + key + "_joints", out.joint_names);
+  get_param(base + "." + key + "_positions", out.positions);
+  return !out.joint_names.empty();
+}
+
 std::string SOBITSTeleop::group_trajectory_topic(const std::string & group)
 {
   std::string topic;
@@ -549,14 +580,36 @@ void SOBITSTeleop::load_parameters()
         bm.joint_trajectory_topic = group_trajectory_topic(group);
       }
 
-      std::vector<std::string> jnames;
-      get_param(base + ".joints_name", jnames);
-      for (const auto & jn : jnames) {
-        BlendJoint bj;
-        bj.name = jn;
-        get_param(base + "." + jn + ".open_pos", bj.open_pos);
-        get_param(base + "." + jn + ".close_pos", bj.close_pos);
-        bm.joints.push_back(bj);
+      // Endpoints: `open`/`close` name a control_poses entry; otherwise fall
+      // back to per-joint open_pos/close_pos under joints_name.
+      BlendEndpoint open_ep, close_ep;
+      const bool have_open = resolve_blend_endpoint(base, "open", group, open_ep);
+      const bool have_close = resolve_blend_endpoint(base, "close", group, close_ep);
+
+      if (have_open && have_close) {
+        if (open_ep.joint_names != close_ep.joint_names ||
+          open_ep.positions.size() != open_ep.joint_names.size() ||
+          close_ep.positions.size() != close_ep.joint_names.size())
+        {
+          RCLCPP_ERROR(get_logger(),
+            "Blend '%s': open and close must cover the same joints — skipping",
+            bname.c_str());
+          continue;
+        }
+        for (size_t i = 0; i < open_ep.joint_names.size(); ++i) {
+          bm.joints.push_back({open_ep.joint_names[i], open_ep.positions[i],
+              close_ep.positions[i]});
+        }
+      } else {
+        std::vector<std::string> jnames;
+        get_param(base + ".joints_name", jnames);
+        for (const auto & jn : jnames) {
+          BlendJoint bj;
+          bj.name = jn;
+          get_param(base + "." + jn + ".open_pos", bj.open_pos);
+          get_param(base + "." + jn + ".close_pos", bj.close_pos);
+          bm.joints.push_back(bj);
+        }
       }
 
       if (bm.joints.empty() || bm.joint_trajectory_topic.empty()) {
