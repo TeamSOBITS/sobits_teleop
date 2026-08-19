@@ -176,6 +176,7 @@ robot-independent.
           fast_button: 6    # Hold to move faster
           axis:        1    # Joystick axis
           axis_sign:   1    # Invert direction if needed
+          dominant_over: -1 # Only drive while |axis| exceeds this axis; -1 = off
           speed:       0.1  # Speed when button pressed
           fast_speed:  0.5  # Speed when fast_button pressed
 
@@ -430,7 +431,7 @@ fetches the robot model from it at startup.
 | Grip button (`enable_axis`) | Hold to track the arm |
 | Pose button (`pose_button`) | Toggle `pose_open` / `pose_close` |
 | Trigger + stick left/right | Adaptive open/close curl |
-| Trigger + stick up/down | Rotate the grip-type joint (`single_joint.name`) |
+| Trigger + stick up/down | Rotate the grip-type joint (a `control_joints` entry) |
 
 #### Tracked joint groups (Quest)
 

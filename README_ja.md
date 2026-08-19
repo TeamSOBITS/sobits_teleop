@@ -173,6 +173,7 @@ configは同梱済みで，新しいロボットへの移植はこのディレ�
           fast_button: 6    # 押している間、高速モード
           axis:        1    # ジョイスティック軸
           axis_sign:   1    # 正負を反転する場合は-1
+          dominant_over: -1 # この軸より大きい間だけ駆動．-1で無効
           speed:       0.1  # 通常速度
           fast_speed:  0.5  # 高速モード時の速度
 
@@ -424,7 +425,7 @@ Servoバックエンドには`ros-$ROS_DISTRO-moveit-servo`（`install.sh`でイ
 | グリップボタン（`enable_axis`） | 押している間アームを追従 |
 | ポーズボタン（`pose_button`） | `pose_open`/`pose_close`をトグル |
 | トリガ + スティック左右 | アダプティブ開閉 |
-| トリガ + スティック上下 | 把持タイプ関節（`single_joint.name`）を回転 |
+| トリガ + スティック上下 | 把持タイプ関節を回転（`control_joints`のエントリ） |
 
 #### 追従関節グループ（Quest）
 
