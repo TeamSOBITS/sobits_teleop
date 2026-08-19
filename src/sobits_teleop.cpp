@@ -725,7 +725,6 @@ void SOBITSTeleop::load_parameters()
       } else if (is_hand) {
         QuestHandMap hm{};
         hm.group = group;
-        get_param("control_target." + group + ".speed", hm.speed);
 
         if (has_param("control_target." + group + ".pose_button")) {
           get_param("control_target." + group + ".pose_button", hm.pose_button);

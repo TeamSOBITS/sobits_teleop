@@ -165,7 +165,6 @@ struct QuestHandMap
   std::string pose_open;   // pose name sent when toggling open
   std::string pose_close;  // pose name sent when toggling close
   std::string pose_action; // action server name for hand pose (e.g. "move_left_hand_to_pose")
-  float speed = 0.2f;
   // A pose action in flight suppresses this hand's blend; the deadline
   // backstops a lost result.
   bool hand_pose_in_flight = false;

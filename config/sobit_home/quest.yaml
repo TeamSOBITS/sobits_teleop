@@ -280,7 +280,6 @@
         pose_open: two_fingers_open_pose
         pose_close: two_fingers_grasp_pose
         pose_action: move_right_hand_to_pose
-        speed: 0.6
       arm_left:
         controller_frame_name: left_controller_odom
         controller_echo_frame_name: left_controller_link
@@ -295,4 +294,3 @@
         pose_open: two_fingers_open_pose
         pose_close: two_fingers_grasp_pose
         pose_action: move_left_hand_to_pose
-        speed: 0.6
