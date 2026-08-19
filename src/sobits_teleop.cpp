@@ -630,14 +630,14 @@ void SOBITSTeleop::load_parameters()
     get_param("control_velocity.fast_button", cvm.fast_button);
     get_param("control_velocity.axis", cvm.axis);
     get_param("control_velocity.fast_axis", cvm.fast_axis);
-    get_param("control_velocity.linear_x_axis", cvm.linear_x_axis);
-    get_param("control_velocity.linear_y_axis", cvm.linear_y_axis);
-    get_param("control_velocity.angular_axis", cvm.angular_axis);
     get_param("control_velocity.axis_sign", cvm.axis_sign);
-    get_param("control_velocity.linear_scale", cvm.linear_scale);
-    get_param("control_velocity.angular_scale", cvm.angular_scale);
-    get_param("control_velocity.fast_linear_scale", cvm.fast_linear_scale);
-    get_param("control_velocity.fast_angular_scale", cvm.fast_angular_scale);
+    get_param("control_velocity.linear.x_axis", cvm.linear_x_axis);
+    get_param("control_velocity.linear.y_axis", cvm.linear_y_axis);
+    get_param("control_velocity.linear.scale", cvm.linear_scale);
+    get_param("control_velocity.linear.fast_scale", cvm.fast_linear_scale);
+    get_param("control_velocity.angular.axis", cvm.angular_axis);
+    get_param("control_velocity.angular.scale", cvm.angular_scale);
+    get_param("control_velocity.angular.fast_scale", cvm.fast_angular_scale);
     RCLCPP_INFO(get_logger(), "Loaded control_velocity parameters from rosparam");
   }
   // Load quest parameters

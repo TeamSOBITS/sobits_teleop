@@ -3,14 +3,16 @@
     control_velocity:
       button: 5
       fast_button: 7
-      linear_x_axis: 1
-      linear_y_axis: 0
-      angular_axis: 3
       axis_sign: 1
-      linear_scale: 0.1
-      angular_scale: 0.3
-      fast_linear_scale: 0.2
-      fast_angular_scale: 0.6
+      linear:
+        x_axis: 1
+        y_axis: 0
+        scale: 0.1
+        fast_scale: 0.2
+      angular:
+        axis: 3
+        scale: 0.3
+        fast_scale: 0.6
     control_joints:
       groups:
       - head
