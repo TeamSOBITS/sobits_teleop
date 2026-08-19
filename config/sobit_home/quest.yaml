@@ -209,6 +209,21 @@
         to_button: -1
         from_button: -1
         speed: 0.6
+      cycles_name:
+      - hand_right_toggle
+      - hand_left_toggle
+      hand_right_toggle:
+        button: 6
+        group: hand_right
+        poses:
+        - hand_right_open
+        - hand_right_close
+      hand_left_toggle:
+        button: 2
+        group: hand_left
+        poses:
+        - hand_left_open
+        - hand_left_close
     control_joints:
       groups:
       - hand_right
@@ -238,9 +253,7 @@
       - head
       - body
       - arm_right
-      - hand_right
       - arm_left
-      - hand_left
       head:
         enable_axis: 2
         target_frame_name: hmd_odom
@@ -275,11 +288,6 @@
         target_frame_name: right_target_link
         proximity_threshold: 0.0
         proximity_angle_threshold: 0.0
-      hand_right:
-        pose_button: 6
-        pose_open: two_fingers_open_pose
-        pose_close: two_fingers_grasp_pose
-        pose_action: move_right_hand_to_pose
       arm_left:
         controller_frame_name: left_controller_odom
         controller_echo_frame_name: left_controller_link
@@ -289,8 +297,3 @@
         target_frame_name: left_target_link
         proximity_threshold: 0.0
         proximity_angle_threshold: 0.0
-      hand_left:
-        pose_button: 2
-        pose_open: two_fingers_open_pose
-        pose_close: two_fingers_grasp_pose
-        pose_action: move_left_hand_to_pose
