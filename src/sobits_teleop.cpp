@@ -178,37 +178,6 @@ bool SOBITSTeleop::any_arm_enable_held()
   return false;
 }
 
-// Endpoint is either a pose name already in control_poses, or joints and
-// positions written under the blend itself.
-bool SOBITSTeleop::resolve_blend_endpoint(
-  const std::string & base, const std::string & key, const std::string & group,
-  BlendEndpoint & out)
-{
-  get_param(base + "." + key, out.pose_name);
-
-  if (!out.pose_name.empty()) {
-    for (const auto & pm : pose_mappings) {
-      if (pm.pose_name != out.pose_name) {continue;}
-      for (const auto & pg : pm.joint_groups) {
-        if (!group.empty() && pg.joint_trajectory_topic != group_trajectory_topic(group)) {
-          continue;
-        }
-        out.joint_names = pg.joint_names;
-        out.positions = pg.positions;
-        return true;
-      }
-    }
-    RCLCPP_ERROR(get_logger(),
-      "Blend endpoint '%s' names pose '%s', which no control_poses entry defines "
-      "for group '%s'", key.c_str(), out.pose_name.c_str(), group.c_str());
-    return false;
-  }
-
-  get_param(base + "." + key + "_joints", out.joint_names);
-  get_param(base + "." + key + "_positions", out.positions);
-  return !out.joint_names.empty();
-}
-
 std::string SOBITSTeleop::group_trajectory_topic(const std::string & group)
 {
   std::string topic;
@@ -556,76 +525,6 @@ void SOBITSTeleop::load_parameters()
     get_param("control_velocity.fast_linear_scale", cvm.fast_linear_scale);
     get_param("control_velocity.fast_angular_scale", cvm.fast_angular_scale);
     RCLCPP_INFO(get_logger(), "Loaded control_velocity parameters from rosparam");
-  }
-
-  // Blends: drive a joint group between two configurations from any input.
-  std::vector<std::string> blend_names;
-  if (get_param("control_blends.blends_name", blend_names)) {
-    for (const auto & bname : blend_names) {
-      const std::string base = "control_blends." + bname;
-      BlendMap bm;
-      bm.name = bname;
-      get_param(base + ".enable_axis", bm.enable_axis);
-      get_param(base + ".enable_button", bm.enable_button);
-      get_param(base + ".axis", bm.axis);
-      get_param(base + ".axis_sign", bm.axis_sign);
-      get_param(base + ".close_button", bm.close_button);
-      get_param(base + ".open_button", bm.open_button);
-      get_param(base + ".speed", bm.speed);
-
-      std::string group;
-      get_param(base + ".group", group);
-      get_param(base + ".joint_trajectory_topic", bm.joint_trajectory_topic);
-      if (bm.joint_trajectory_topic.empty() && !group.empty()) {
-        bm.joint_trajectory_topic = group_trajectory_topic(group);
-      }
-
-      // Endpoints: `open`/`close` name a control_poses entry; otherwise fall
-      // back to per-joint open_pos/close_pos under joints_name.
-      BlendEndpoint open_ep, close_ep;
-      const bool have_open = resolve_blend_endpoint(base, "open", group, open_ep);
-      const bool have_close = resolve_blend_endpoint(base, "close", group, close_ep);
-
-      if (have_open && have_close) {
-        if (open_ep.joint_names != close_ep.joint_names ||
-          open_ep.positions.size() != open_ep.joint_names.size() ||
-          close_ep.positions.size() != close_ep.joint_names.size())
-        {
-          RCLCPP_ERROR(get_logger(),
-            "Blend '%s': open and close must cover the same joints — skipping",
-            bname.c_str());
-          continue;
-        }
-        for (size_t i = 0; i < open_ep.joint_names.size(); ++i) {
-          bm.joints.push_back({open_ep.joint_names[i], open_ep.positions[i],
-              close_ep.positions[i]});
-        }
-      } else {
-        std::vector<std::string> jnames;
-        get_param(base + ".joints_name", jnames);
-        for (const auto & jn : jnames) {
-          BlendJoint bj;
-          bj.name = jn;
-          get_param(base + "." + jn + ".open_pos", bj.open_pos);
-          get_param(base + "." + jn + ".close_pos", bj.close_pos);
-          bm.joints.push_back(bj);
-        }
-      }
-
-      if (bm.joints.empty() || bm.joint_trajectory_topic.empty()) {
-        RCLCPP_ERROR(get_logger(),
-          "Blend '%s' needs joints_name and a group or joint_trajectory_topic — skipping",
-          bname.c_str());
-        continue;
-      }
-      if (joint_pub.find(bm.joint_trajectory_topic) == joint_pub.end()) {
-        joint_pub[bm.joint_trajectory_topic] =
-          this->create_publisher<trajectory_msgs::msg::JointTrajectory>(
-          bm.joint_trajectory_topic, 10);
-      }
-      blend_mappings.push_back(bm);
-    }
-    RCLCPP_INFO(get_logger(), "Loaded %zu blend(s) from rosparam", blend_mappings.size());
   }
   // Load quest parameters
   if (has_param("quest_control.groups")) {
@@ -1132,44 +1031,6 @@ void SOBITSTeleop::process_poses()
   }
 }
 
-// Steps a blend's joints toward whichever endpoint the input selects, at a
-// speed set by how far it is pushed. Holding partway stops there.
-void SOBITSTeleop::process_blends()
-{
-  for (const auto & bm : blend_mappings) {
-    const bool gated = bm.enable_axis >= 0 || bm.enable_button >= 0;
-    if (gated && !axis_held(bm.enable_axis) && !button_down(bm.enable_button)) {continue;}
-
-    // Deflection: sign selects the endpoint, magnitude scales the step.
-    double deflection = axis_value(bm.axis) * bm.axis_sign;
-    if (button_down(bm.close_button)) {deflection = 1.0;}
-    if (button_down(bm.open_button)) {deflection = -1.0;}
-    if (std::abs(deflection) < 0.1) {continue;}
-
-    const bool closing = deflection > 0.0;
-    const double step = bm.speed * std::abs(deflection) * jog_tick_scale_;
-
-    trajectory_msgs::msg::JointTrajectory traj;
-    trajectory_msgs::msg::JointTrajectoryPoint pt;
-    for (const auto & bj : bm.joints) {
-      const double goal = closing ? bj.close_pos : bj.open_pos;
-      double cur = joint_pos.count(bj.name) ? joint_pos.at(bj.name) : goal;
-      double next = cur + ((goal > cur) ? step : -step);
-      if ((goal > cur && next > goal) || (goal < cur && next < goal)) {next = goal;}
-      if (!clamp_to_limits_checked(bj.name, next)) {continue;}
-      joint_pos[bj.name] = next;
-      traj.joint_names.push_back(bj.name);
-      pt.positions.push_back(next);
-    }
-    if (traj.joint_names.empty()) {continue;}
-
-    pt.time_from_start = rclcpp::Duration::from_seconds(dt());
-    traj.points.push_back(pt);
-    auto it = joint_pub.find(bm.joint_trajectory_topic);
-    if (it != joint_pub.end() && it->second) {it->second->publish(traj);}
-  }
-}
-
 void SOBITSTeleop::process_cmd_vel()
 {
   // Skip entirely if cmd_vel isn't configured — avoids flooding zero twists.
@@ -1308,7 +1169,6 @@ void SOBITSTeleop::teleop()
   process_joints();
   process_poses();
   process_cmd_vel();
-  process_blends();
 
   // Quest controllers: Unity publishes Quest frames directly under base_footprint.
   bool base_odom_ok = true;  // always ready; kept as guard variable for structure

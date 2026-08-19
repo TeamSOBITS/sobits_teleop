@@ -172,14 +172,12 @@ robot-independent.
           - head_tilt_joint
           - head_pan_joint
         head_tilt_joint:
-          button:      2    # Enable button (-1/omitted = no button)
-          enable_axis: -1   # Enable axis, e.g. a trigger; -1 = unused
+          button:      2    # Enable button
           fast_button: 6    # Hold to move faster
-          fast_axis:   -1   # Axis alternative to fast_button
-          axis:        1    # Joystick axis that drives the joint
+          axis:        1    # Joystick axis
           axis_sign:   1    # Invert direction if needed
-          speed:       0.1  # Speed while enabled
-          fast_speed:  0.5  # Speed in fast mode
+          speed:       0.1  # Speed when button pressed
+          fast_speed:  0.5  # Speed when fast_button pressed
 
     control_poses:        # Move to predefined poses
       trigger: 8            # Optional modifier button; omit for none
@@ -195,30 +193,11 @@ robot-independent.
           - head
           - arm_left
         head:
-          button: 4         # Optional: fires this group alone
           joints:    [ head_pan_joint, head_tilt_joint ]
           positions: [ 0.0,            0.0             ]
         arm_left:
           joints:    [ arm_left_elbow_joint ]
           positions: [ 2.5 ]
-
-    control_blends:       # Sweep a joint group between two configurations
-      blends_name:
-        - hand_right_grip
-      hand_right_grip:
-        enable_axis: 6      # Hold to arm; -1 with no enable_button = always live
-        enable_button: -1
-        axis: 4             # Deflection: sign picks the end, size the speed
-        axis_sign: -1
-        close_button: -1    # Button alternative for devices with no axis
-        open_button: -1
-        speed: 0.6          # Rad per legacy 50 ms tick at full deflection
-        group: hand_right   # Supplies the trajectory topic
-        open:  hand_open    # A control_poses entry, or use the inline form below
-        close: hand_close
-        # Inline alternative when the endpoints are not worth their own poses:
-        # joints_name: [ hand_right_finger_c_mcp_joint ]
-        # hand_right_finger_c_mcp_joint: { open_pos: 1.571, close_pos: -0.5 }
       pre_manipulation_pose:
         button: 3           # No `groups` -> MoveToPose action backend
 
@@ -236,32 +215,6 @@ robot-independent.
 ```
 
 </details>
-
-#### Joint blends
-
-A blend drives a group of joints toward one of two named configurations. The
-input's sign picks the endpoint and its magnitude sets the speed, so releasing
-it stops the joints where they are rather than springing back — which is what
-lets a gripper hold an object.
-
-| Key | Meaning |
-|---|---|
-| `enable_axis` / `enable_button` | arms the blend; with neither set it is always live |
-| `axis` + `axis_sign` | deflection drives it; positive goes toward `close_pos` |
-| `close_button` / `open_button` | button alternative for devices with no axis |
-| `speed` | radians per legacy 50 ms tick at full deflection |
-| `group` | names the group whose trajectory topic carries the output |
-| `open` / `close` | a `control_poses` entry to use as that endpoint |
-
-If `open`/`close` name a pose, the blend takes that pose's joints and
-positions for the group — the values live in one place. Otherwise list
-`joints_name` and give each joint its own `open_pos`/`close_pos`. A pose name
-that `control_poses` does not define for the group is reported at startup and
-the blend is skipped.
-
-Blends are device-agnostic: they live at the top level, so `ps4.yaml`,
-`keyboard.yaml` and `quest.yaml` can all define them. The Quest hand keeps its
-own adaptive grip, which additionally drives the grip-type knuckle.
 
 #### Pose backends
 

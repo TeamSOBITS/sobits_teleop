@@ -75,39 +75,6 @@ struct PoseMap
   double time_from_start = 3.0;  // seconds to reach the pose
 };
 
-// One joint of a blend: the two configurations the drive moves between.
-struct BlendJoint
-{
-  std::string name;
-  double open_pos = 0.0;
-  double close_pos = 0.0;
-};
-
-// Resolves a blend endpoint: a pose name if control_poses defines it, else
-// the joints/positions written inline under the blend.
-struct BlendEndpoint
-{
-  std::string pose_name;
-  std::vector<std::string> joint_names;
-  std::vector<double> positions;
-};
-
-// Drives a group of joints toward one of two configurations at a rate set by
-// the input's deflection. Device-agnostic: any axis or button pair works.
-struct BlendMap
-{
-  std::string name;
-  std::string joint_trajectory_topic;
-  int enable_axis = -1;     // -1 = always live
-  int enable_button = -1;
-  int axis = -1;            // deflection: sign picks the endpoint, size the speed
-  int axis_sign = 1;
-  int close_button = -1;    // button alternative to the axis
-  int open_button = -1;
-  double speed = 0.0;       // rad per legacy 50 ms tick at full deflection
-  std::vector<BlendJoint> joints;
-};
-
 struct CmdVelMap
 {
   std::string topic;
@@ -279,10 +246,6 @@ private:
   void report_config_summary();
   // robot.yaml topic for a group; empty (and reported) if the group has none.
   std::string group_trajectory_topic(const std::string & group);
-  // Endpoint joints/positions from a named pose, else from the blend's own keys.
-  bool resolve_blend_endpoint(
-    const std::string & base, const std::string & key, const std::string & group,
-    BlendEndpoint & out);
   // True if the button index is valid and currently down.
   bool button_down(int idx) const;
   // True on the rising edge of a button (down now, up on the previous tick).
@@ -296,7 +259,6 @@ private:
   void process_joints();
   void process_poses();
   void process_cmd_vel();
-  void process_blends();
   void process_tracked_group(QuestTrackedGroup & g);
   void process_hand(const std::string & name, QuestHandMap & m);
   // Looks up a Quest frame under base_footprint; rejects stale/invalid TF.
@@ -354,7 +316,6 @@ private:
   std::vector<std::string> joint_groups;
   std::vector<std::string> joint_names;
   std::map<std::string, JointMap> joint_mappings;
-  std::vector<BlendMap> blend_mappings;
   std::map<std::string, QuestArmMap> quest_arm_mappings;
   std::map<std::string, QuestHandMap> quest_hand_mappings;
   std::map<std::string, QuestTrackedGroup> quest_tracked_groups;

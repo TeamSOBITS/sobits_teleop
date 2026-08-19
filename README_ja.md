@@ -169,11 +169,9 @@ configは同梱済みで，新しいロボットへの移植はこのディレ�
           - head_tilt_joint
           - head_pan_joint
         head_tilt_joint:
-          button:      2    # 有効化ボタン（-1/省略で未使用）
-          enable_axis: -1   # 有効化軸（トリガなど）．-1で未使用
+          button:      2    # 有効化ボタン
           fast_button: 6    # 押している間、高速モード
-          fast_axis:   -1   # fast_buttonの軸版
-          axis:        1    # 関節を駆動するジョイスティック軸
+          axis:        1    # ジョイスティック軸
           axis_sign:   1    # 正負を反転する場合は-1
           speed:       0.1  # 通常速度
           fast_speed:  0.5  # 高速モード時の速度
@@ -192,30 +190,11 @@ configは同梱済みで，新しいロボットへの移植はこのディレ�
           - head
           - arm_left
         head:
-          button: 4         # 任意：このグループだけを送出
           joints:    [ head_pan_joint, head_tilt_joint ]
           positions: [ 0.0,            0.0             ]
         arm_left:
           joints:    [ arm_left_elbow_joint ]
           positions: [ 2.5 ]
-
-    control_blends:       # 関節グループを2つの姿勢間で掃引
-      blends_name:
-        - hand_right_grip
-      hand_right_grip:
-        enable_axis: 6      # 押している間有効．enable_buttonとも-1なら常時有効
-        enable_button: -1
-        axis: 4             # 符号で行き先，大きさで速度が決まる
-        axis_sign: -1
-        close_button: -1    # 軸のないデバイス用のボタン指定
-        open_button: -1
-        speed: 0.6          # 最大変位時の1周期（50 ms換算）あたりrad
-        group: hand_right   # 軌道トピックの取得元
-        open:  hand_open    # control_posesのポーズ名．下記のインライン形式も可
-        close: hand_close
-        # ポーズにするまでもない場合はインラインで書ける：
-        # joints_name: [ hand_right_finger_c_mcp_joint ]
-        # hand_right_finger_c_mcp_joint: { open_pos: 1.571, close_pos: -0.5 }
       pre_manipulation_pose:
         button: 3           # `groups`なし -> MoveToPoseアクションを使用
 
@@ -233,30 +212,6 @@ configは同梱済みで，新しいロボットへの移植はこのディレ�
 ```
 
 </details>
-
-#### 関節ブレンド
-
-ブレンドは関節グループを2つの姿勢のいずれかへ向けて駆動します．入力の符号が
-行き先を，大きさが速度を決めるため，離すとその位置で停止し元に戻りません．
-グリッパが物体を保持し続けられるのはこのためです．
-
-| キー | 意味 |
-|---|---|
-| `enable_axis` / `enable_button` | 有効化．どちらも未設定なら常時有効 |
-| `axis` + `axis_sign` | 変位で駆動．正で`close_pos`側へ |
-| `close_button` / `open_button` | 軸のないデバイス向けのボタン指定 |
-| `speed` | 最大変位時の1周期（50 ms換算）あたりrad |
-| `group` | 出力先の軌道トピックを持つグループ |
-| `open` / `close` | その端点として使う`control_poses`のポーズ名 |
-
-`open`/`close`にポーズ名を書くと，そのポーズの関節と目標値をグループから取得
-するため，値の定義は一箇所で済みます．書かない場合は`joints_name`を並べ，各関節
-に`open_pos`/`close_pos`を与えます．`control_poses`がそのグループに対して定義
-していないポーズ名は起動時に報告され，そのブレンドはスキップされます.
-
-ブレンドはトップレベルに定義するためデバイス非依存で，`ps4.yaml`、
-`keyboard.yaml`、`quest.yaml`のいずれからでも使えます．Questのハンドは
-把持タイプ関節も駆動する独自のadaptive機能を引き続き持ちます．
 
 #### ポーズのバックエンド
 
