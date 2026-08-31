@@ -1,0 +1,19 @@
+/**:
+  ros__parameters:
+
+    # Full kinematic chain shoulder->EE (metres) — summed from sobit_light's
+    # arm.urdf.xacro joint-origin offsets (shoulder_roll -> end_effector).
+    # This is an approximation (sum of link lengths, not a measured/FK reach);
+    # replace with a measured value if you have one.
+    robot_arm_reach_m: 0.481
+
+    # TF frames used for controller position lookup.
+    # Set a frame to "" to disable that arm (e.g. single-arm robots).
+    # sobit_light has one arm, driven by the right controller (quest.yaml:
+    # arm_enable_axis: 7 under quest_control.arm) — left is unused.
+    right_frame:  "right_controller_odom"
+    left_frame:   ""
+    parent_frame: "base_footprint"
+
+    # Axis index of the right grip in the Joy message (quest.yaml: arm_enable_axis: 7)
+    grip_axis: 7

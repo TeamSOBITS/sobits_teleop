@@ -11,3 +11,33 @@
       angular_scale : 0.3
       fast_linear_scale : 0.2
       fast_angular_scale : 0.6
+
+    quest_control:
+      controllers:
+      - head
+      - right
+
+      head:
+        vertical: "head_pitch_joint"
+        horizontal: "head_yaw_joint"
+        head_enable_axis: 2   # left trigger
+        vertical_sign: -1
+        horizontal_sign: 1
+        scale: 1.0
+
+      right:
+        arm: "arm"
+        base_frame_name: "plate_middle_link"
+        end_effector_frame_name: "sobit_light/hand_end_effector_link"
+        target_frame_name: "arm_target_link"
+        arm_enable_axis: 7    # right grip
+        scale: 0.53
+        arm_proximity_threshold: 0.0        # m; 0 = latch immediately on enable
+        arm_proximity_angle_threshold: 0.0  # rad; 0 = latch immediately on enable
+        gripper:
+          hand: "hand"
+          names: ["hand_joint"]
+          legacy_gripper_axis: 7  # right grip (hold to enable gripper drive too)
+          axis: 6                 # right trigger depth drives open/close
+          axis_sign: 1
+          speed: 0.6              # rad per 50 ms tick at full trigger depth

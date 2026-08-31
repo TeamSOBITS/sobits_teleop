@@ -6,4 +6,5 @@
       joint_trajectory_topic:
         head : head_position_controller/joint_trajectory
         arm  : arm_position_controller/joint_trajectory
-      cmd_vel_topic : wheel_controller/cmd_vel_unstamped
+        hand : hand_position_controller/joint_trajectory
+      cmd_vel_topic : manual_control/cmd_vel
