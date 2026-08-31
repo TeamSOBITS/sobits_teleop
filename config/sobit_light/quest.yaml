@@ -2,15 +2,59 @@
   ros__parameters:
     controllers_name:
     - controller_velocity
+    - controller_joints
+    - controller_tracking
+    - controller_cartesian
     controller_velocity:
-      enable_axis: 6
-      fast_enable_axis: 7
-      axis_sign: 1
+      enable_axis: 6              # right trigger
+      fast_enable_axis: 7         # right grip
+      axis_sign: -1
       linear:
-        x_axis: 1
-        scale: 0.2
-        fast_scale: 0.6
+        x_axis: 1                 # left stick vertical
+        scale: 0.1
+        fast_scale: 0.2
       angular:
-        axis: 0
-        scale: 0.2
+        axis: 0                   # right stick horizontal
+        scale: 0.3
         fast_scale: 0.6
+    controller_joints:
+      groups_name:
+      - hand
+      hand:
+        joints_name:
+        - hand_joint
+        hand_joint:
+          enable_axis: 7          # right grip (hold to enable gripper drive)
+          axis: 6                 # right trigger depth drives open/close
+          axis_sign: 1
+          speed: 0.6              # rad per 50 ms tick at full trigger depth
+    controller_tracking:
+      groups_name:
+      - head
+      head:
+        enable_axis: 2             # left trigger
+        target_frame_name: hmd_odom
+        motion_scale: 1.0
+        joints_name:
+        - head_yaw_joint
+        - head_pitch_joint
+        head_yaw_joint:
+          type: rotation
+          axis: yaw
+          sign: 1
+        head_pitch_joint:
+          type: rotation
+          axis: pitch
+          sign: -1
+    controller_cartesian:
+      groups_name:
+      - arm
+      arm:
+        enable_axis: 7             # right grip
+        controller_frame_name: right_controller_odom
+        controller_echo_frame_name: right_controller_link
+        end_effector_frame_name: hand_end_effector_link
+        target_frame_name: arm_target_link
+        motion_scale: 0.35
+        proximity_threshold: 0.0        # m; 0 = latch immediately on enable
+        proximity_angle_threshold: 0.0  # rad; 0 = latch immediately on enable
