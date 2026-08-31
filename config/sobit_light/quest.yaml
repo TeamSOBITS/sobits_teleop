@@ -31,7 +31,7 @@
         end_effector_frame_name: "sobit_light/hand_end_effector_link"
         target_frame_name: "arm_target_link"
         arm_enable_axis: 7    # right grip
-        scale: 0.53
+        scale: 0.35
         arm_proximity_threshold: 0.0        # m; 0 = latch immediately on enable
         arm_proximity_angle_threshold: 0.0  # rad; 0 = latch immediately on enable
         gripper:
