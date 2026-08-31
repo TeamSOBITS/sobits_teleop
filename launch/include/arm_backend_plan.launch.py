@@ -28,6 +28,17 @@ def _make_nodes(context, *args, **kwargs):
         robot_params = pyyaml.safe_load(f)['/**']['ros__parameters']
     traj_topics = robot_params['robot_topic_name']['joint_trajectory_topic']
 
+    kinematics_file_path = os.path.join(
+        get_package_share_directory(f'{robot_name}_moveit_config'),
+        'config', 'kinematics.yaml')
+    with open(kinematics_file_path) as f:
+        kinematics_raw = pyyaml.safe_load(f)
+    kinematics_params = {
+        f'robot_description_kinematics.{group}.{key}': value
+        for group, group_params in kinematics_raw.items()
+        for key, value in group_params.items()
+    }
+
     quest_control = quest_params['quest_control']
     arm_params = {}
     arms = []
@@ -50,6 +61,7 @@ def _make_nodes(context, *args, **kwargs):
         namespace=robot_name,
         parameters=[
             os.path.join(cfg_dir, 'arm_backend_plan.yaml'),
+            kinematics_params,
             arm_params,
             {'use_sim_time': LaunchConfiguration('use_sim_time')},
         ],
