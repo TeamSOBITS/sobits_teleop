@@ -1,31 +1,29 @@
-from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, ExecuteProcess, IncludeLaunchDescription
-from launch.conditions import IfCondition
-from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, EqualsSubstitution, AndSubstitution, OrSubstitution, NotSubstitution
-from launch_ros.actions import Node
-from ament_index_python.packages import get_package_share_directory
 import os
 
+from ament_index_python.packages import get_package_share_directory
+from launch import LaunchDescription
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.conditions import IfCondition
+from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch.substitutions import (
+    AndSubstitution, EqualsSubstitution, LaunchConfiguration, NotSubstitution,
+    PathJoinSubstitution,
+)
+from launch_ros.actions import Node
+
+
 def generate_launch_description():
-    pkg_name = "sobits_teleop"
+    pkg_name = 'sobits_teleop'
 
     # Launch arguments
     declare_robot_name_cmd = DeclareLaunchArgument(
         'robot_name',
         default_value='sobit_home',
-        # default_value="sobit_pro",
-        # default_value="sobit_edu",
-        # default_value="sobit_mini",
-        # default_value="sobit_light",
         description='Robot name used to select configuration file'
     )
     declare_device_cmd = DeclareLaunchArgument(
         'device',
-        default_value='ps4', 
-        # default_value='ps5',
-        # default_value='quest',
-        # default_value='keyboard',
+        default_value='ps4',
         description='Input device type: ps4, quest, keyboard'
     )
     declare_joystick_device_cmd = DeclareLaunchArgument(
@@ -40,7 +38,7 @@ def generate_launch_description():
     )
     declare_use_ds4drv_cmd = DeclareLaunchArgument(
         'use_ds4drv',
-        default_value='True',
+        default_value='false',
         description='Whether to launch ds4drv for PS4 controller support'
     )
     declare_use_sim_time_cmd = DeclareLaunchArgument(
@@ -66,11 +64,11 @@ def generate_launch_description():
     joystick_device = LaunchConfiguration('joystick_device')
     ros_ip = LaunchConfiguration('ros_ip')
     use_ds4drv = LaunchConfiguration('use_ds4drv')
-    robot_config = PathJoinSubstitution([
-        get_package_share_directory(pkg_name), 
+    common_config = PathJoinSubstitution([
+        get_package_share_directory(pkg_name),
         'config',
         robot_name,
-        'robot' 
+        'common'
     ])
 
     controller_config = PathJoinSubstitution([
@@ -88,65 +86,28 @@ def generate_launch_description():
         output='screen',
         namespace=robot_name,
         parameters=[
-            [robot_config, '.yaml'],
+            [common_config, '.yaml'],
             [controller_config, '.yaml'],
             {'use_sim_time': LaunchConfiguration('use_sim_time')},
         ],
     )
 
-    ds4drv_cmd = ExecuteProcess(
-        cmd=['ds4drv'],
-        output='screen',
-        condition=IfCondition(AndSubstitution(EqualsSubstitution(LaunchConfiguration('device'), 'ps4'), EqualsSubstitution(LaunchConfiguration('use_ds4drv'), 'True')))
+    # Shared input-driver include so sobits_vla_deploy can reuse the same controllers.
+    controller_input_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(os.path.join(
+            get_package_share_directory(pkg_name),
+            'launch', 'include', 'controller_input.launch.py')),
+        launch_arguments={
+            'robot_name': robot_name,
+            'device': device,
+            'joystick_device': joystick_device,
+            'ros_ip': ros_ip,
+            'use_ds4drv': use_ds4drv,
+            'use_sim_time': LaunchConfiguration('use_sim_time'),
+        }.items(),
     )
 
-    # joy_linux node for joy controllers (ps4, ps5)
-    joystick_node = Node(
-        package='joy_linux',
-        executable='joy_linux_node',
-        name='joystick_node',
-        output='screen',
-        namespace=robot_name,
-        parameters=[
-            {'dev': joystick_device},
-            {'deadzone': 0.05},
-            {'autorepeat_rate': 100.0},
-            {'use_sim_time': LaunchConfiguration('use_sim_time')},
-        ],
-        arguments=['--ros-args', '--log-level', 'fatal'],
-        condition=IfCondition(OrSubstitution(EqualsSubstitution(LaunchConfiguration('device'), 'ps4'), EqualsSubstitution(LaunchConfiguration('device'), 'ps5')))
-    )
-
-    # quest node for meta quest controllers
-    quest_node = Node(
-        package='ros_tcp_endpoint',
-        executable='default_server_endpoint',
-        name='quest_node',
-        output='screen',
-        namespace=robot_name,
-        parameters=[
-            {'ROS_IP': ros_ip},
-            {'use_sim_time': LaunchConfiguration('use_sim_time')},
-        ],
-        condition=IfCondition(EqualsSubstitution(LaunchConfiguration('device'), 'quest'))
-    )
-
-    # keyboard node for keyboard teleop
-    keyboard_node = Node(
-        package='keyboard_joy',
-        executable='joy_node',
-        name='keyboard_node',
-        output='screen',
-        namespace=robot_name,
-        parameters=[
-            {'use_sim_time': LaunchConfiguration('use_sim_time')},
-        ],
-        condition=IfCondition(EqualsSubstitution(LaunchConfiguration('device'), 'keyboard'))
-    )
-
-    # Arm-tracking backends (device=quest && use_moveit only; use_servo picks
-    # exactly one). Both live in launch/include/ and inject the arm identity
-    # from quest.yaml / robot.yaml themselves.
+    # Arm-tracking backends (device=quest && use_moveit; use_servo picks exactly one).
     launch_include_dir = os.path.join(
         get_package_share_directory(pkg_name), 'launch', 'include')
     backend_args = {
@@ -174,21 +135,6 @@ def generate_launch_description():
         ), LaunchConfiguration('use_servo')))
     )
 
-    # Launch quest usb network setup script (only needed on Linux, and only if using Quest controllers)
-    # User needs to allow debugging access on the Quest and connect it via USB for this to work
-    usb_network_setup_cmd = ExecuteProcess(
-        cmd=['bash', '-c', 'sudo adb reverse tcp:10000 tcp:10000'],
-        output='screen',
-        condition=IfCondition(EqualsSubstitution(LaunchConfiguration('device'), 'quest'))
-    )
-
-    # Kill any process still holding port 10000 (stale quest_node from a previous launch)
-    kill_stale_quest = ExecuteProcess(
-        cmd=['bash', '-c', 'fuser -k 10000/tcp 2>/dev/null || true'],
-        output='screen',
-        condition=IfCondition(EqualsSubstitution(LaunchConfiguration('device'), 'quest'))
-    )
-
     return LaunchDescription([
         declare_robot_name_cmd,
         declare_device_cmd,
@@ -198,13 +144,8 @@ def generate_launch_description():
         declare_use_sim_time_cmd,
         declare_use_moveit_cmd,
         declare_use_servo_cmd,
-        kill_stale_quest,
         sobits_teleop_node,
         arm_backend_plan_launch,
         arm_backend_servo_launch,
-        ds4drv_cmd,
-        joystick_node,
-        quest_node,
-        keyboard_node,
-        usb_network_setup_cmd
+        controller_input_launch
     ])

@@ -1,6 +1,6 @@
 <a name="readme-top"></a>
 
-[JA](README.md) | [EN](README_en.md)
+[EN](README.md) | [JA](README_ja.md)
 
 [![Contributors][contributors-shield]][contributors-url]
 [![Forks][forks-shield]][forks-url]
@@ -10,58 +10,59 @@
 
 # SOBITS TELEOP
 
-<!-- 目次 -->
+<!-- TABLE OF CONTENTS -->
 <details>
-  <summary>目次</summary>
+  <summary>Table of Contents</summary>
   <ol>
-    <li><a href="#概要">概要</a></li>
-    <li><a href="#環境構築">環境構築</a></li>
+    <li><a href="#introduction">Introduction</a></li>
+    <li><a href="#setup">Setup</a></li>
     <li>
-      <a href="#実行・操作方法">実行・操作方法</a>
+      <a href="#launch-and-usage">Launch and Usage</a>
       <ul>
-        <li><a href="#configファイル作成">configファイル作成</a></li>
-        <li><a href="#起動引数">起動引数</a></li>
-        <li><a href="#テレオペノード実行">テレオペノード実行</a></li>
-        <li><a href="#アーム追跡バックエンドmeta-quest">アーム追跡バックエンド（Meta Quest）</a></li>
-        <li><a href="#新しいロボットへの移植">新しいロボットへの移植</a></li>
-        <li><a href="#アームスケールキャリブレーションmeta-quest">アームスケールキャリブレーション（Meta Quest）</a></li>
-        <li><a href="#シミュレーションモード">シミュレーションモード</a></li>
+        <li><a href="#create-config-files">Create Config Files</a></li>
+        <li><a href="#launch-arguments">Launch Arguments</a></li>
+        <li><a href="#run-teleop-node">Run Teleop Node</a></li>
+        <li><a href="#arm-tracking-backends-meta-quest">Arm-Tracking Backends (Meta Quest)</a></li>
+        <li><a href="#porting-to-a-new-robot">Porting to a New Robot</a></li>
+        <li><a href="#arm-scale-calibration-meta-quest">Arm Scale Calibration (Meta Quest)</a></li>
+        <li><a href="#simulation-mode">Simulation Mode</a></li>
       </ul>
     </li>
-    <li><a href="#マイルストーン">マイルストーン</a></li>
+    <li><a href="#milestone">Milestone</a></li>
   </ol>
 </details>
 
 
 
-<!-- 概要 -->
-## 概要
+<!-- INTRODUCTION -->
+## Introduction
 
-ロボットをジョイスティック（PS4, PS5）、Meta Quest、またはキーボードで遠隔操作するためのパッケージ．\
-Meta Questのセットアップについては[こちら](https://github.com/TeamSOBITS/meta_quest_teleoperation)を参照．
+A package for teleoperating robots using a joystick (PS4, PS5), Meta Quest, or a keyboard.\
+For Meta Quest setup instructions, please refer to [this repository](https://github.com/TeamSOBITS/meta_quest_teleoperation).
 
-本パッケージは**ロボット非依存**です．ロボット固有の設定はすべて1つのconfigディレクトリ
-（`config/{robot_name}/`）にまとまっており，起動時に`robot_name:=<名前>`で選択します．
-SOBITSロボット（`sobit_home`、`sobit_pro`、`sobit_edu`、`sobit_mini`、`sobit_light`）用の
-configは同梱済みで，新しいロボットへの移植はこのディレクトリを作成するだけです —
-コードやlaunchの変更は不要です（[新しいロボットへの移植](#新しいロボットへの移植)参照）．
+The package is **robot-agnostic**: everything robot-specific lives in one
+config directory (`config/{robot_name}/`), selected at launch with
+`robot_name:=<name>`. Ready-made configs are provided for the SOBITS robots
+(`sobit_home`, `sobit_pro`, `sobit_edu`, `sobit_mini`, `sobit_light`); porting
+to a new robot means writing that directory — no code or launch changes
+(see [Porting to a New Robot](#porting-to-a-new-robot)).
 
-対応入力デバイス：`ps4`、`ps5`、`quest`、`keyboard`
+Supported input devices: `ps4`, `ps5`, `quest`, `keyboard`
 
-<p align="right">(<a href="#readme-top">上に戻る</a>)</p>
-
-
-<!-- 環境構築 -->
-## 環境構築
-
-ここで，本レポジトリのセットアップ方法について説明します．
-
-<p align="right">(<a href="#readme-top">上に戻る</a>)</p>
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 
-### 環境条件
+<!-- SETUP -->
+## Setup
 
-まず，以下の環境を整えてから，次のインストール段階に進んでください．
+This section describes how to set up this repository.
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+
+### Prerequisites
+
+First, please set up the following environment before proceeding to the next installation stage.
 
 | System  | Version |
 | --- | --- |
@@ -69,74 +70,76 @@ configは同梱済みで，新しいロボットへの移植はこのディレ�
 | ROS    | Jazzy Jalisco |
 | Python | 3.12+ |
 
-<p align="right">(<a href="#readme-top">上に戻る</a>)</p>
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 
-### インストール方法
+### Installation
 
-1. ROSの`src`フォルダに移動します．
+1. Go to the `src` folder of your colcon workspace.
     ```sh
     cd ~/colcon_ws/src/
     ```
 
-2. 本レポジトリをcloneします．
+2. Clone this repository.
     ```sh
     git clone -b jazzy-devel https://github.com/TeamSOBITS/sobits_teleop
     ```
 
-3. レポジトリの中へ移動します．
+3. Navigate into the repository.
     ```sh
     cd sobits_teleop/
     ```
 
-4. 依存パッケージをインストールします．
+4. Install the dependent packages.
     ```sh
     bash install.sh
     ```
 
-5. パッケージをビルドします．
+5. Build the workspace.
     ```sh
     cd ~/colcon_ws/
     colcon build --symlink-install
     source ~/colcon_ws/install/setup.bash
     ```
 
-<p align="right">(<a href="#readme-top">上に戻る</a>)</p>
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 
-<!-- 実行・操作方法 -->
-## 実行・操作方法
+<!-- LAUNCH AND USAGE -->
+## Launch and Usage
 
-基本的な流れ：
+Basic workflow:
 
-1. ロボットと入力デバイスに対応するconfigファイルを確認・作成する．
-2. 入力デバイスをPCに接続する．
-3. 適切な引数を指定してテレオペノードを起動する．
+1. Create or verify config files for your robot and input device.
+2. Connect the input device to your PC.
+3. Launch the teleop node with the appropriate arguments.
 
-<p align="right">(<a href="#readme-top">上に戻る</a>)</p>
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ---
 
-### configファイル作成
+### Create Config Files
 
-各ロボットのconfigは`config/{robot_name}/`以下に配置します．
-このディレクトリが本パッケージ内で唯一のロボット固有部分です：
+Each robot has its own directory under `config/{robot_name}/` — this directory
+is the only robot-specific part of the package:
 
-| ファイル | 役割 |
+| File | Purpose |
 |---|---|
-| `robot.yaml` | ジョイントコントローラとcmd_velのトピック名 |
-| `{device}.yaml` | 使用するデバイスのボタン・軸マッピング |
-| `arm_backend_plan.yaml` | Plan-and-replaceアーム追跡バックエンドのチューニング（Quest使用時のみ） |
-| `arm_backend_servo.yaml` | MoveIt Servoアーム追跡バックエンドのチューニング（Quest使用時のみ） |
-| `arm_scale_calibrator.yaml` | アームリーチキャリブレーションパラメータ（Quest使用時のみ） |
+| `common.yaml` | Topic names, loop rate and base speed limits |
+| `{device}.yaml` | Button/axis mappings for the selected input device |
+| `arm_backend_plan.yaml` | Plan-and-replace arm-tracking backend tuning (Quest only) |
+| `arm_backend_servo.yaml` | MoveIt Servo arm-tracking backend tuning (Quest only) |
+| `arm_scale_calibrator.yaml` | Arm reach calibration parameters (Quest only) |
 
-**アームの構成情報**（アームの一覧・planning group・目標/エンドエフェクタのフレーム・
-コントローラトピック）は`{device}.yaml`（アームごとの`arm:`ブロック）と`robot.yaml`
-（trajectoryトピックのマップ）に一度だけ定義します．launcherが起動するバックエンドへ
-注入するため，2つの`arm_backend_*.yaml`はチューニングのみを持ち，ほぼロボット非依存です．
+The **arm identity** — which arms exist, their planning groups, target/EE
+frames and controller topics — is declared once, in `{device}.yaml`
+(the per-arm `arm:` blocks) and `common.yaml` (the trajectory-topic map).
+The launchers inject it into whichever arm-tracking backend runs, so the
+two `arm_backend_*.yaml` files contain tuning only and are largely
+robot-independent.
 
 <details>
-<summary>robot.yaml（例）</summary>
+<summary>common.yaml (example)</summary>
 
 ```yaml
 /**:
@@ -149,86 +152,183 @@ configは同梱済みで，新しいロボットへの移植はこのディレ�
         arm_left:  arm_left_position_controller/joint_trajectory
         arm_right: arm_right_position_controller/joint_trajectory
       cmd_vel_topic: cmd_vel
+
+    # Base limits [m/s, rad/s]; controller_velocity scales are fractions of these.
+    base_max_speed:
+      linear:  1.0
+      angular: 1.0
 ```
 
 </details>
 
 <details>
-<summary>{device}.yaml（例）</summary>
+<summary>{device}.yaml (example)</summary>
 
 ```yaml
 /**:
   ros__parameters:
 
-    control_joints:       # 操作するjoint_trajectory_controllerを定義
-      groups:
+    # Only the controllers listed here load; comment one out to disable it.
+    # Omit the whole list to enable every block defined below.
+    controllers_name:
+      - controller_joints
+      - controller_poses
+      - controller_velocity
+
+    controller_joints:       # Joint trajectory groups to control
+      groups_name:
         - head
         - arm_left
       head:
-        names:
+        joints_name:
           - head_tilt_joint
           - head_pan_joint
         head_tilt_joint:
-          button:      2    # 有効化ボタン
-          fast_button: 6    # 押している間、高速モード
-          axis:        1    # ジョイスティック軸
-          axis_sign:   1    # 正負を反転する場合は-1
-          speed:       0.1  # 通常速度
-          fast_speed:  0.5  # 高速モード時の速度
+          button:      2    # Enable button
+          fast_button: 6    # Hold to move faster
+          axis:        1    # Joystick axis
+          axis_sign:   1    # Invert direction if needed
+          dominant_over: -1 # Only drive while |axis| exceeds this axis; -1 = off
+          speed:       0.1  # Speed when button pressed
+          fast_speed:  0.5  # Speed when fast_button pressed
 
-    control_poses:        # 定義済みポーズへの移動
-      trigger: 8
-      pose_list:
+    controller_poses:        # Move to predefined poses
+      trigger: 8            # Optional modifier button; omit for none
+      time_from_start: 3.0  # Default seconds to reach a pose
+      poses:                # Poses, blends and cycles each have a block
+        poses_name:
         - initial_pose
         - pre_manipulation_pose
-      initial_pose:
-        button: 2
+        initial_pose:
+          button: 2
+          # Listing `groups_name` defines the pose HERE and publishes joint
+          # trajectories; omit it to resolve pose_name via the MoveToPose action.
+          groups_name:
+            - head
+            - arm_left
+          head:
+            joints_name:    [ head_pan_joint, head_tilt_joint ]
+            positions: [ 0.0,            0.0             ]
+          arm_left:
+            joints_name:    [ arm_left_elbow_joint ]
+            positions: [ 2.5 ]
+        pre_manipulation_pose:
+          button: 3         # No `groups_name` -> MoveToPose action backend
 
-    control_velocity:     # 台車制御
-      button:             5
-      fast_button:        7
-      linear_x_axis:      1
-      linear_y_axis:      0
-      angular_axis:       3
-      axis_sign:          1
-      linear_scale:       0.1
-      angular_scale:      0.3
-      fast_linear_scale:  0.2
-      fast_angular_scale: 0.6
+    controller_velocity:     # Mobile base control
+      enable_button: 5      # Enable; arms both linear and angular
+      fast_enable_button: 7 # enable_axis / fast_enable_axis also work
+      axis_sign:   1
+      linear:
+        x_axis:     1
+        y_axis:     0
+        scale:      0.2      # fraction of base_max_speed.linear
+        fast_scale: 0.6
+      angular:
+        axis:       3
+        scale:      0.2      # fraction of base_max_speed.angular
+        fast_scale: 0.6
 ```
 
 </details>
 
-<p align="right">(<a href="#readme-top">上に戻る</a>)</p>
+#### Pose cycles
 
----
+A `controller_poses` entry listed in `cycles_name` steps through an ordered list
+of poses, one per button press, wrapping at the end.
 
-### 起動引数
+```yaml
+controller_poses:
+  poses:
+    poses_name: [grip_open, grip_two, grip_three]
+  cycles:
+    cycles_name: [hand_right_grip]
+    hand_right_grip:
+      button: 6
+      exclude_groups: []  # groups of each pose to leave alone
+      poses: [grip_open, grip_two, grip_three]
+```
 
-すべての設定はCLI引数で指定します．launchファイルを直接編集する必要はありません．
+Each press sends every group of the pose except those in `exclude_groups`. A
+cycle with fewer than two poses, or naming a pose that is not defined, is
+reported at startup and skipped.
 
-| 引数 | デフォルト | 説明 |
+#### Pose blends
+
+A `controller_poses` entry listed in `blends_name` sweeps one group between two
+poses. The input's sign picks which pose it heads for and its size sets the
+speed, so releasing leaves the joints where they are — that is what lets a
+gripper hold an object.
+
+```yaml
+controller_poses:
+  poses:
+    poses_name: [hand_open, hand_close]
+  blends:
+    blends_name: [hand_right_grip]
+    hand_right_grip:
+      exclude_groups: []  # groups of the two poses to leave alone
+      from:  hand_open
+      to:    hand_close
+      enable_axis: 6      # -1 with no enable_button = always live
+      axis: 4             # sign picks the pose, size the speed
+      axis_sign: -1
+      to_button: -1       # button alternative for devices with no axis
+      from_button: -1
+      speed: 0.6          # rad per legacy 50 ms tick at full deflection
+```
+
+The endpoints come from the poses, so the joint values live in one place. The
+blend drives every group the two poses share, minus `exclude_groups`, and
+within each group every joint they share. An undefined pose, or two poses
+sharing no joints, is reported at startup and the blend is skipped.
+
+#### Pose backends
+
+`controller_poses` entries resolve one of two ways, chosen per pose:
+
+| Pose defines `groups_name` | Backend | Behaviour |
 |---|---|---|
-| `robot_name` | `sobit_home` | ロボット名（configディレクトリの選択に使用） |
-| `device` | `ps4` | 入力デバイス：`ps4`、`ps5`、`quest`、`keyboard` |
-| `joystick_device` | `/dev/input/js0` | ジョイスティックデバイスパス（PS4/PS5のみ） |
-| `ros_ip` | `0.0.0.0` | Quest TCP接続用のPC IPアドレス |
-| `use_ds4drv` | `True` | `ds4drv`を同時起動する（PS4のみ） |
-| `use_moveit` | `false` | アーム追跡バックエンドを起動する（Questのみ） |
-| `use_servo` | `false` | Plan-and-replaceの代わりにMoveIt Servoバックエンドを使用する（`use_moveit:=true`が必要） |
-| `use_sim_time` | `false` | シミュレーション時刻を使用する（Gazebo） |
+| Yes | Joint trajectory topics | Joints/positions come straight from the YAML and are published to each group's controller. No action server needed. |
+| No | `MoveToPose` action | Only `pose_name` is sent; the pose is resolved server-side. |
 
-<p align="right">(<a href="#readme-top">上に戻る</a>)</p>
+Each name under `groups_name` must be a joint group declared in `common.yaml`, which
+supplies the trajectory topic (override per group with `joint_trajectory_topic`).
+`joints_name` and `positions` must be the same length — a mismatched group is skipped
+with an error at startup instead of moving the robot. Joints not listed are not
+commanded, so they hold whatever the controller last had. For a single-group
+pose you may put `joints_name`/`positions` directly under the pose and drop `groups_name`.
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ---
 
-### テレオペノード実行
+### Launch Arguments
+
+All options are passed as CLI arguments — no need to edit the launch file.
+
+| Argument | Default | Description |
+|---|---|---|
+| `robot_name` | `sobit_home` | Robot name — selects the config directory |
+| `device` | `ps4` | Input device: `ps4`, `ps5`, `quest`, `keyboard` |
+| `joystick_device` | `/dev/input/js0` | Joystick device path (PS4/PS5 only) |
+| `ros_ip` | `0.0.0.0` | PC IP address for Quest TCP connection |
+| `use_ds4drv` | `True` | Launch `ds4drv` alongside (PS4 only) |
+| `use_moveit` | `false` | Launch an arm-tracking backend (Quest only) |
+| `use_servo` | `false` | Pick the MoveIt Servo backend instead of plan-and-replace (requires `use_moveit:=true`) |
+| `use_sim_time` | `false` | Use simulation clock (Gazebo) |
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+---
+
+### Run Teleop Node
 
 #### PS4 / PS5
 
-1. コントローラをBluetoothでPCとペアリングする．
-2. `jstest-gtk`コマンドで接続を確認する．
-3. 起動する：
+1. Pair the controller with your PC via Bluetooth.
+2. Verify the connection with `jstest-gtk`.
+3. Launch:
     ```sh
     ros2 launch sobits_teleop sobits_teleop.launch.py \
       robot_name:=sobit_home \
@@ -236,27 +336,27 @@ configは同梱済みで，新しいロボットへの移植はこのディレ�
     ```
 
 > [!Note]
-> Dockerコンテナ内で`ds4drv`を使用する場合は、`/dev/input/`と`/run/udev`をマウントすること．
+> When using `ds4drv` inside a Docker container, mount `/dev/input/` and `/run/udev` into the container.
 
 #### Meta Quest
 
-1. QuestとPCが同一Wi-Fiネットワークに接続されていることを確認する．
-2. PCのIPアドレスを確認する：
+1. Ensure the Quest and your PC are on the same Wi-Fi network.
+2. Find your PC's IP address:
     ```sh
     hostname -I
     ```
-3. テレオペノードを起動する：
+3. Launch the teleop node, passing your PC's IP:
     ```sh
     ros2 launch sobits_teleop sobits_teleop.launch.py \
       robot_name:=sobit_home \
       device:=quest \
-      ros_ip:=<PC_IPアドレス>
+      ros_ip:=<YOUR_PC_IP>
     ```
-4. Quest側でUnityプロジェクトを起動し、左コントローラの**メニューボタン**でROS_IPを入力・設定する．
+4. Start the Unity project on the Quest. Enter the same IP shown in the launcher via the **menu button** on the left controller.
 
-Meta Questのセットアップは[meta_quest_teleoperation](https://github.com/TeamSOBITS/meta_quest_teleoperation)を参照．
+For Quest setup, refer to [meta_quest_teleoperation](https://github.com/TeamSOBITS/meta_quest_teleoperation).
 
-#### キーボード
+#### Keyboard
 
 ```sh
 ros2 launch sobits_teleop sobits_teleop.launch.py \
@@ -264,143 +364,261 @@ ros2 launch sobits_teleop sobits_teleop.launch.py \
   device:=keyboard
 ```
 
-<p align="right">(<a href="#readme-top">上に戻る</a>)</p>
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ---
 
-### アーム追跡バックエンド（Meta Quest）
+### Arm-Tracking Backends (Meta Quest)
 
-ハンドコントローラのTFポーズをリアルタイムで追従するバックエンドが2種類あります．
-どちらも同じインタフェース — `{side}_target_link` TFと
-`/{robot_name}/{arm_name}/moveit_track_enabled`（`std_msgs/Bool`，グリップボタンが
-自動でパブリッシュ）— を使うため，launch引数1つで切り替えられます．
+Two interchangeable backends follow the hand-controller TF pose in real time.
+Both consume the same interface — the `{side}_target_link` TF plus the
+`/{robot_name}/{arm_name}/moveit_track_enabled` (`std_msgs/Bool`) topic, which
+the grip button toggles automatically — so they can be swapped with one launch
+argument.
 
-| バックエンド | 選択方法 | 追従方式 |
+| Backend | Selected by | How it tracks |
 |---|---|---|
-| Plan-and-replace（`moveit_arm_controller`） | `use_moveit:=true` | MoveIt2で短いCartesian計画をストリーミング；特異点付近はOMPLへフォールバック |
-| MoveIt Servo（`servo_node` + `servo_target_bridge`） | `use_moveit:=true use_servo:=true` | アームごとの`moveit_servo`インスタンスが50Hzで微分IK |
+| Plan-and-replace (`moveit_arm_controller`) | `use_moveit:=true` | Streams short Cartesian plans via MoveIt2; falls back to OMPL near singularities |
+| MoveIt Servo (`servo_node` + `servo_target_bridge`) | `use_moveit:=true use_servo:=true` | One `moveit_servo` instance per arm does differential IK at 50 Hz |
 
 ```sh
 ros2 launch sobits_teleop sobits_teleop.launch.py \
   robot_name:=<robot_name> \
   device:=quest \
-  ros_ip:=<PC_IPアドレス> \
+  ros_ip:=<YOUR_PC_IP> \
   use_moveit:=true \
-  use_servo:=true        # 省略するとPlan-and-replaceバックエンド
+  use_servo:=true        # omit for the plan-and-replace backend
 ```
 
-両launcherは`launch/include/`にあり，アーム構成を`quest.yaml`/`robot.yaml`から
-注入するため，バックエンドのconfigはチューニングのみです．
+Both launchers live in `launch/include/` and inject the arm identity from
+`quest.yaml` / `common.yaml`, so the backend configs are tuning-only.
 
-#### Plan-and-replaceのチューニング — `config/{robot_name}/arm_backend_plan.yaml`
+#### Plan-and-replace tuning — `config/{robot_name}/arm_backend_plan.yaml`
 
 ```yaml
 arm_teleop:
-  update_rate_hz:          50.0   # 追従ループ周波数
-  max_cartesian_step_m:    0.10   # 1サイクルの最大ステップ
-  eef_step_m:              0.02   # Cartesian補間解像度
-  min_cartesian_fraction:   0.2   # この値を下回るとOMPLにフォールバック
-  replan_threshold_m:      0.03   # 目標がこの距離動いたら再計画
-  preempt_threshold_m:     0.30   # 実行中の軌道をキャンセルする距離
-  arrival_threshold_m:     0.03   # EEがこの距離以内なら計画をスキップ
+  update_rate_hz:          50.0   # tracking loop frequency
+  max_cartesian_step_m:    0.10   # max step per cycle
+  eef_step_m:              0.02   # Cartesian interpolation resolution
+  min_cartesian_fraction:   0.2   # fall back to OMPL below this fraction
+  replan_threshold_m:      0.03   # replan when target drifts this far
+  preempt_threshold_m:     0.30   # cancel in-flight trajectory beyond this
+  arrival_threshold_m:     0.03   # skip planning when EE is this close
   velocity_scaling:        0.90
   acceleration_scaling:    0.80
-  publish_mode: topic             # 軌道ストリーミング（テレオペに最適）
+  publish_mode: topic             # stream trajectories (best for teleop)
 ```
 
-#### Servoのチューニング — `config/{robot_name}/arm_backend_servo.yaml`
+#### Servo tuning — `config/{robot_name}/arm_backend_servo.yaml`
 
-Servoスタック全ノードで1ファイル；共有の`/**:`セクションがチューニングを持ちます．
-移植時に確認すべきロボット依存の項目：
+One file for all servo-stack nodes; the shared `/**:` section holds the tuning.
+Robot-dependent points worth checking when porting:
 
 ```yaml
 moveit_servo:
-  scale: {linear: 1.5, rotational: 3.0}  # EE速度上限 [m/s, rad/s]
-  publish_joint_velocities: false  # アームのJTCが終端速度非ゼロの軌道を
-                                   # 拒否する場合はfalseのまま
+  scale: {linear: 1.5, rotational: 3.0}  # EE speed caps [m/s, rad/s]
+  publish_joint_velocities: false  # keep false if the arm JTC rejects
+                                   # trajectories ending with nonzero velocity
   lower_singularity_threshold: 50.0
-  hard_stop_singularity_threshold: 200.0  # 無効化しないこと（関節ワインドアップ）
+  hard_stop_singularity_threshold: 200.0  # do NOT disable (joint windup)
   joint_limit_margins: [0.02]
 
 servo_bridge:
   pose_rate_hz: 100.0
-  max_reach: 1.10   # 各アームの肩を中心としたリーチクランプ球の半径 [m]
-                    # — 対象ロボットの肩→EEチェーン長の約90〜95%に設定
+  max_reach: 1.10   # reach-clamp sphere radius around each arm's shoulder [m]
+                    # — set to ~90-95% of YOUR robot's shoulder→EE chain length
 ```
 
-bridgeは目標を`max_reach`球にクランプするため，届かない位置の手をアームが追いかけて
-完全伸展の特異点に陥ることを防ぎます．アームごとのフレームやトピックはアーム名から
-規約で導出されます（`arm_right` → `right_target_link`、
-`hand_right_end_effector_link`、`arm_right_shoulder_tilt_link`など）．
-ロボットの命名が異なる場合は`servo_bridge.{arm_name}.*`のキーで上書きしてください．
+The bridge clamps targets to the `max_reach` sphere so an out-of-reach hand
+cannot drag the arm into its full-extension singularity.
 
-Servoバックエンドには`ros-$ROS_DISTRO-moveit-servo`（`install.sh`でインストール）と，
-`/{robot_name}`名前空間で動作中の`move_group`が必要です — launcherが起動時に
-ロボットモデルをそこから取得します．
+##### Singularity halt recovery
 
-#### グリッパ操作（Quest，両バックエンド共通）
-
-| 入力 | 動作 |
-|---|---|
-| グリップボタン（`arm_enable_axis`） | 押している間アームを追従 |
-| ポーズボタン（`hand_pose_button`） | `hand_pose_open`/`hand_pose_close`をトグル |
-| トリガ + スティック左右 | アダプティブ開閉 |
-| トリガ + スティック上下 | 把持タイプ関節（`single_joint_name`）を回転 |
-
-<p align="right">(<a href="#readme-top">上に戻る</a>)</p>
-
----
-
-### 新しいロボットへの移植
-
-1. `config/{robot_name}/`を作成し，`robot.yaml`（コントローラトピック）と使用する
-   デバイスごとの`{device}.yaml`を用意する．
-2. Questでアームテレオペを行う場合，`quest.yaml`にアームごとのブロック（`arm:`、
-   `target_frame_name:`、`end_effector_frame_name:`、グリッパのマッピング）を追加する —
-   これが両バックエンド共通のアーム構成の単一定義源になります．
-3. 既存ロボットの`arm_backend_plan.yaml`/`arm_backend_servo.yaml`をコピーし，
-   チューニングを調整する（`max_reach`をアーム長に合わせる；速度上限；しきい値）．
-4. `robot_name:={robot_name}`で起動する — それ以外の変更は不要です．
-
-前提条件：アームが`joint_trajectory_controller`のトピックインタフェースで駆動される
-こと（`robot.yaml`参照），アームごとに1つのplanning groupを持ち，SRDFの最後のリンクが
-エンドエフェクタであるMoveIt configがあること，`/{robot_name}`名前空間で`move_group`
-が動作していること．
-
-<p align="right">(<a href="#readme-top">上に戻る</a>)</p>
-
----
-
-### アームスケールキャリブレーション（Meta Quest）
-
-`quest.yaml`の`scale`パラメータは人間のアームリーチとロボットのアームリーチを対応付けます．`arm_scale_calibrator`ツールを使うと、適切な`scale`値を自動的に計算できます．
-
-#### 実行タイミング
-
-オペレータごとに一度実行する（ロボットURDFのアームリーチが変わった場合も再実行）．結果を`config/{robot_name}/quest.yaml`の`right.scale`と`left.scale`に設定する．
-
-#### 設定ファイル
-
-`config/{robot_name}/arm_scale_calibrator.yaml`：
+`hard_stop_singularity_threshold` latches a servo e-stop
+(`HALT_FOR_SINGULARITY`) and servo then ignores pose commands, so retargeting
+alone cannot recover — without help the operator must release the grip and
+re-latch. The bridge watches each servo's `~/status` and recovers automatically:
 
 ```yaml
-robot_arm_reach_m: 1.2926      # 肩からEEまでのフルキネマティックチェーン（URDFより）
+servo_bridge:
+  reset_on_halt: true           # run the recovery below on a latched halt
+  reset_cooldown_s: 2.0         # min gap between attempts
+  joint_escape_time_s: 1.0      # escape trajectory duration; 0 disables
+  joint_escape_lookback_s: 1.0  # escape to where the arm was this far back
+  escape_step: 0.005            # Cartesian nudge per tick [m]; 0 disables
+  escape_timeout_s: 2.0         # then give up and ask for a re-latch
+```
+
+Recovery pauses servo, drives the arm out **in jointspace** — no Jacobian is
+involved, so the singularity cannot block it — then resumes servo once the
+escape trajectory has had time to run. The escape target is the arm's joint
+configuration `joint_escape_lookback_s` ago, not the newest one: the last
+command before a halt sits right next to the singularity and would land back
+in it. `escape_step` additionally walks the Cartesian command back toward the
+last healthy EE pose, which only helps before the arm parks *on* the singular
+pose. If a halt outlives `escape_timeout_s` the override is released and the
+operator is told to re-latch, so a persistent halt cannot pin the arm forever.
+
+##### Per-arm naming
+
+Per-arm frames and topics are derived from the arm name using templates, so an
+arm that follows the convention needs no per-arm config. `{arm}` expands to the
+full name (`arm_right`) and `{side}` to the name without the `arm_` prefix
+(`right`):
+
+```yaml
+servo_bridge:
+  naming:
+    reach_origin_frame:      "{arm}_shoulder_tilt_link"
+    servo_node:              "servo_{arm}"
+    enable_topic:            "{arm}/moveit_track_enabled"
+    joint_traj_topic:        "{arm}_position_controller/joint_trajectory"
+    status_topic:            "{servo_node}/status"
+```
+
+If your robot names its links differently, edit the templates — no rebuild is
+needed. `status_topic` expands `{servo_node}` from the resolved node name, so
+it follows a `servo_node` override. A single arm can still be handled by
+setting the key directly under `servo_bridge.{arm_name}.*`, which wins over
+the template.
+
+The target and end-effector frames are **not** listed here: `quest.yaml` owns
+them and the servo launcher forwards them to the bridge, so they are defined
+once. The C++ defaults still cover them when the bridge runs standalone.
+
+The servo backend requires `ros-$ROS_DISTRO-moveit-servo` (installed by
+`install.sh`) and a running `move_group` under `/{robot_name}` — the launcher
+fetches the robot model from it at startup.
+
+#### Gripper controls (Quest, both backends)
+
+| Input | Action |
+|---|---|
+| Grip button (`enable_axis`) | Hold to track the arm (`controller_cartesian`) |
+| Pose button | Step the grip poses (a `controller_poses` cycle) |
+| Trigger + stick left/right | Sweep between the grip poses (a `controller_poses` blend) |
+| Trigger + stick up/down | Rotate the grip-type joint (a `controller_joints` entry) |
+
+#### Tracked joint groups (Quest)
+
+A `controller_tracking` group follows a TF frame: each
+joint takes one component of that frame's movement since the latch. The group
+name is free — `head`, `neck`, `torso` — and any number of groups may exist,
+each with its own latch.
+
+```yaml
+controller_tracking:
+  groups_name: [head, body]
+  head:
+    enable_axis: 2                  # hold to latch
+    target_frame_name: "hmd_odom"   # frame whose motion is followed
+    motion_scale: 1.0
+    joints_name: [head_pan_joint, head_tilt_joint]
+    head_pan_joint:  { type: rotation, axis: yaw,   sign:  1 }
+    head_tilt_joint: { type: rotation, axis: pitch, sign: -1 }
+  body:
+    enable_axis: 2                  # same trigger as head; latches separately
+    target_frame_name: "hmd_odom"
+    motion_scale: 1.0
+    joints_name: [body_lift_joint]
+    body_lift_joint: { type: prismatic, axis: z, sign: 1 }
+```
+
+| Key | Meaning |
+|---|---|
+| `type` | `rotation` (roll/pitch/yaw) or `prismatic` (x/y/z) |
+| `axis` | which component of the frame delta drives the joint |
+| `sign` | `-1` to invert; defaults to `1` |
+
+One group may mix rotation and prismatic joints. All of a group's joints are
+published together on `robot_topic_name.joint_trajectory_topic.<group>`.
+
+The latch is driven by the trigger state from `/joy`, not by the TF, so
+releasing always stops tracking even while the Quest TF is stale. When the TF
+recovers after a dropout the latch re-anchors on the current pose rather than
+replaying the whole gap as one jump. An unknown `type`, an `axis` that does not
+belong to its type, or a group left with no usable joints is reported at
+startup and skipped.
+
+#### Cartesian groups (Quest)
+
+A `controller_cartesian` group drives an end effector from a controller's pose,
+handed to the arm-tracking backend rather than published as joint positions.
+
+```yaml
+controller_cartesian:
+  groups_name: [arm_right, arm_left]
+  arm_right:
+    enable_axis: 7                  # grip; hold to track
+    controller_frame_name: "right_controller_odom"
+    controller_echo_frame_name: "right_controller_link"
+    end_effector_frame_name: "hand_right_end_effector_link"
+    target_frame_name: "right_target_link"
+    motion_scale: 2.0
+    proximity_threshold: 0.0        # m; 0 = latch immediately
+    proximity_angle_threshold: 0.0  # rad
+```
+
+The two blocks are independent: `controller_tracking` maps a frame's motion onto
+named joints, while `controller_cartesian` gives an arm a pose to solve for. Both
+arm-backend launchers read `controller_cartesian.groups_name` to pick the arms
+they drive.
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+---
+
+### Porting to a New Robot
+
+1. Create `config/{robot_name}/` with `common.yaml` (controller topics) and one
+   `{device}.yaml` per input device you use.
+2. For Quest arm teleop, add `arm_<side>` groups to `controller_cartesian` in `quest.yaml`
+   (`target_frame_name:`, `end_effector_frame_name:`, gripper mapping) — this is
+   the single source of arm identity for both backends.
+3. Copy `arm_backend_plan.yaml` / `arm_backend_servo.yaml` from an existing
+   robot and adjust the tuning (`max_reach` to your arm length; speed caps;
+   thresholds).
+4. Launch with `robot_name:={robot_name}` — nothing else changes.
+
+Assumptions: arms driven by `joint_trajectory_controller` topic interfaces
+(see `common.yaml`), a MoveIt config with one planning group per arm whose last
+SRDF link is the end-effector, and `move_group` running under
+`/{robot_name}`.
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+---
+
+### Arm Scale Calibration (Meta Quest)
+
+The `motion_scale` parameter in `quest.yaml` maps the human arm reach to the robot arm reach. It is named apart from `moveit_servo.scale`, which is servo's own EE velocity cap and unrelated. Run `arm_scale_calibrator` once per operator to compute the correct value automatically.
+
+#### When to run
+
+Run once per operator, or whenever the robot URDF arm reach changes. The result is pasted into `config/{robot_name}/quest.yaml` under `arm_right.motion_scale` and `arm_left.motion_scale`.
+
+#### Configuration
+
+`config/{robot_name}/arm_scale_calibrator.yaml`:
+
+```yaml
+robot_arm_reach_m: 1.2926      # full shoulder→EE chain length from URDF
 
 right_frame:  "right_controller_odom"
 left_frame:   "left_controller_odom"
 parent_frame: "base_footprint"
 
-grip_axis: 7                   # Joyメッセージにおける右グリップの軸インデックス
+grip_axis: 7                   # right grip axis index in Joy message
 ```
 
-**片腕ロボット**の場合、使用しない側のフレームを`""`に設定する：
+For a **single-arm robot**, set the unused frame to `""`:
 
 ```yaml
 right_frame: "right_controller_odom"
-left_frame:  ""   # 無効化 — 右アームのみ計測
+left_frame:  ""   # disabled — only right arm measured
 ```
 
-#### 起動方法
+#### How to run
 
 ```sh
 ros2 run sobits_teleop arm_scale_calibrator --ros-args \
@@ -409,51 +627,51 @@ ros2 run sobits_teleop arm_scale_calibrator --ros-args \
 ```
 
 > [!Note]
-> `{robot_name}`は使用するロボット名に置き換える（例：`sobit_home`）．
+> Replace `{robot_name}` with your robot's name (e.g. `sobit_home`).
 
-#### 手順
+#### Procedure
 
-**ステップ1 — 開始位置の設定**
-1. 両コントローラーを持ち、自然な立ち姿勢をとる．
-2. **両腕をまっすぐ前方に伸ばす**（ロボットの方向を向くように）．
-3. **右グリップボタン**を押して離し、開始位置を記録する．
+**Step 1 — Set start position**
+1. Hold both controllers in a natural standing position.
+2. Extend **both arms straight forward** toward the robot.
+3. Press and release the **right grip button** to capture the start positions.
 
-**ステップ2 — T字ポーズへのスウィープ**
-1. 両腕をゆっくりと**左右真横に開いていく**（肘を伸ばしたまま）．
-2. T字ポーズで完全に腕が伸びたら、**右グリップボタン**を押して離す．
+**Step 2 — Sweep to T-pose**
+1. Slowly sweep both arms **out to your sides** (elbows straight) to a full T-pose.
+2. Press and release the **right grip button** again when fully extended.
 
 > [!Note]
-> スウィープは2秒以上かける必要がある．短すぎる場合は警告が表示され、再度試みることができる．
+> The sweep must take at least 2 seconds. If too fast, the calibrator will warn you and allow a retry.
 
-#### 結果の確認
+#### Reading the result
 
 ```
 === RESULTS ===
   Human arm reach used   : 0.9150 m
   Robot arm reach        : 1.2926 m
 
-  Recommended scale = 1.2926 / 0.9150 = 1.4126
+  Recommended motion_scale = 1.2926 / 0.9150 = 1.4126
 
 Update config/sobit_home/quest.yaml:
-    scale: 1.4126   # (both right and left)
+    motion_scale: 1.4126   # (both right and left)
 ```
 
-表示された`scale`値を`quest.yaml`に設定する：
+Paste the value into `quest.yaml`:
 
 ```yaml
-right:
-  scale: 1.4126
-left:
-  scale: 1.4126
+arm_right:
+  motion_scale: 1.4126
+arm_left:
+  motion_scale: 1.4126
 ```
 
-<p align="right">(<a href="#readme-top">上に戻る</a>)</p>
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ---
 
-### シミュレーションモード
+### Simulation Mode
 
-Gazeboシミュレーションと組み合わせて使用する場合は`use_sim_time:=true`を指定する：
+When running with a Gazebo simulation, pass `use_sim_time:=true` so all nodes use the simulation clock:
 
 ```sh
 ros2 launch sobits_teleop sobits_teleop.launch.py \
@@ -462,17 +680,19 @@ ros2 launch sobits_teleop sobits_teleop.launch.py \
   use_sim_time:=true
 ```
 
-<p align="right">(<a href="#readme-top">上に戻る</a>)</p>
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 
-<!-- マイルストーン -->
-## マイルストーン
+<!-- MILESTONE -->
+## Milestone
 
-- [ ] 疑似逆運動学の追加
+- [ ] Add pseudo inverse kinematics
+- [ ] Migrate parameter loading to `generate_parameter_library` (config typos become startup errors)
+- [ ] Restore `check_collisions: true` once left-arm hardware is back (exclude pairs via ACM if needed)
 
-現時点のバグや新規機能の依頼は[Issueページ][issues-url]をご覧ください．
+See the [open issues][issues-url] for a full list of proposed features and known issues.
 
-<p align="right">(<a href="#readme-top">上に戻る</a>)</p>
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 <!-- MARKDOWN LINKS & IMAGES -->
 [contributors-shield]: https://img.shields.io/github/contributors/TeamSOBITS/sobits_teleop.svg?style=for-the-badge

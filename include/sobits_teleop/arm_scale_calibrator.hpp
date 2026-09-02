@@ -23,8 +23,8 @@ public:
   explicit ArmScaleCalibrator(const rclcpp::NodeOptions & options = rclcpp::NodeOptions());
 
 private:
-  void joy_cb(const sensor_msgs::msg::Joy::SharedPtr msg);
-  void sample_cb();
+  void joy_callback(const sensor_msgs::msg::Joy::SharedPtr msg);
+  void sample_callback();
   void compute_and_print();
 
   tf2_ros::Buffer                                      tf_buffer_;

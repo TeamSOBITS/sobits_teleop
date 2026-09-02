@@ -1,0 +1,10 @@
+/**:
+  ros__parameters:
+    teleop_rate_hz: 100.0
+    robot_topic_name:
+      base_frame: base_footprint
+      joint_states_topic: joint_states
+      cmd_vel_topic: cmd_vel
+    base_max_speed:
+      linear: 1.0
+      angular: 1.0

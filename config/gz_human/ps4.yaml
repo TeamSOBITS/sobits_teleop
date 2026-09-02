@@ -1,16 +1,19 @@
 /**:
   ros__parameters:
-
-    control_velocity:
-      button : 5            # R1
-      fast_button : 7       # R2
-      axis : -1
-      fast_axis : -1
-      linear_x_axis : 1     # left stick up/down
-      linear_y_axis : 0     # left stick left/right
-      angular_axis : 3      # right stick left/right
-      axis_sign : 1
-      linear_scale : 0.2
-      angular_scale : 0.3
-      fast_linear_scale : 0.5
-      fast_angular_scale : 0.6
+    controllers_name:
+    - controller_velocity
+    controller_velocity:
+      enable_button: 5
+      fast_enable_button: 7
+      enable_axis: -1
+      fast_enable_axis: -1
+      axis_sign: 1
+      linear:
+        x_axis: 1
+        y_axis: 0
+        scale: 0.2
+        fast_scale: 0.6
+      angular:
+        axis: 3
+        scale: 0.2
+        fast_scale: 0.6

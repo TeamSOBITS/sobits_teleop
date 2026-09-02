@@ -1,0 +1,12 @@
+/**:
+  ros__parameters:
+    robot_topic_name:
+      joint_states_topic: joint_states
+      joint_trajectory_topic:
+        all: joint_trajectory_controller/joint_trajectory
+        head: joint_trajectory_controller/joint_trajectory
+        arm: joint_trajectory_controller/joint_trajectory
+      cmd_vel_topic: cmd_vel
+    base_max_speed:
+      linear: 1.0
+      angular: 1.0

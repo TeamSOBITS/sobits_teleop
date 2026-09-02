@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-"""End-effector tracking test for the sobits_teleop arm backends
-(works against BOTH the moveit_arm_controller plan-and-replace backend and
+"""
+End-effector tracking test for the sobits_teleop arm backends.
+
+Works against BOTH the moveit_arm_controller plan-and-replace backend and
 the MoveIt Servo backend — it only speaks the shared interface: *_target_link
-TF + */moveit_track_enabled Bool).
+TF + */moveit_track_enabled Bool.
 
 Drives a 100-waypoint pose path (3-axis Lissajous position + yaw/pitch
 orientation sweep) around each arm's start pose, on one or both arms at once
@@ -17,7 +19,6 @@ Run inside the robot's ROS environment (matching RMW + ROS_DOMAIN_ID):
   python3 tracking_test.py --arms right              # single arm
   python3 tracking_test.py --arms right,left         # both arms
 Prints a JSON summary to stdout; per-waypoint CSVs to --out-prefix_<arm>.csv.
-See TESTING_TRACKING.md for the full procedure and reference numbers.
 """
 import argparse
 import json
@@ -25,13 +26,13 @@ import math
 import sys
 import time
 
+from geometry_msgs.msg import TransformStamped
 import rclpy
 from rclpy.node import Node
-from rclpy.qos import QoSProfile, QoSDurabilityPolicy, QoSReliabilityPolicy
-from geometry_msgs.msg import TransformStamped
+from rclpy.qos import QoSDurabilityPolicy, QoSProfile, QoSReliabilityPolicy
 from std_msgs.msg import Bool
+from tf2_ros import Buffer, TransformBroadcaster, TransformListener
 from trajectory_msgs.msg import JointTrajectory
-from tf2_ros import Buffer, TransformListener, TransformBroadcaster
 
 
 def q_mul(a, b):
@@ -65,7 +66,8 @@ def q_angle(a, b):
 def slerp(a, b, t):
     d = sum(x*y for x, y in zip(a, b))
     if d < 0:
-        b = tuple(-x for x in b); d = -d
+        b = tuple(-x for x in b)
+        d = -d
     if d > 0.9995:
         out = tuple(x + t*(y-x) for x, y in zip(a, b))
         n = math.sqrt(sum(x*x for x in out))
@@ -76,16 +78,16 @@ def slerp(a, b, t):
 
 
 ARMS = {
-    'right': dict(target_frame='right_target_link',
-                  ee_link='hand_right_end_effector_link',
-                  enable_topic='arm_right/moveit_track_enabled',
-                  traj_topic='arm_right_position_controller/joint_trajectory',
-                  mirror=1.0),
-    'left':  dict(target_frame='left_target_link',
-                  ee_link='hand_left_end_effector_link',
-                  enable_topic='arm_left/moveit_track_enabled',
-                  traj_topic='arm_left_position_controller/joint_trajectory',
-                  mirror=-1.0),
+    'right': {'target_frame': 'right_target_link',
+              'ee_link': 'hand_right_end_effector_link',
+              'enable_topic': 'arm_right/moveit_track_enabled',
+              'traj_topic': 'arm_right_position_controller/joint_trajectory',
+              'mirror': 1.0},
+    'left':  {'target_frame': 'left_target_link',
+              'ee_link': 'hand_left_end_effector_link',
+              'enable_topic': 'arm_left/moveit_track_enabled',
+              'traj_topic': 'arm_left_position_controller/joint_trajectory',
+              'mirror': -1.0},
 }
 
 
@@ -110,6 +112,7 @@ class DualTest(Node):
             cfg['enable_pub'] = self.create_publisher(Bool, cfg['enable_topic'], enable_qos)
             cfg['target'] = None
             cfg['traj_count'] = 0
+
             def make_cb(c):
                 def cb(_msg):
                     c['traj_count'] += 1
@@ -131,7 +134,9 @@ class DualTest(Node):
             t.header.frame_id = 'base_footprint'
             t.child_frame_id = cfg['target_frame']
             x, y, z, qx, qy, qz, qw = cfg['target']
-            t.transform.translation.x, t.transform.translation.y, t.transform.translation.z = x, y, z
+            t.transform.translation.x = x
+            t.transform.translation.y = y
+            t.transform.translation.z = z
             t.transform.rotation.x, t.transform.rotation.y = qx, qy
             t.transform.rotation.z, t.transform.rotation.w = qz, qw
             self.tf_broadcaster.sendTransform(t)
@@ -185,7 +190,7 @@ class DualTest(Node):
                 dx = a.amp_x * math.sin(2*math.pi*2*u)
                 dy = m * a.amp_y * math.sin(2*math.pi*3*u + 1.0)
                 dz = a.amp_z * math.sin(2*math.pi*1*u + 0.5)
-                yaw   = m * math.radians(a.yaw_deg)   * math.sin(2*math.pi*1.5*u)
+                yaw = m * math.radians(a.yaw_deg) * math.sin(2*math.pi*1.5*u)
                 pitch = math.radians(a.pitch_deg) * math.sin(2*math.pi*2.5*u + 0.7)
                 q = q_mul(q0, q_from_euler(0.0, pitch, yaw))
                 lst.append((sx+dx, sy+dy, sz+dz, *q))
@@ -195,7 +200,8 @@ class DualTest(Node):
         self.spin_sim(0.1, wall_cap=20)
         for _ in range(10):
             for cfg in self.arms.values():
-                msg = Bool(); msg.data = True
+                msg = Bool()
+                msg.data = True
                 cfg['enable_pub'].publish(msg)
             self.spin_sim(0.02, wall_cap=5)
         self.spin_sim(1.0, wall_cap=60)
@@ -244,7 +250,8 @@ class DualTest(Node):
 
         for _ in range(5):
             for cfg in self.arms.values():
-                msg = Bool(); msg.data = False
+                msg = Bool()
+                msg.data = False
                 cfg['enable_pub'].publish(msg)
             self.spin_sim(0.02, wall_cap=5)
 
@@ -260,8 +267,11 @@ class DualTest(Node):
                                'p95': round(pe[int(n*.95)], 2), 'max': round(pe[-1], 2)},
                 'ang_err_deg': {'mean': round(sum(ae)/n, 2), 'p50': round(ae[n//2], 2),
                                 'p95': round(ae[int(n*.95)], 2), 'max': round(ae[-1], 2)},
-                'final_pos_mm': round(finals[name][0]*1000, 1) if finals[name][0] is not None else None,
-                'final_ang_deg': round(math.degrees(finals[name][1]), 2) if finals[name][1] is not None else None,
+                'final_pos_mm': (
+                    round(finals[name][0]*1000, 1) if finals[name][0] is not None else None),
+                'final_ang_deg': (
+                    round(math.degrees(finals[name][1]), 2)
+                    if finals[name][1] is not None else None),
                 'traj_msgs': cnt,
                 'traj_msgs_per_sim_s': round(cnt / track_dur, 1),
             }

@@ -5,6 +5,7 @@
 #include <rclcpp_action/rclcpp_action.hpp>
 #include <rclcpp_components/register_node_macro.hpp>
 #include <std_msgs/msg/bool.hpp>
+#include <sensor_msgs/msg/joint_state.hpp>
 #include <trajectory_msgs/msg/joint_trajectory.hpp>
 #include <control_msgs/action/follow_joint_trajectory.hpp>
 
@@ -18,6 +19,8 @@
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 #include <geometry_msgs/msg/pose.hpp>
 
+#include "sobits_teleop/pose_metrics.hpp"
+
 #include <atomic>
 #include <memory>
 #include <mutex>
@@ -29,7 +32,8 @@
 namespace sobits_teleop
 {
 
-struct ArmTeleopConfig {
+struct ArmTeleopConfig
+{
   std::string planning_group;
   std::string target_frame;
   std::string base_frame;
@@ -46,9 +50,12 @@ public:
   ~MoveitArmController();
 
 private:
-  struct ArmData {
+  struct ArmData
+  {
     ArmTeleopConfig config;
     std::shared_ptr<moveit::planning_interface::MoveGroupInterface> mgi;
+    // Set true only after mgi + limit caches are fully written (release store).
+    std::atomic<bool> mgi_ready{false};
     rclcpp_action::Client<FollowJointTrajectory>::SharedPtr action_client;
     rclcpp::Publisher<trajectory_msgs::msg::JointTrajectory>::SharedPtr traj_pub;
     std::shared_ptr<GoalHandleFJT> goal_handle;  // protected by goal_mutex
@@ -57,19 +64,20 @@ private:
     std::atomic<bool> enabled{false};
     std::atomic<bool> thread_active{false};
     std::thread thread;
+    // Serializes the enable decision against the loop's own exit decision.
+    std::mutex lifecycle_mutex;
 
     std::unordered_map<std::string, double> vel_limits;
     std::unordered_map<std::string, double> accel_limits;
 
-    // Streaming seed bookkeeping: the last trajectory handed to send_trajectory()
-    // and when it was sent, so the tracking loop can sample the commanded
-    // (not measured) state as the start state for the next hop. Written by the
-    // owning arm's tracking thread and cleared by cancel_trajectory() (which may
-    // run from the enable_callback thread) — protect the pair with last_sent_mutex,
-    // held only for the pointer swap/read-copy, never during planning.
+    // Streaming seed: last sent trajectory + send time, so the next hop plans from
+    // the commanded state. Guarded by last_sent_mutex (pointer swap/read only).
     robot_trajectory::RobotTrajectoryPtr last_sent_traj;
     rclcpp::Time last_sent_time;
     std::mutex last_sent_mutex;
+
+    // Only this arm's own tracking thread touches it.
+    double last_heartbeat_sec{0.0};
 
     ArmData() = default;
     ArmData(const ArmData &) = delete;
@@ -82,32 +90,29 @@ private:
     const std::string & arm_name,
     const std_msgs::msg::Bool::SharedPtr msg);
 
+  void joint_state_callback(const sensor_msgs::msg::JointState::SharedPtr msg);
+
   void tracking_loop(const std::string & arm_name);
 
   void send_trajectory(ArmData & arm, const trajectory_msgs::msg::JointTrajectory & jtraj);
   void cancel_trajectory(ArmData & arm);
-
-  static double pose_distance(
-    const geometry_msgs::msg::Pose & a,
-    const geometry_msgs::msg::Pose & b);
-
-  static double pose_angle(
-    const geometry_msgs::msg::Pose & a,
-    const geometry_msgs::msg::Pose & b);
 
   std::thread init_thread_;
 
   std::unordered_map<std::string, std::unique_ptr<ArmData>> arms_;
   std::vector<rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr> enable_subs_;
 
+  // Cached joint state for the topic-stop hold, so cancel_trajectory never
+  // blocks the executor on MoveIt's current-state monitor.
+  rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr joint_state_sub_;
+  std::unordered_map<std::string, double> joint_state_cache_;
+  std::mutex joint_state_cache_mutex_;
+
   std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
   std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
 
-  // The two arms share a single MoveIt RobotModel (one model is loaded for the
-  // whole node). MoveGroupInterface / computeCartesianPath / OMPL plan() / TOTG
-  // are NOT thread-safe across that shared model, so the per-arm tracking
-  // threads must not run their planning sections concurrently. Held only around
-  // the compute section, released before the action-server send.
+  // The arms share one RobotModel and MoveIt planning isn't thread-safe across it.
+  // Held around the compute section only, released before the send.
   std::mutex planning_mutex_;
 
   double update_rate_hz_;
@@ -128,7 +133,6 @@ private:
   int    preempt_settle_ms_;
   bool   use_topic_;
 
-  double last_heartbeat_sec_{0.0};
   static constexpr double heartbeat_period_sec_ = 2.0;
 };
 

@@ -1,5 +1,4 @@
-## Servo arm-tracking backend — tuning only. Arm identity (arms, groups,
-## topics, frames) comes from quest.yaml/robot.yaml via arm_backend_servo.launch.py.
+## Servo arm-tracking backend — tuning only; arm identity comes from quest.yaml/robot.yaml.
 ## Param names per moveit_servo 2.12.4 schema; "moveit_servo" prefix required.
 
 /**:
@@ -30,7 +29,9 @@
       is_primary_planning_scene_monitor: false   # move_group owns the scene
       monitored_planning_scene_topic: /sobit_home/monitored_planning_scene
 
-      check_collisions: true
+      # TEMPORARILY false: the left arm publishes no joint states, so its all-zeros
+      # model phantom-halts the right arm. REVERT once left arm hardware is up.
+      check_collisions: false
       collision_check_rate: 10.0
       self_collision_proximity_threshold: 0.004   # 0.01 kept the arm in permanent decel-crawl whenever hand near torso in quest teleop
       scene_collision_proximity_threshold: 0.008
@@ -51,11 +52,30 @@
     servo_bridge:
       pose_rate_hz: 100.0   # keep well above 1/incoming_command_timeout
 
-      # Reach clamp [m]: targets beyond this from the shoulder are pulled onto
-      # the sphere (out-of-reach chase = elbow singularity = latched e-stop).
+      # Reach clamp [m]: out-of-reach chase = elbow singularity = latched e-stop.
       # Physical reach at near-straight elbow: 1.11 m.
       max_reach: 1.10
 
-      # Per-arm keys (target_frame_name, base_frame_name, end_effector_frame_name,
-      # servo_ee_frame, servo_node, enable_topic, reach_origin_frame, max_reach)
-      # default by convention from the arm name; set here only to override.
+      # Halt recovery. Pause servo, drive out in jointspace (no Jacobian, so the
+      # singularity cannot block it), then resume servo.
+      reset_on_halt: true
+      reset_cooldown_s: 2.0   # min gap between recovery attempts
+      joint_escape_time_s: 1.0      # escape trajectory duration; 0 disables
+      joint_escape_lookback_s: 1.0  # escape to where the arm was this far back
+      # Cartesian nudge, only useful before the arm parks ON the singularity.
+      escape_step: 0.005      # m per tick toward last healthy pose; 0 disables
+      escape_timeout_s: 2.0   # give up after this and tell the operator to re-latch
+
+      # Per-arm keys default by convention from the arm name; set here only to override.
+
+      # Bridge-only names, expanded per arm ({arm}, {side}). The target and EE
+      # frames are quest.yaml's, forwarded by the launcher.
+      naming:
+        reach_origin_frame:      "{arm}_shoulder_tilt_link"
+        servo_node:              "servo_{arm}"
+        enable_topic:            "{arm}/moveit_track_enabled"
+        joint_traj_topic:        "{arm}_position_controller/joint_trajectory"
+        status_topic:            "{servo_node}/status"
+
+      # servo_ee_frame stays EMPTY: the group's last link already is the EE link.
+      # A wrist override adds the 13 cm hand->wrist offset and lunges at latch.

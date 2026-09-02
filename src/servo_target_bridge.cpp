@@ -1,83 +1,127 @@
 #include "sobits_teleop/servo_target_bridge.hpp"
+#include "sobits_teleop/arm_naming.hpp"
+#include "sobits_teleop/reach_clamp.hpp"
 
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 
 #include <chrono>
+#include <stdexcept>
 
 namespace sobits_teleop
 {
 
-// ---------------------------------------------------------------------------
-// Constructor
-// ---------------------------------------------------------------------------
+// ── Constructor ──
 
 ServoTargetBridge::ServoTargetBridge(const rclcpp::NodeOptions & options)
 : Node(
     "servo_target_bridge",
     rclcpp::NodeOptions(options).automatically_declare_parameters_from_overrides(true))
 {
-  tf_buffer_   = std::make_shared<tf2_ros::Buffer>(this->get_clock());
+  tf_buffer_ = std::make_shared<tf2_ros::Buffer>(this->get_clock());
   tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 
-  if (!this->has_parameter("servo_bridge.pose_rate_hz"))
-    this->declare_parameter("servo_bridge.pose_rate_hz", 100.0);
-  pose_rate_hz_ = this->get_parameter("servo_bridge.pose_rate_hz").as_double();
+  pose_rate_hz_ = declare_param("servo_bridge.pose_rate_hz", 100.0);
 
-  if (!this->has_parameter("servo_bridge.arms"))
-    this->declare_parameter("servo_bridge.arms",
-      std::vector<std::string>{"arm_right", "arm_left"});
+  // Servo interpolates stale targets if we stream slower than it consumes, and
+  // halts entirely if a command does not arrive within incoming_command_timeout.
+  const double servo_period = declare_param("moveit_servo.publish_period", 0.0);
+  const double servo_timeout = declare_param("moveit_servo.incoming_command_timeout", 0.0);
+  if (servo_period > 0.0 && pose_rate_hz_ < 1.0 / servo_period) {
+    RCLCPP_WARN(get_logger(),
+      "servo_bridge.pose_rate_hz=%.1f is below servo's %.1f Hz (publish_period=%.3f) — "
+      "servo will reuse stale targets", pose_rate_hz_, 1.0 / servo_period, servo_period);
+  }
+  if (servo_timeout > 0.0 && pose_rate_hz_ < 1.0 / servo_timeout) {
+    RCLCPP_ERROR(get_logger(),
+      "servo_bridge.pose_rate_hz=%.1f is slower than incoming_command_timeout=%.2f s — "
+      "servo will halt between commands", pose_rate_hz_, servo_timeout);
+  }
 
-  auto arm_names = this->get_parameter("servo_bridge.arms").as_string_array();
+  auto arm_names = declare_param(
+    "servo_bridge.arms", std::vector<std::string>{"arm_right", "arm_left"});
 
-  // Shared default for the per-arm reach clamp; per-arm max_reach overrides it.
-  if (!this->has_parameter("servo_bridge.max_reach"))
-    this->declare_parameter("servo_bridge.max_reach", 0.0);
-  const double shared_max_reach =
-    this->get_parameter("servo_bridge.max_reach").as_double();
+  // Shared defaults; per-arm keys below override them.
+  const double shared_max_reach = declare_param("servo_bridge.max_reach", 0.0);
+  const double shared_escape_step = declare_param("servo_bridge.escape_step", 0.0);
+  const double shared_escape_timeout =
+    declare_param("servo_bridge.escape_timeout_s", 2.0);
+  const bool shared_reset_on_halt = declare_param("servo_bridge.reset_on_halt", true);
+  const double shared_reset_cooldown =
+    declare_param("servo_bridge.reset_cooldown_s", 1.0);
+  const double shared_joint_escape_time =
+    declare_param("servo_bridge.joint_escape_time_s", 0.0);
+  const double shared_joint_escape_lookback =
+    declare_param("servo_bridge.joint_escape_lookback_s", 1.0);
+
+  // Naming templates: {arm}/{side} expanded per arm below. Target/EE frames get
+  // no default — quest.yaml owns them, so guessing would hide a broken launch.
+  const std::string tmpl_target_frame =
+    declare_param("servo_bridge.naming.target_frame_name", std::string(""));
+  const std::string tmpl_end_effector_frame = declare_param(
+    "servo_bridge.naming.end_effector_frame_name", std::string(""));
+  const std::string tmpl_reach_origin_frame = declare_param(
+    "servo_bridge.naming.reach_origin_frame", std::string("{arm}_shoulder_tilt_link"));
+  const std::string tmpl_servo_node =
+    declare_param("servo_bridge.naming.servo_node", std::string("servo_{arm}"));
+  const std::string tmpl_enable_topic = declare_param(
+    "servo_bridge.naming.enable_topic", std::string("{arm}/moveit_track_enabled"));
+  const std::string tmpl_joint_traj_topic = declare_param(
+    "servo_bridge.naming.joint_traj_topic",
+    std::string("{arm}_position_controller/joint_trajectory"));
+  const std::string tmpl_status_topic =
+    declare_param("servo_bridge.naming.status_topic", std::string("{servo_node}/status"));
 
   for (const auto & arm_name : arm_names) {
-    // Convention over configuration: every frame/topic defaults from the arm
-    // name (arm_right -> side "right"), matching this package's naming used in
-    // quest.yaml and the SRDF. The YAML only carries values that break the
-    // convention. Keys use the same vocabulary as quest.yaml's blocks.
-    const std::string side =
-      arm_name.rfind("arm_", 0) == 0 ? arm_name.substr(4) : arm_name;
-
-    auto tf_key   = "servo_bridge." + arm_name + ".target_frame_name";
-    auto bf_key   = "servo_bridge." + arm_name + ".base_frame_name";
-    auto ee_key   = "servo_bridge." + arm_name + ".end_effector_frame_name";
-    auto se_key   = "servo_bridge." + arm_name + ".servo_ee_frame";
-    auto sn_key   = "servo_bridge." + arm_name + ".servo_node";
-    auto en_key   = "servo_bridge." + arm_name + ".enable_topic";
-    auto ro_key   = "servo_bridge." + arm_name + ".reach_origin_frame";
-    auto mr_key   = "servo_bridge." + arm_name + ".max_reach";
-
-    if (!this->has_parameter(tf_key))
-      this->declare_parameter(tf_key, side + "_target_link");
-    if (!this->has_parameter(bf_key))
-      this->declare_parameter(bf_key, "base_footprint");
-    if (!this->has_parameter(ee_key))
-      this->declare_parameter(ee_key, "hand_" + side + "_end_effector_link");
-    if (!this->has_parameter(se_key))
-      this->declare_parameter(se_key, std::string(""));
-    if (!this->has_parameter(sn_key))
-      this->declare_parameter(sn_key, std::string("servo_") + arm_name);
-    if (!this->has_parameter(en_key))
-      this->declare_parameter(en_key, arm_name + "/moveit_track_enabled");
-    if (!this->has_parameter(ro_key))
-      this->declare_parameter(ro_key, arm_name + "_shoulder_tilt_link");
-    if (!this->has_parameter(mr_key))
-      this->declare_parameter(mr_key, shared_max_reach);
-
+    // Defaults come from the naming templates; the YAML only carries values that break it.
     ServoBridgeArmConfig cfg;
-    cfg.target_frame       = this->get_parameter(tf_key).as_string();
-    cfg.base_frame         = this->get_parameter(bf_key).as_string();
-    cfg.end_effector_frame = this->get_parameter(ee_key).as_string();
-    cfg.servo_ee_frame     = this->get_parameter(se_key).as_string();
-    cfg.servo_node         = this->get_parameter(sn_key).as_string();
-    cfg.enable_topic       = this->get_parameter(en_key).as_string();
-    cfg.reach_origin_frame = this->get_parameter(ro_key).as_string();
-    cfg.max_reach          = this->get_parameter(mr_key).as_double();
+    cfg.target_frame = declare_arm_param(
+      arm_name, "target_frame_name", arm_naming::expand(tmpl_target_frame, arm_name));
+    cfg.base_frame = declare_arm_param(
+      arm_name, "base_frame_name", std::string("base_footprint"));
+    cfg.end_effector_frame = declare_arm_param(
+      arm_name, "end_effector_frame_name",
+      arm_naming::expand(tmpl_end_effector_frame, arm_name));
+    cfg.servo_ee_frame = declare_arm_param(arm_name, "servo_ee_frame", std::string(""));
+    cfg.servo_node = declare_arm_param(
+      arm_name, "servo_node", arm_naming::expand(tmpl_servo_node, arm_name));
+    cfg.enable_topic = declare_arm_param(
+      arm_name, "enable_topic", arm_naming::expand(tmpl_enable_topic, arm_name));
+
+    // Both come from quest.yaml via the launcher; unset means a broken launch.
+    if (cfg.target_frame.empty() || cfg.end_effector_frame.empty()) {
+      throw std::runtime_error(
+              "servo_bridge: arm '" + arm_name + "' has no " +
+              (cfg.target_frame.empty() ? "target_frame_name" : "end_effector_frame_name") +
+              ". It is normally forwarded from control_cartesian." + arm_name +
+              " by arm_backend_servo.launch.py; set servo_bridge." + arm_name +
+              ".* or servo_bridge.naming.* to run this node standalone.");
+    }
+    cfg.reach_origin_frame = declare_arm_param(
+      arm_name, "reach_origin_frame", arm_naming::expand(tmpl_reach_origin_frame, arm_name));
+    cfg.max_reach = declare_arm_param(arm_name, "max_reach", shared_max_reach);
+    cfg.escape_step = declare_arm_param(arm_name, "escape_step", shared_escape_step);
+    cfg.escape_timeout_s = declare_arm_param(
+      arm_name, "escape_timeout_s", shared_escape_timeout);
+    cfg.reset_on_halt = declare_arm_param(arm_name, "reset_on_halt", shared_reset_on_halt);
+    cfg.reset_cooldown_s = declare_arm_param(
+      arm_name, "reset_cooldown_s", shared_reset_cooldown);
+    // Same controller topic servo commands, so the escape reaches the same JTC.
+    cfg.joint_traj_topic = declare_arm_param(
+      arm_name, "joint_traj_topic", arm_naming::expand(tmpl_joint_traj_topic, arm_name));
+    cfg.joint_escape_time_s = declare_arm_param(
+      arm_name, "joint_escape_time_s", shared_joint_escape_time);
+    cfg.joint_escape_lookback_s = declare_arm_param(
+      arm_name, "joint_escape_lookback_s", shared_joint_escape_lookback);
+    // status_topic depends on the RESOLVED servo_node, not the arm name, so
+    // substitute {servo_node} directly rather than adding it to expand().
+    std::string status_default = tmpl_status_topic;
+    const std::string placeholder = "{servo_node}";
+    size_t pos = status_default.find(placeholder);
+    if (pos != std::string::npos) {
+      status_default.replace(pos, placeholder.size(), cfg.servo_node);
+    }
+    const std::string status_topic = declare_arm_param(
+      arm_name, "status_topic", status_default);
 
     auto arm_data = std::make_unique<ArmBridgeData>();
     arm_data->config = cfg;
@@ -92,10 +136,8 @@ ServoTargetBridge::ServoTargetBridge(const rclcpp::NodeOptions & options)
     arm_data->pause_servo_client =
       this->create_client<SetBool>(cfg.servo_node + "/pause_servo");
 
-    // Enable subscription: reliable + transient_local so a late-starting Servo
-    // bridge still receives the current enable state even if it started after
-    // sobits_teleop published it (see D6 — the sobits_teleop publisher side is
-    // switched to reliable/transient_local/depth1 to match).
+    // reliable + transient_local so a late-starting bridge still receives the
+    // current enable state (publisher side matches).
     rclcpp::QoS enable_qos(1);
     enable_qos.reliable();
     enable_qos.transient_local();
@@ -104,6 +146,25 @@ ServoTargetBridge::ServoTargetBridge(const rclcpp::NodeOptions & options)
       cfg.enable_topic, enable_qos,
       [this, arm_name](const std_msgs::msg::Bool::SharedPtr msg) {
         enable_callback(arm_name, msg);
+      });
+
+    arm_data->joint_traj_pub = this->create_publisher<trajectory_msgs::msg::JointTrajectory>(
+      cfg.joint_traj_topic, rclcpp::SystemDefaultsQoS());
+
+    // Snoop servo's command stream to learn the group's joint names and their
+    // last healthy positions; the bridge has no robot model of its own.
+    arm_data->servo_cmd_sub = this->create_subscription<trajectory_msgs::msg::JointTrajectory>(
+      cfg.joint_traj_topic, rclcpp::QoS(1),
+      [this, arm_name](const trajectory_msgs::msg::JointTrajectory::SharedPtr msg) {
+        servo_cmd_callback(arm_name, msg);
+      });
+
+    // Must be RELIABLE to match servo_node's status publisher; depth 1 since
+    // only the latest code matters.
+    arm_data->status_sub = this->create_subscription<moveit_msgs::msg::ServoStatus>(
+      status_topic, rclcpp::QoS(1).reliable(),
+      [this, arm_name](const moveit_msgs::msg::ServoStatus::SharedPtr msg) {
+        status_callback(arm_name, msg);
       });
 
     arms_[arm_name] = std::move(arm_data);
@@ -117,14 +178,11 @@ ServoTargetBridge::ServoTargetBridge(const rclcpp::NodeOptions & options)
       cfg.servo_ee_frame.c_str(), cfg.enable_topic.c_str(),
       cfg.reach_origin_frame.c_str(), cfg.max_reach);
 
-    // Startup sequence — switch_command_type(POSE) once per arm and
-    // pause_servo(true) so arms don't move until first enable. Both are async
-    // and retried on a slow (2 s) timer until each succeeds independently
-    // (servo_node's services are typically not up yet at bridge construction
-    // time, since the launcher starts them concurrently).
+    // Startup: switch_command_type(POSE) + pause_servo(true) per arm, async and
+    // retried on a slow timer (servo_node's services come up concurrently).
     arms_[arm_name]->startup_retry_timer = this->create_wall_timer(
       std::chrono::seconds(2),
-      [this, arm_name]() { try_startup_sequence(arm_name); });
+      [this, arm_name]() {try_startup_sequence(arm_name);});
     // Fire once immediately too, in case services are already up.
     try_startup_sequence(arm_name);
   }
@@ -133,25 +191,42 @@ ServoTargetBridge::ServoTargetBridge(const rclcpp::NodeOptions & options)
   auto period = std::chrono::duration<double>(1.0 / pose_rate_hz_);
   pose_timer_ = this->create_wall_timer(
     std::chrono::duration_cast<std::chrono::nanoseconds>(period),
-    [this]() { pose_timer_callback(); });
+    [this]() {pose_timer_callback();});
 
   RCLCPP_INFO(get_logger(),
     "ServoTargetBridge: %zu arm(s), pose_rate=%.1f Hz",
     arms_.size(), pose_rate_hz_);
+
+  warn_unknown_parameters();
 }
 
-// ---------------------------------------------------------------------------
-// Startup sequence: switch_command_type(POSE) + pause_servo(true), each async
-// and retried independently on a slow timer until both have succeeded.
-// ---------------------------------------------------------------------------
+// ── Warn about servo_bridge.* YAML keys that no declare_param call used ──
+
+void ServoTargetBridge::warn_unknown_parameters()
+{
+  const auto & overrides = this->get_node_parameters_interface()->get_parameter_overrides();
+  for (const auto & [name, value] : overrides) {
+    (void)value;
+    if (name.rfind("servo_bridge.", 0) != 0) {continue;}
+    if (declared_keys_.count(name)) {continue;}
+    RCLCPP_WARN(get_logger(),
+      "Unknown parameter '%s' - check for a typo; it has no effect", name.c_str());
+  }
+}
+
+// ── Startup sequence: async POSE switch + pause, retried until both succeed ──
 
 void ServoTargetBridge::try_startup_sequence(const std::string & arm_name)
 {
   auto it = arms_.find(arm_name);
-  if (it == arms_.end()) return;
+  if (it == arms_.end()) {return;}
   auto & arm = *it->second;
 
-  if (arm.command_type_set.load() && arm.initial_pause_set.load()) {
+  try_send_pause(arm_name);
+
+  if (arm.command_type_set.load() && arm.initial_pause_set.load() &&
+    arm.pending_pause.load() == -1)
+  {
     if (arm.startup_retry_timer) {
       arm.startup_retry_timer->cancel();
     }
@@ -166,7 +241,7 @@ void ServoTargetBridge::try_startup_sequence(const std::string & arm_name)
         req,
         [this, arm_name](rclcpp::Client<ServoCommandType>::SharedFuture future) {
           auto it2 = arms_.find(arm_name);
-          if (it2 == arms_.end()) return;
+          if (it2 == arms_.end()) {return;}
           auto & arm2 = *it2->second;
           auto resp = future.get();
           if (resp->success) {
@@ -201,7 +276,7 @@ void ServoTargetBridge::try_startup_sequence(const std::string & arm_name)
         req,
         [this, arm_name](rclcpp::Client<SetBool>::SharedFuture future) {
           auto it2 = arms_.find(arm_name);
-          if (it2 == arms_.end()) return;
+          if (it2 == arms_.end()) {return;}
           auto & arm2 = *it2->second;
           auto resp = future.get();
           if (resp->success) {
@@ -209,9 +284,8 @@ void ServoTargetBridge::try_startup_sequence(const std::string & arm_name)
             RCLCPP_INFO(get_logger(),
               "Arm '%s': initial pause_servo(true) succeeded on '%s'",
               arm_name.c_str(), arm2.config.servo_node.c_str());
-            // Race guard: an enable arrived while this startup pause was in
-            // flight — it just froze an arm the operator believes is enabled.
-            // Undo immediately with an async unpause.
+            // Race guard: an enable arrived while this startup pause was in flight —
+            // undo immediately with an async unpause.
             if (arm2.enabled.load()) {
               RCLCPP_WARN(get_logger(),
                 "Arm '%s': startup pause_servo(true) landed after an enable — "
@@ -241,25 +315,63 @@ void ServoTargetBridge::try_startup_sequence(const std::string & arm_name)
   }
 }
 
-// ---------------------------------------------------------------------------
-// Enable / disable callback (async only — never blocks the executor)
-// ---------------------------------------------------------------------------
+// ── Send the pending pause/unpause, retried by the caller until confirmed ──
+
+void ServoTargetBridge::try_send_pause(const std::string & arm_name)
+{
+  auto it = arms_.find(arm_name);
+  if (it == arms_.end()) {return;}
+  auto & arm = *it->second;
+
+  const int wanted = arm.pending_pause.load();
+  if (wanted == -1) {return;}
+
+  if (!arm.pause_servo_client->service_is_ready()) {
+    RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5000,
+      "Arm '%s': pause_servo service not ready — servo stays %s until it returns",
+      arm_name.c_str(), wanted == 1 ? "paused" : "unpaused");
+    return;
+  }
+
+  auto req = std::make_shared<SetBool::Request>();
+  req->data = (wanted == 1);
+  arm.pause_servo_client->async_send_request(
+    req,
+    [this, arm_name, wanted](rclcpp::Client<SetBool>::SharedFuture future) {
+      auto it2 = arms_.find(arm_name);
+      if (it2 == arms_.end()) {return;}
+      auto & arm2 = *it2->second;
+      auto resp = future.get();
+      if (resp->success) {
+        // Only clear if no newer toggle arrived while this request was in flight.
+        int expected = wanted;
+        if (arm2.pending_pause.compare_exchange_strong(expected, -1)) {
+          RCLCPP_INFO(get_logger(), "Arm '%s': pause_servo(%s) -> ok",
+            arm_name.c_str(), wanted == 1 ? "true" : "false");
+        }
+      } else {
+        RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5000,
+          "Arm '%s': pause_servo(%s) rejected — will retry",
+          arm_name.c_str(), wanted == 1 ? "true" : "false");
+      }
+    });
+}
+
+// ── Enable / disable callback (async only — never blocks the executor) ──
 
 void ServoTargetBridge::enable_callback(
   const std::string & arm_name,
   const std_msgs::msg::Bool::SharedPtr msg)
 {
   auto it = arms_.find(arm_name);
-  if (it == arms_.end()) return;
+  if (it == arms_.end()) {return;}
   auto & arm = *it->second;
 
   if (msg->data) {
-    if (arm.enabled.load()) return;
+    if (arm.enabled.load()) {return;}
 
-    // Don't wait for service responses before publishing — Servo tolerates
-    // early pose commands while paused. Ensure POSE mode is (re-)requested in
-    // case the servo_node restarted after our one-time startup call, then
-    // unpause.
+    // No waiting on responses — Servo tolerates early pose commands while paused.
+    // Re-request POSE mode in case servo_node restarted, then unpause.
     if (arm.switch_command_type_client->service_is_ready()) {
       auto req = std::make_shared<ServoCommandType::Request>();
       req->command_type = ServoCommandType::Request::POSE;
@@ -277,49 +389,217 @@ void ServoTargetBridge::enable_callback(
         arm_name.c_str());
     }
 
-    if (arm.pause_servo_client->service_is_ready()) {
-      auto req = std::make_shared<SetBool::Request>();
-      req->data = false;
-      arm.pause_servo_client->async_send_request(
-        req,
-        [this, arm_name](rclcpp::Client<SetBool>::SharedFuture future) {
-          auto resp = future.get();
-          RCLCPP_INFO(get_logger(), "Arm '%s': pause_servo(false) on enable -> %s",
-            arm_name.c_str(), resp->success ? "ok" : "FAILED");
-        });
-    }
+    // Unpause is retried until confirmed, so it's never silently skipped.
+    arm.pending_pause = 0;
+    try_send_pause(arm_name);
+    if (arm.startup_retry_timer) {arm.startup_retry_timer->reset();}
 
     arm.enabled = true;
     RCLCPP_INFO(get_logger(), "Servo tracking ENABLED for '%s'", arm_name.c_str());
   } else {
-    if (!arm.enabled.load()) return;
+    if (!arm.enabled.load()) {return;}
     arm.enabled = false;
 
-    if (arm.pause_servo_client->service_is_ready()) {
-      auto req = std::make_shared<SetBool::Request>();
-      req->data = true;
-      arm.pause_servo_client->async_send_request(
-        req,
-        [this, arm_name](rclcpp::Client<SetBool>::SharedFuture future) {
-          auto resp = future.get();
-          RCLCPP_INFO(get_logger(), "Arm '%s': pause_servo(true) on disable -> %s",
-            arm_name.c_str(), resp->success ? "ok" : "FAILED");
-        });
-    }
+    // Drop the escape anchor: the next latch starts from a new EE pose, and a
+    // stale one would drag the arm to wherever it was healthy last session.
+    arm.reset_escape_state();
+
+    arm.pending_pause = 1;
+    try_send_pause(arm_name);
+    if (arm.startup_retry_timer) {arm.startup_retry_timer->reset();}
 
     RCLCPP_INFO(get_logger(), "Servo tracking DISABLED for '%s'", arm_name.c_str());
   }
 }
 
-// ---------------------------------------------------------------------------
-// Shared pose-publish timer
-// ---------------------------------------------------------------------------
+// ── Servo status: latch/clear the singularity halt ──
+
+void ServoTargetBridge::status_callback(
+  const std::string & arm_name,
+  const moveit_msgs::msg::ServoStatus::SharedPtr msg)
+{
+  auto it = arms_.find(arm_name);
+  if (it == arms_.end()) {return;}
+  auto & arm = *it->second;
+
+  const bool halted = (msg->code == moveit_msgs::msg::ServoStatus::HALT_FOR_SINGULARITY);
+  const bool was_halted = arm.singularity_halt.exchange(halted);
+
+  if (halted && !was_halted) {
+    arm.halt_start = this->now();
+    arm.escape_gave_up = false;
+    RCLCPP_WARN(get_logger(),
+      "Arm '%s': HALT_FOR_SINGULARITY — %s", arm_name.c_str(),
+      arm.config.reset_on_halt ? "resetting servo" : "reset DISABLED");
+  } else if (!halted && was_halted) {
+    // Re-arm: a later halt gets a fresh escape budget rather than inheriting
+    // the previous one's give-up state.
+    arm.escape_gave_up = false;
+    RCLCPP_INFO(get_logger(), "Arm '%s': singularity halt cleared", arm_name.c_str());
+  }
+
+  // Servo ignores pose commands while halted, so retargeting alone cannot
+  // recover; the latched state has to be cleared first.
+  if (halted && arm.config.reset_on_halt && arm.enabled.load()) {
+    reset_after_halt(arm_name);
+  }
+}
+
+// ── Cache the group's joint configuration from servo's command stream ──
+
+void ServoTargetBridge::servo_cmd_callback(
+  const std::string & arm_name,
+  const trajectory_msgs::msg::JointTrajectory::SharedPtr msg)
+{
+  auto it = arms_.find(arm_name);
+  if (it == arms_.end()) {return;}
+  auto & arm = *it->second;
+
+  // Only healthy commands are worth escaping to.
+  if (arm.singularity_halt.load() || msg->points.empty()) {return;}
+  if (msg->points.front().positions.size() != msg->joint_names.size()) {return;}
+
+  arm.escape_joint_names = msg->joint_names;
+
+  // Keep a short history: the newest healthy command sits right next to the
+  // singularity, so escaping to it lands straight back in the halt.
+  const rclcpp::Time now = this->now();
+  arm.joint_history.push_back({now, msg->points.front().positions});
+
+  // Receive time, not header.stamp — servo does not stamp its command output.
+  const rclcpp::Time cutoff =
+    now - rclcpp::Duration::from_seconds(arm.config.joint_escape_lookback_s);
+  while (arm.joint_history.size() > 1 && arm.joint_history.front().stamp < cutoff) {
+    arm.joint_history.pop_front();
+  }
+  // The oldest retained sample is the furthest back from the trap.
+  arm.escape_joint_positions = arm.joint_history.front().positions;
+  arm.have_escape_joints = true;
+}
+
+// ── Jointspace escape: replay the last healthy configuration ──
+
+void ServoTargetBridge::send_joint_escape(const std::string & arm_name)
+{
+  auto it = arms_.find(arm_name);
+  if (it == arms_.end()) {return;}
+  auto & arm = *it->second;
+
+  if (!arm.have_escape_joints || arm.config.joint_escape_time_s <= 0.0) {return;}
+
+  trajectory_msgs::msg::JointTrajectory traj;
+  traj.header.stamp = rclcpp::Time(0, 0, RCL_ROS_TIME);
+  traj.joint_names = arm.escape_joint_names;
+
+  trajectory_msgs::msg::JointTrajectoryPoint pt;
+  pt.positions = arm.escape_joint_positions;
+  pt.velocities.assign(arm.escape_joint_positions.size(), 0.0);
+  pt.time_from_start = rclcpp::Duration::from_seconds(arm.config.joint_escape_time_s);
+  traj.points.push_back(pt);
+
+  arm.joint_traj_pub->publish(traj);
+  RCLCPP_WARN(get_logger(),
+    "Arm '%s': jointspace escape — replaying last healthy configuration over %.1f s",
+    arm_name.c_str(), arm.config.joint_escape_time_s);
+}
+
+// ── Clear a latched halt: pause(true) then pause(false) ──
+
+void ServoTargetBridge::reset_after_halt(const std::string & arm_name)
+{
+  auto it = arms_.find(arm_name);
+  if (it == arms_.end()) {return;}
+  auto & arm = *it->second;
+
+  if (arm.recovery != RecoveryState::IDLE) {return;}
+  if (!arm.pause_servo_client->service_is_ready()) {return;}
+
+  // Cooldown: status streams at the servo loop rate, so an uncooled reset would
+  // fire hundreds of times per second.
+  const rclcpp::Time now = this->now();
+  if (arm.last_reset.nanoseconds() > 0 &&
+    (now - arm.last_reset).seconds() < arm.config.reset_cooldown_s)
+  {
+    return;
+  }
+  arm.last_reset = now;
+  arm.recovery = RecoveryState::PAUSING;
+
+  auto pause_req = std::make_shared<SetBool::Request>();
+  pause_req->data = true;
+  arm.pause_servo_client->async_send_request(
+    pause_req,
+    [this, arm_name](rclcpp::Client<SetBool>::SharedFuture pause_future) {
+      auto it2 = arms_.find(arm_name);
+      if (it2 == arms_.end()) {return;}
+      auto & arm2 = *it2->second;
+
+      if (!pause_future.get()->success) {
+        RCLCPP_WARN(get_logger(), "Arm '%s': halt-reset pause(true) rejected",
+          arm_name.c_str());
+        arm2.recovery = RecoveryState::IDLE;
+        return;
+      }
+      // Grip may have been released while the pause was in flight — leave the
+      // arm paused in that case, which is what a disable wants anyway.
+      if (!arm2.enabled.load()) {
+        arm2.recovery = RecoveryState::IDLE;
+        return;
+      }
+
+      // Servo is paused and no longer owns the controller: drive the arm out in
+      // jointspace, which needs no Jacobian and so is immune to the singularity.
+      send_joint_escape(arm_name);
+
+      // Resume only after the escape motion completes, else servo's first tick
+      // re-halts at the singular pose and fights the trajectory.
+      const double settle =
+      arm2.have_escape_joints ? arm2.config.joint_escape_time_s + 0.2 : 0.0;
+      arm2.escape_done = this->now() + rclcpp::Duration::from_seconds(settle);
+      arm2.recovery = RecoveryState::ESCAPING;
+    });
+}
+
+// ── Advance a recovery in flight; called once per arm each pose-timer tick ──
+
+void ServoTargetBridge::tick_recovery(const std::string & arm_name)
+{
+  auto it = arms_.find(arm_name);
+  if (it == arms_.end()) {return;}
+  auto & arm = *it->second;
+
+  if (arm.recovery != RecoveryState::ESCAPING) {return;}
+  if (this->now() < arm.escape_done) {return;}
+
+  if (!arm.enabled.load()) {
+    arm.recovery = RecoveryState::IDLE;
+    return;
+  }
+  arm.recovery = RecoveryState::RESUMING;
+
+  auto unpause_req = std::make_shared<SetBool::Request>();
+  unpause_req->data = false;
+  arm.pause_servo_client->async_send_request(
+    unpause_req,
+    [this, arm_name](rclcpp::Client<SetBool>::SharedFuture unpause_future) {
+      auto it2 = arms_.find(arm_name);
+      if (it2 == arms_.end()) {return;}
+      auto & arm2 = *it2->second;
+      const bool ok = unpause_future.get()->success;
+      RCLCPP_WARN(get_logger(), "Arm '%s': halt-reset pause cycle -> %s",
+        arm_name.c_str(), ok ? "servo resumed" : "unpause FAILED");
+      arm2.recovery = RecoveryState::IDLE;
+    });
+}
+
+// ── Shared pose-publish timer ──
 
 void ServoTargetBridge::pose_timer_callback()
 {
   for (auto & [arm_name, arm_ptr] : arms_) {
     auto & arm = *arm_ptr;
-    if (!arm.enabled.load()) continue;
+    tick_recovery(arm_name);
+    if (!arm.enabled.load()) {continue;}
 
     geometry_msgs::msg::TransformStamped tf_stamped;
     try {
@@ -343,9 +623,8 @@ void ServoTargetBridge::pose_timer_callback()
         tf_stamped.transform.translation.x, tf_stamped.transform.translation.y,
         tf_stamped.transform.translation.z));
 
-    // Reach clamp: pull an out-of-reach target back onto the max_reach sphere
-    // around the shoulder. Prevents the arm from chasing an unreachable hand
-    // target into full extension (elbow singularity -> latched servo e-stop).
+    // Reach clamp: pull out-of-reach targets onto the max_reach sphere —
+    // full extension is an elbow singularity that latches a servo e-stop.
     if (arm.config.max_reach > 0.0 && !arm.config.reach_origin_frame.empty()) {
       try {
         auto sh = tf_buffer_->lookupTransform(
@@ -353,11 +632,10 @@ void ServoTargetBridge::pose_timer_callback()
         tf2::Vector3 shoulder(
           sh.transform.translation.x, sh.transform.translation.y,
           sh.transform.translation.z);
-        tf2::Vector3 offset = base_to_target.getOrigin() - shoulder;
-        const double dist = offset.length();
+        const tf2::Vector3 target = base_to_target.getOrigin();
+        const double dist = (target - shoulder).length();
         if (dist > arm.config.max_reach) {
-          base_to_target.setOrigin(
-            shoulder + offset * (arm.config.max_reach / dist));
+          base_to_target.setOrigin(clamp_to_reach(shoulder, target, arm.config.max_reach));
           RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 2000,
             "Arm '%s': target %.2f m from shoulder — clamped to %.2f m",
             arm_name.c_str(), dist, arm.config.max_reach);
@@ -369,16 +647,60 @@ void ServoTargetBridge::pose_timer_callback()
       }
     }
 
-    // The target describes the desired pose of end_effector_frame_name, but
-    // servo drives servo_ee_frame. When those differ, re-express the target
-    // for the servo frame: T(base->cmd) = T(base->target) * T(ee->servo_ee).
-    // Looked up per tick (NOT cached) so end_effector_frame_name may be a
-    // link that moves relative to the hand (e.g. a grasp midpoint between
-    // fingers). Empty servo_ee_frame = servo drives the EE link itself.
+    // Singularity escape: while halted, ignore the operator target and walk the
+    // command back toward the last healthy EE pose — the trap pose only re-halts.
+    if (arm.singularity_halt.load() && arm.config.escape_step > 0.0 &&
+      arm.have_last_good && !arm.escape_gave_up)
+    {
+      const double held = (this->now() - arm.halt_start).seconds();
+      if (arm.config.escape_timeout_s > 0.0 && held > arm.config.escape_timeout_s) {
+        arm.escape_gave_up = true;
+        RCLCPP_ERROR(get_logger(),
+          "Arm '%s': still halted after %.1f s — escape abandoned, release grip "
+          "and re-latch away from the singularity", arm_name.c_str(), held);
+      } else {
+        // Step from the previous command, not the operator target: the operator
+        // keeps pushing into the trap, so stepping from it never converges.
+        if (!arm.escaping) {
+          arm.escape_cmd = base_to_target;
+          arm.escaping = true;
+        }
+        const tf2::Vector3 to_good =
+          arm.last_good_cmd.getOrigin() - arm.escape_cmd.getOrigin();
+        const double dist = to_good.length();
+        const double frac = (dist > arm.config.escape_step) ?
+          (arm.config.escape_step / dist) : 1.0;
+
+        arm.escape_cmd.setOrigin(arm.escape_cmd.getOrigin() + to_good * frac);
+        arm.escape_cmd.setRotation(
+          arm.escape_cmd.getRotation().slerp(
+            arm.last_good_cmd.getRotation(), frac).normalized());
+        base_to_target = arm.escape_cmd;
+
+        RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000,
+          "Arm '%s': escaping singularity — %.3f m to last healthy pose",
+          arm_name.c_str(), dist);
+      }
+    } else if (!arm.singularity_halt.load()) {
+      arm.escaping = false;
+      // Anchor on the actual EE pose, not the commanded target: the target may
+      // already sit in the trap when the halt lands, making it useless to escape to.
+      try {
+        auto ee = tf_buffer_->lookupTransform(
+          arm.config.base_frame, arm.config.end_effector_frame, tf2::TimePointZero);
+        tf2::fromMsg(ee.transform, arm.last_good_cmd);
+        arm.have_last_good = true;
+      } catch (const tf2::TransformException &) {
+        // Keep the previous anchor; a stale healthy pose beats none.
+      }
+    }
+
+    // Re-express the target for the servo-driven frame when it differs from the EE:
+    // T(base->cmd) = T(base->target) * T(ee->servo_ee). Looked up per tick, not cached.
     tf2::Transform base_to_cmd = base_to_target;
     if (!arm.config.servo_ee_frame.empty() &&
-        !arm.config.end_effector_frame.empty() &&
-        arm.config.servo_ee_frame != arm.config.end_effector_frame)
+      !arm.config.end_effector_frame.empty() &&
+      arm.config.servo_ee_frame != arm.config.end_effector_frame)
     {
       try {
         auto ee_se = tf_buffer_->lookupTransform(
@@ -402,7 +724,7 @@ void ServoTargetBridge::pose_timer_callback()
 
     geometry_msgs::msg::PoseStamped pose_msg;
     pose_msg.header.frame_id = arm.config.base_frame;
-    pose_msg.header.stamp    = this->now();
+    pose_msg.header.stamp = this->now();
     pose_msg.pose.position.x = base_to_cmd.getOrigin().x();
     pose_msg.pose.position.y = base_to_cmd.getOrigin().y();
     pose_msg.pose.position.z = base_to_cmd.getOrigin().z();

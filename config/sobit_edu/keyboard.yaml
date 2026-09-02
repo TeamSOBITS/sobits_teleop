@@ -1,30 +1,33 @@
 /**:
   ros__parameters:
-
-    control_joints:
-      groups:
+    controllers_name:
+    - controller_joints
+    - controller_poses
+    - controller_velocity
+    controller_joints:
+      groups_name:
       - head
       - arm
       head:
-        names:
+        joints_name:
         - head_camera_tilt_joint
         - head_camera_pan_joint
         head_camera_tilt_joint:
-          button : 1           # 1 key
-          fast_button : 7      # 7 key
-          axis : 1             # w, s keys
-          axis_sign : 1
-          speed : 0.1
-          fast_speed : 0.5
+          button: 1
+          fast_button: 7
+          axis: 1
+          axis_sign: 1
+          speed: 0.1
+          fast_speed: 0.5
         head_camera_pan_joint:
-          button : 1           # 1 key
-          fast_button : 7      # 7 key
-          axis : 0             # a, d keys
-          axis_sign : 1
-          speed : 0.1
-          fast_speed : 0.5
+          button: 1
+          fast_button: 7
+          axis: 0
+          axis_sign: 1
+          speed: 0.1
+          fast_speed: 0.5
       arm:
-        names: 
+        joints_name:
         - arm_shoulder_roll_joint
         - arm_shoulder_pitch_joint
         - arm_elbow_pitch_joint
@@ -32,65 +35,66 @@
         - arm_wrist_pitch_joint
         - arm_wrist_roll_joint
         arm_shoulder_roll_joint:
-          button : 2           # 2 key
-          fast_button : 7      # 7 key
-          axis : 0             # a, d keys
-          axis_sign : -1
-          speed : 0.1
-          fast_speed : 0.5
+          button: 2
+          fast_button: 7
+          axis: 0
+          axis_sign: -1
+          speed: 0.1
+          fast_speed: 0.5
         arm_shoulder_pitch_joint:
-          button : 2           # 2 key
-          fast_button : 7      # 7 key
-          axis : 1             # w, s keys
-          axis_sign : -1
-          speed : 0.1
-          fast_speed : 0.5
+          button: 2
+          fast_button: 7
+          axis: 1
+          axis_sign: -1
+          speed: 0.1
+          fast_speed: 0.5
         arm_elbow_pitch_joint:
-          button : 3           # 3 key
-          fast_button : 7      # 7 key
-          axis : 1             # w, s keys
-          axis_sign : -1
-          speed : 0.1
-          fast_speed : 0.5
+          button: 3
+          fast_button: 7
+          axis: 1
+          axis_sign: -1
+          speed: 0.1
+          fast_speed: 0.5
         arm_forearm_roll_joint:
-          button : 3           # 3 key
-          fast_button : 7      # 7 key
-          axis : 0             # a, d keys
-          axis_sign : -1
-          speed : 0.1
-          fast_speed : 0.5
+          button: 3
+          fast_button: 7
+          axis: 0
+          axis_sign: -1
+          speed: 0.1
+          fast_speed: 0.5
         arm_wrist_pitch_joint:
-          button : 4           # 4 key
-          fast_button : 7      # 7 key
-          axis : 1             # w, s keys
-          axis_sign : -1
-          speed : 0.1
-          fast_speed : 0.5
+          button: 4
+          fast_button: 7
+          axis: 1
+          axis_sign: -1
+          speed: 0.1
+          fast_speed: 0.5
         arm_wrist_roll_joint:
-          button : 4           # 4 key
-          fast_button : 7      # 7 key
-          axis : 0             # a, d keys
-          axis_sign : -1
-          speed : 0.1
-          fast_speed : 0.5
-
-    control_poses:
-      trigger : 8        # 8 key
-      pose_list:
+          button: 4
+          fast_button: 7
+          axis: 0
+          axis_sign: -1
+          speed: 0.1
+          fast_speed: 0.5
+    controller_poses:
+      trigger: 8
+      poses:
+        poses_name:
         - initial_pose
         - detecting_pose
-      initial_pose:
-        button : 2            # 2 key
-      detecting_pose:
-        button : 0            # 0 key
-
-    control_velocity:
-      button : 6            # 6 key
-      fast_button : 7       # 7 key
-      linear_x_axis : 4     # arrow up, down keys
-      angular_axis : 3      # arrow left, right keys
-      axis_sign : 1
-      linear_scale : 0.1
-      angular_scale : 0.1
-      fast_linear_scale : 0.2
-      fast_angular_scale : 0.2
+        initial_pose:
+          button: 2
+        detecting_pose:
+          button: 0
+    controller_velocity:
+      enable_button: 6
+      fast_enable_button: 7
+      axis_sign: 1
+      linear:
+        x_axis: 4
+        scale: 0.2
+        fast_scale: 0.6
+      angular:
+        axis: 3
+        scale: 0.2
+        fast_scale: 0.6

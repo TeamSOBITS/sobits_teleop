@@ -89,6 +89,7 @@ ament_target_dependencies(
   rclcpp_components
   std_msgs
   geometry_msgs
+  trajectory_msgs
   std_srvs
   moveit_msgs
   tf2_ros
@@ -129,11 +130,11 @@ install(TARGETS
   servo_target_bridge
   arm_scale_calibrator
   DESTINATION lib/${PROJECT_NAME})
-  
+
 install(DIRECTORY include/
   DESTINATION include
 )
-  
+
 install(DIRECTORY
   config
   launch
@@ -154,6 +155,21 @@ if(BUILD_TESTING)
   # a copyright and license is added to all source files
   set(ament_cmake_cpplint_FOUND TRUE)
   ament_lint_auto_find_test_dependencies()
+
+  find_package(ament_cmake_gtest REQUIRED)
+  ament_add_gtest(test_pose_metrics test/test_pose_metrics.cpp)
+  target_include_directories(test_pose_metrics PRIVATE include)
+  ament_target_dependencies(test_pose_metrics geometry_msgs)
+
+  ament_add_gtest(test_arm_naming test/test_arm_naming.cpp)
+  target_include_directories(test_arm_naming PRIVATE include)
+
+  ament_add_gtest(test_reach_clamp test/test_reach_clamp.cpp)
+  target_include_directories(test_reach_clamp PRIVATE include)
+  ament_target_dependencies(test_reach_clamp tf2_ros)
+
+  find_package(launch_testing_ament_cmake REQUIRED)
+  add_launch_test(test/test_node_startup.py)
 endif()
 
 ament_package()
