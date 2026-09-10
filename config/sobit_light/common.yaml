@@ -6,7 +6,7 @@
         head: head_position_controller/joint_trajectory
         arm: arm_position_controller/joint_trajectory
         hand: hand_position_controller/joint_trajectory
-      cmd_vel_topic: wheel_controller/cmd_vel_unstamped
+      cmd_vel_topic: manual_control/cmd_vel
     base_max_speed:
       linear: 1.0
       angular: 1.0
