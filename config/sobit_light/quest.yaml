@@ -3,8 +3,46 @@
     controllers_name:
     - controller_velocity
     - controller_joints
+    - controller_poses
     - controller_tracking
     - controller_cartesian
+    # Servo/plan arm tracking must start from a non-singular arm pose: the SRDF
+    # initial_pose (elbow straight, roll axes aligned) is exactly singular and
+    # MoveIt Servo cannot move away from it. Press this before the first grip
+    # latch. Joint values chosen from the URDF Jacobian (condition number 45,
+    # hand forward-down, EE ~0.34 m from the shoulder-pitch axis).
+    controller_poses:
+      time_from_start: 3.0
+      poses:
+        poses_name:
+        - servo_ready_pose
+        servo_ready_pose:
+          button: 0                 # same button sobit_home uses for its initial_pose
+          groups_name:
+          - arm
+          - head
+          arm:
+            joints_name:
+            - arm_shoulder_roll_joint
+            - arm_shoulder_pitch_joint
+            - arm_elbow_pitch_joint
+            - arm_forearm_roll_joint
+            - arm_wrist_pitch_joint
+            - arm_wrist_roll_joint
+            positions:
+            - 0.0
+            - -1.1
+            - -0.6
+            - 0.0
+            - 0.8
+            - 0.0
+          head:
+            joints_name:
+            - head_yaw_joint
+            - head_pitch_joint
+            positions:
+            - 0.0
+            - 0.0
     controller_velocity:
       enable_axis: 6              # right trigger
       fast_enable_axis: 7         # right grip
