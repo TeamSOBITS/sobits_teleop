@@ -8,6 +8,7 @@
       groups_name:
       - head
       - arm
+      - hand
       head:
         joints_name:
         - head_pitch_joint
@@ -76,6 +77,18 @@
           axis_sign: -1
           speed: 0.1
           fast_speed: 0.5
+      # Gripper: right stick X jogs hand_joint (prismatic, metres per 50 ms
+      # tick; full travel is 0.047 m). Ungated, as on the previous dualshock
+      # teleop. Stick right = close.
+      hand:
+        joints_name:
+        - hand_joint
+        hand_joint:
+          fast_button: 6
+          axis: 3
+          axis_sign: -1
+          speed: 0.004
+          fast_speed: 0.01
     controller_poses:
       trigger: 8
       poses:
@@ -92,15 +105,19 @@
           button: 0
         initial_moving_pose:
           button: 3
+    # Base is a differential drive (Kachaka): no lateral axis. Left stick
+    # forward/back drives, left stick left/right turns, as on the previous
+    # dualshock teleop. The angular axis was missing (-> the base could never
+    # turn) and y_axis pointed the lateral command at the turn stick.
     controller_velocity:
       enable_button: 5
       fast_enable_button: 7
       axis_sign: 1
       linear:
         x_axis: 1
-        y_axis: 0
         scale: 0.2
         fast_scale: 0.6
       angular:
+        axis: 0
         scale: 0.2
         fast_scale: 0.6
