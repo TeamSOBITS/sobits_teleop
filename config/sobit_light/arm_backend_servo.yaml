@@ -2,10 +2,17 @@
 ## topics, frames) comes from quest.yaml/common.yaml via arm_backend_servo.launch.py.
 ## Param names per moveit_servo 2.12.4 schema; "moveit_servo" prefix required.
 ##
-## Not used by the current sobit_light launch (device:=quest use_moveit:=true
-## defaults to use_servo:=false, i.e. the plan-and-replace backend in
-## arm_backend_plan.yaml). Kept here for parity with other robots in case the
-## Servo backend is enabled later via use_servo:=true.
+## Selected with device:=quest use_moveit:=true use_servo:=true.
+##
+## sobit_light specifics (2026-09 sim validation):
+##  * The arm is short (shoulder-pitch -> EE 0.43 m). Its Jacobian condition
+##    number is ~20 at best, median ~80 over the joint space and >200 in a
+##    quarter of it, so sobit_home's 50/200 singularity thresholds decelerate
+##    almost everywhere and e-stop in ordinary poses. Thresholds below are
+##    scaled to this arm.
+##  * The SRDF initial_pose (elbow straight, roll axes aligned) is exactly
+##    singular: servo halts immediately if tracking is latched there. Move the
+##    arm to a bent pose before latching.
 
 /**:
   ros__parameters:
@@ -15,8 +22,13 @@
       max_expected_latency: 0.1
       command_in_type: "speed_units"
       scale:
-        linear: 1.5                        # max EE m/s — hand scale amplifies target speed; URDF joint velocity limits still cap output
-        rotational: 3.0                    # max EE rad/s
+        # Per-tick Cartesian step = scale * publish_period. 1.5 m/s (sobit_home)
+        # is a 3 cm step: on this 0.43 m arm the IK solution for such a step
+        # near the reach limit flips the forearm/wrist rolls by ~2 rad (verified
+        # in sim). 0.5 m/s = 1 cm/tick tracks a hand comfortably and keeps the
+        # per-tick IK local.
+        linear: 0.5                        # max EE m/s
+        rotational: 1.5                    # max EE rad/s
         joint: 1.0
       incoming_command_timeout: 0.5        # bridge streams at 100 Hz; halt if it stops
 
@@ -44,9 +56,12 @@
       use_smoothing: true
       smoothing_filter_plugin_name: "online_signal_smoothing::ButterworthFilterPlugin"
 
-      lower_singularity_threshold: 50.0
+      # Condition-number thresholds for THIS arm (see header). 150 = roughly
+      # the median bent-elbow pose starts to slow; 500 = e-stop only when
+      # genuinely folding into the elbow/wrist singularity.
+      lower_singularity_threshold: 150.0
       # do NOT disable: without a hard stop servo winds all joints to their bounds
-      hard_stop_singularity_threshold: 200.0
+      hard_stop_singularity_threshold: 500.0
       joint_limit_margins: [0.02]
       # moveit_servo 2.12 names (the old halt_all_joints_in_joint_limit key is not
       # in the schema and was silently ignored, so every robot has in fact been
