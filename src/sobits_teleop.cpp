@@ -999,7 +999,10 @@ bool SOBITSTeleop::send_pose(
 
   auto goal_msg = sobits_interfaces::action::MoveToPose::Goal();
   goal_msg.pose_name = pose_map.pose_name;
-  goal_msg.time_allowance.sec = 10;
+  // Both SOBITS pose servers use time_allowance as the trajectory duration
+  // (and as their completion timeout), so the configured time_from_start is
+  // the pose's motion time for the action backend too.
+  goal_msg.time_allowance = rclcpp::Duration::from_seconds(pose_map.time_from_start);
 
   auto send_goal_options =
     rclcpp_action::Client<sobits_interfaces::action::MoveToPose>::SendGoalOptions();
