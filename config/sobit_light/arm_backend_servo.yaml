@@ -54,13 +54,38 @@
     servo_bridge:
       pose_rate_hz: 100.0   # keep well above 1/incoming_command_timeout
 
-      # Reach clamp [m]: targets beyond this from the shoulder are pulled onto
-      # the sphere (out-of-reach chase = elbow singularity = latched e-stop).
-      # sobit_light's shoulder->EE chain is ~0.48 m (summed from arm.urdf.xacro
-      # link offsets, not a measured/FK reach) — kept just under that, mirroring
-      # sobit_home's own margin between max_reach and its physical reach.
-      max_reach: 0.47
+      # Reach clamp [m] around arm_shoulder_pitch_link. NOTE the geometry of this
+      # arm: the upper arm and forearm form an L, so "elbow straight" (the
+      # branch-merge singularity) is NOT full extension. Max reach 0.430 m needs
+      # elbow ~ -1.4; elbow = 0 puts the EE anywhere 0.16-0.37 m from the
+      # shoulder, i.e. inside the workspace. The clamp therefore only stops the
+      # outer-extension chase; the interior elbow-straight and wrist-pitch~0
+      # (forearm/wrist roll axes aligned) singularities are guarded only by the
+      # thresholds above and by operator posture. Verified in sim with the
+      # measured Dynamixel joint ranges (2026-09-10): a 4 cm circle, vertical or
+      # horizontal, tracks at ~1 cm error with the hand ~20 deg down and the
+      # target 0.45-0.50 m ahead of base_footprint (shoulder pitch -1.8..-2.0);
+      # the same circle 0.55 m ahead, or with the hand pitched 38 deg down,
+      # crosses the elbow-straight surface and halt-recovers every loop.
+      max_reach: 0.37
 
-      # Per-arm keys (target_frame_name, base_frame_name, end_effector_frame_name,
-      # servo_ee_frame, servo_node, enable_topic, reach_origin_frame, max_reach)
-      # default by convention from the arm name; set here only to override.
+      # Halt recovery (same tuning as sobit_home). Without joint_escape_time_s
+      # the bridge can only pause/unpause, which does not move the arm off the
+      # singular pose.
+      reset_on_halt: true
+      reset_cooldown_s: 2.0
+      joint_escape_time_s: 1.0
+      joint_escape_lookback_s: 1.0
+      escape_step: 0.005
+      escape_timeout_s: 2.0
+
+      # Per-arm keys default from the arm name via these templates. sobit_light
+      # has a single arm named "arm" and no *_shoulder_tilt_link, so the reach
+      # origin must be overridden (the default frame does not exist -> the clamp
+      # was silently skipped).
+      naming:
+        reach_origin_frame:      "{arm}_shoulder_pitch_link"
+        servo_node:              "servo_{arm}"
+        enable_topic:            "{arm}/moveit_track_enabled"
+        joint_traj_topic:        "{arm}_position_controller/joint_trajectory"
+        status_topic:            "{servo_node}/status"
