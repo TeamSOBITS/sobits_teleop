@@ -129,6 +129,7 @@ private:
   double arrival_threshold_rad_;
   double replan_threshold_rad_;
   double preempt_threshold_rad_;
+  double fallback_orientation_tolerance_rad_{0.0};
   bool   avoid_collisions_;
   int    preempt_settle_ms_;
   bool   use_topic_;

@@ -64,6 +64,9 @@ MoveitArmController::MoveitArmController(const rclcpp::NodeOptions & options)
   if (!this->has_parameter("arm_teleop.preempt_threshold_rad")) {
     this->declare_parameter("arm_teleop.preempt_threshold_rad", 0.26);   // ~15 deg
   }
+  if (!this->has_parameter("arm_teleop.fallback_orientation_tolerance_rad")) {
+    this->declare_parameter("arm_teleop.fallback_orientation_tolerance_rad", 0.0);
+  }
   if (!this->has_parameter("arm_teleop.avoid_collisions")) {
     this->declare_parameter("arm_teleop.avoid_collisions", false);
   }
@@ -88,6 +91,8 @@ MoveitArmController::MoveitArmController(const rclcpp::NodeOptions & options)
   arrival_threshold_rad_ = this->get_parameter("arm_teleop.arrival_threshold_rad").as_double();
   replan_threshold_rad_ = this->get_parameter("arm_teleop.replan_threshold_rad").as_double();
   preempt_threshold_rad_ = this->get_parameter("arm_teleop.preempt_threshold_rad").as_double();
+  fallback_orientation_tolerance_rad_ =
+    this->get_parameter("arm_teleop.fallback_orientation_tolerance_rad").as_double();
   avoid_collisions_ = this->get_parameter("arm_teleop.avoid_collisions").as_bool();
   preempt_settle_ms_ = this->get_parameter("arm_teleop.preempt_settle_ms").as_int();
   use_topic_ = (this->get_parameter("arm_teleop.publish_mode").as_string() == "topic");
@@ -485,7 +490,8 @@ void MoveitArmController::cancel_trajectory(ArmData & arm)
   // cache, not MGI's state monitor — may run on the executor thread, never block.
   if (use_topic_) {
     if (!arm.mgi_ready.load(std::memory_order_acquire)) {return;}
-    std::vector<std::string> names = arm.mgi->getJoints();  // cached local call, no service
+    // getJoints() also lists fixed joints, which never appear in joint_states.
+    std::vector<std::string> names = arm.mgi->getActiveJoints();
     std::vector<double> pos;
     pos.reserve(names.size());
     {
@@ -776,6 +782,10 @@ void MoveitArmController::tracking_loop(const std::string & arm_name)
         step_target.position.x, step_target.position.y, step_target.position.z);
 
         mgi->setPlanningTime(ompl_planning_timeout_s_);
+        // Exact orientation is often unreachable on short arms; accept a nearby one.
+        if (fallback_orientation_tolerance_rad_ > 0.0) {
+          mgi->setGoalOrientationTolerance(fallback_orientation_tolerance_rad_);
+        }
         mgi->setPoseTarget(step_target);
         moveit::planning_interface::MoveGroupInterface::Plan ompl_plan;
         auto ompl_result = mgi->plan(ompl_plan);

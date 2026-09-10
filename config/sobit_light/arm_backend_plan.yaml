@@ -72,6 +72,8 @@
       arrival_threshold_rad: 0.05   # ~3 deg
       replan_threshold_rad:  0.05   # ~3 deg
       preempt_threshold_rad: 0.26   # ~15 deg
+      # OMPL fallback may tilt the hand this much when the exact pose has no IK.
+      fallback_orientation_tolerance_rad: 0.35
 
       # Velocity and acceleration scaling factors [0, 1] passed to TOTG.
       # For streaming, each short hop must execute quickly within one replan cycle,
