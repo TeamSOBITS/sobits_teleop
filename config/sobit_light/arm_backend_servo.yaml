@@ -56,12 +56,13 @@
       use_smoothing: true
       smoothing_filter_plugin_name: "online_signal_smoothing::ButterworthFilterPlugin"
 
-      # Condition-number thresholds for THIS arm (see header). 150 = roughly
-      # the median bent-elbow pose starts to slow; 500 = e-stop only when
-      # genuinely folding into the elbow/wrist singularity.
-      lower_singularity_threshold: 150.0
-      # do NOT disable: without a hard stop servo winds all joints to their bounds
-      hard_stop_singularity_threshold: 500.0
+      # Condition-number thresholds for THIS arm (see header). Sim validation
+      # used 150/500; on the real robot (2026-09-10) 250/900 let the arm work
+      # right up to the floor without the halt/escape rocking, and no joint
+      # windup was seen. Still keep a hard stop: without one servo winds all
+      # joints to their bounds.
+      lower_singularity_threshold: 250.0
+      hard_stop_singularity_threshold: 900.0
       joint_limit_margins: [0.02]
       # moveit_servo 2.12 names (the old halt_all_joints_in_joint_limit key is not
       # in the schema and was silently ignored, so every robot has in fact been

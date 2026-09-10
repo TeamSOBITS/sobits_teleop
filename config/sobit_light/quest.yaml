@@ -16,6 +16,33 @@
       poses:
         poses_name:
         - servo_ready_pose
+        - floor_ready_pose
+        # Floor picking: with the hand vertical every descent hits a singular
+        # layer at z ~ 0.14 m (Jacobian condition >1000), where servo halts and
+        # the bridge's escape makes the arm rock back and forth. Cross that
+        # layer in joint space with this pose (EE ~0.41 m ahead, 8 cm up, hand
+        # straight down, condition ~70), then latch and servo near the floor.
+        # Verified on the robot 2026-09-10: 5 mm tracking at 4-7 cm height,
+        # usable patch about x 0.36-0.42 m, y +-5 cm. Move the base for more.
+        floor_ready_pose:
+          button: 1
+          groups_name:
+          - arm
+          arm:
+            joints_name:
+            - arm_shoulder_roll_joint
+            - arm_shoulder_pitch_joint
+            - arm_elbow_pitch_joint
+            - arm_forearm_roll_joint
+            - arm_wrist_pitch_joint
+            - arm_wrist_roll_joint
+            positions:
+            - 0.0
+            - -0.5
+            - -0.2
+            - 0.0
+            - 0.7
+            - 0.0
         servo_ready_pose:
           button: 0                 # same button sobit_home uses for its initial_pose
           groups_name:
