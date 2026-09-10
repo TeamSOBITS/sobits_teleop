@@ -2,7 +2,6 @@
   ros__parameters:
     controllers_name:
     - controller_velocity
-    - controller_joints
     - controller_poses
     - controller_tracking
     - controller_cartesian
@@ -17,6 +16,8 @@
         poses_name:
         - servo_ready_pose
         - floor_ready_pose
+        - hand_open
+        - hand_close
         # Floor picking: with the hand vertical every descent hits a singular
         # layer at z ~ 0.14 m (Jacobian condition >1000), where servo halts and
         # the bridge's escape makes the arm rock back and forth. Cross that
@@ -70,6 +71,53 @@
             positions:
             - 0.0
             - 0.0
+        # Gripper endpoints (hand_joint is prismatic, metres). Open = 0.029
+        # (URDF upper); close = -0.013, where the fingers meet on the robot and
+        # the Goal_Current limit takes over (measured 2026-09-10).
+        hand_open:
+          button: -1
+          groups_name:
+          - hand
+          hand:
+            joints_name:
+            - hand_joint
+            positions:
+            - 0.029
+        hand_close:
+          button: -1
+          groups_name:
+          - hand
+          hand:
+            joints_name:
+            - hand_joint
+            positions:
+            - -0.013
+      # Hold the right trigger and push the right stick down to squeeze, up to
+      # open; release to hold the current opening (same scheme as sobit_home).
+      # speed is metres per 50 ms tick at full deflection: 0.002 = full travel
+      # in ~1 s (0.004 hit the stop in 0.4 s on the robot, too fast to feel).
+      blends:
+        blends_name:
+        - hand_grip
+        hand_grip:
+          from: hand_open
+          to: hand_close
+          enable_axis: 6
+          enable_button: -1
+          axis: 4
+          axis_sign: -1
+          to_button: -1
+          from_button: -1
+          speed: 0.002
+      # One press toggles open <-> close (sobit_home uses the same button).
+      cycles:
+        cycles_name:
+        - hand_toggle
+        hand_toggle:
+          button: 6
+          poses:               # close first: the gripper boots open
+          - hand_close
+          - hand_open
     controller_velocity:
       enable_axis: 6              # right trigger
       fast_enable_axis: 7         # right grip
@@ -82,17 +130,6 @@
         axis: 0                   # right stick horizontal
         scale: 0.3
         fast_scale: 0.6
-    controller_joints:
-      groups_name:
-      - hand
-      hand:
-        joints_name:
-        - hand_joint
-        hand_joint:
-          enable_axis: 7          # right grip (hold to enable gripper drive)
-          axis: 6                 # right trigger depth drives open/close
-          axis_sign: 1
-          speed: 0.6              # rad per 50 ms tick at full trigger depth
     controller_tracking:
       groups_name:
       - head
