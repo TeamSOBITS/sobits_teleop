@@ -48,7 +48,13 @@
       # do NOT disable: without a hard stop servo winds all joints to their bounds
       hard_stop_singularity_threshold: 200.0
       joint_limit_margins: [0.02]
-      halt_all_joints_in_joint_limit: false
+      # moveit_servo 2.12 names (the old halt_all_joints_in_joint_limit key is not
+      # in the schema and was silently ignored, so every robot has in fact been
+      # running with the default true). Keep true: with false, a joint parked on
+      # its bound while the others keep solving drags the EE off the commanded
+      # path (verified in sim: 3 cm lateral error on a 6 cm move).
+      halt_all_joints_in_joint_mode: true
+      halt_all_joints_in_cartesian_mode: true
 
     # ── Target bridge ───────────────────────────────────────────────────────
     servo_bridge:
