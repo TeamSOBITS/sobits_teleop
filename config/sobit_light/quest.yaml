@@ -45,7 +45,7 @@
         head_pitch_joint:
           type: rotation
           axis: pitch
-          sign: -1
+          sign: 1
     controller_cartesian:
       groups_name:
       - arm
