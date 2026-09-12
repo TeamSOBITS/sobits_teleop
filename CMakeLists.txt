@@ -30,6 +30,9 @@ find_package(moveit_ros_planning_interface REQUIRED)
 find_package(moveit_core REQUIRED)
 find_package(moveit_msgs REQUIRED)
 find_package(std_srvs REQUIRED)
+find_package(pluginlib REQUIRED)
+find_package(kdl_parser REQUIRED)
+find_package(orocos_kdl REQUIRED)
 
 # uncomment the following section in order to fill in
 # further dependencies manually.
@@ -115,11 +118,25 @@ rclcpp_components_register_node(arm_scale_calibrator_components
   EXECUTABLE arm_scale_calibrator
 )
 
+add_library(sobits_teleop_dls_kinematics_plugin SHARED src/dls_kinematics_plugin.cpp)
+ament_target_dependencies(
+  sobits_teleop_dls_kinematics_plugin
+  rclcpp
+  moveit_core
+  pluginlib
+  kdl_parser
+  orocos_kdl
+  geometry_msgs
+  moveit_msgs
+)
+pluginlib_export_plugin_description_file(moveit_core dls_kinematics_plugin_description.xml)
+
 install(TARGETS
   sobits_teleop_components
   moveit_arm_controller_components
   servo_target_bridge_components
   arm_scale_calibrator_components
+  sobits_teleop_dls_kinematics_plugin
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION bin)
@@ -170,6 +187,13 @@ if(BUILD_TESTING)
 
   find_package(launch_testing_ament_cmake REQUIRED)
   add_launch_test(test/test_node_startup.py)
+
+  find_package(urdf REQUIRED)
+  find_package(srdfdom REQUIRED)
+  ament_add_gtest(test_dls_kinematics test/test_dls_kinematics.cpp)
+  target_include_directories(test_dls_kinematics PRIVATE include)
+  target_link_libraries(test_dls_kinematics sobits_teleop_dls_kinematics_plugin)
+  ament_target_dependencies(test_dls_kinematics rclcpp moveit_core urdf srdfdom)
 endif()
 
 ament_package()
