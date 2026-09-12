@@ -1,17 +1,8 @@
-## Servo arm-tracking backend — tuning only. Arm identity (arms, groups,
-## topics, frames) comes from quest.yaml/common.yaml via arm_backend_servo.launch.py.
+## Servo arm-tracking backend — tuning only; arm identity comes from quest.yaml/common.yaml.
 ## Param names per moveit_servo 2.12.4 schema; "moveit_servo" prefix required.
-##
-## Selected with device:=quest use_moveit:=true use_servo:=true.
-##
-## sobit_light specifics (2026-09 sim validation):
-##  * The arm is short (shoulder-pitch -> EE 0.43 m) and its singular surfaces
-##    (wrist_pitch = 0, elbow max reach, wrist centre on the shoulder-roll axis)
-##    cross the ordinary teleop workspace. Servo therefore runs the DLS solver
-##    below instead of KDL, which branch-flipped and wiggled there.
-##  * Servo's own condition-number gate is unit-dependent (m vs rad) and reads
-##    5-10x worse on this arm than on sobit_home; it is switched off (see the
-##    thresholds) and the DLS damping takes over singularity handling.
+
+## sobit_light: its singular surfaces cross the teleop workspace, so servo runs the
+## DLS solver below (KDL flipped there) and servo's unit-dependent cond gate is off.
 
 /**:
   ros__parameters:
@@ -64,9 +55,8 @@
       halt_all_joints_in_joint_mode: true
       halt_all_joints_in_cartesian_mode: true
 
-    # ── Servo-only IK solver ────────────────────────────────────────────────
-    # move_group keeps KDL (moveit_config kinematics.yaml); the launcher orders
-    # parameters so this block overrides the fetched entry for servo_arm only.
+    # ── Servo-only IK solver: move_group keeps KDL; the launcher lists this yaml
+    # after the move_group params, so this block wins for servo_arm only.
     robot_description_kinematics:
       arm:
         kinematics_solver: sobits_teleop/DLSKinematicsPlugin

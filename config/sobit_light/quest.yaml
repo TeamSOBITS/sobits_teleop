@@ -5,10 +5,8 @@
     - controller_poses
     - controller_tracking
     - controller_cartesian
-    # Recommended start pose for arm tracking (Jacobian condition 45, hand
-    # forward-down, EE ~0.34 m from the shoulder-pitch axis). Latching from the
-    # SRDF initial_pose works with the DLS servo solver but the hand yaw lags
-    # there (wrist_pitch = 0 is a wrist singularity).
+    # Recommended latch pose (Jacobian condition 45, hand forward-down). Latching
+    # at the SRDF initial_pose also works with DLS, but the hand yaw lags there.
     controller_poses:
       time_from_start: 3.0
       poses:
