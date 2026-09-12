@@ -194,6 +194,7 @@ bool DLSKinematicsPlugin::initialize(const rclcpp::Node::SharedPtr & node,
   singular_value_threshold_ = readParam<double>("singular_value_threshold", 0.05);
   max_step_ = readParam<double>("max_step", 0.2);
   joint_limit_margin_ = readParam<double>("joint_limit_margin", 0.03);
+  min_singular_value_ = readParam<double>("min_singular_value", 0.005);
 
   RCLCPP_INFO(rclcpp::get_logger("dls_kinematics_plugin"),
               "DLS IK for '%s': %s -> %s, %zu joints, damping [%.3f, %.3f], max_step=%.3f",
@@ -230,6 +231,13 @@ Eigen::MatrixXd DLSKinematicsPlugin::jacobian(const Eigen::VectorXd & q) const
   for (size_t i = 0; i < joint_names_.size(); ++i)
     j.col(static_cast<int>(i)) = kdl_jac.data.col(group_to_chain_[i]);
   return j;
+}
+
+double DLSKinematicsPlugin::minSingularValue(const Eigen::VectorXd & q) const
+{
+  Eigen::MatrixXd js = jacobian(q);
+  js.topRows(3) /= length_scale_;
+  return Eigen::JacobiSVD<Eigen::MatrixXd>(js).singularValues().minCoeff();
 }
 
 Eigen::MatrixXd DLSKinematicsPlugin::dampedPinv(const Eigen::MatrixXd & a, double lambda2)
@@ -273,7 +281,8 @@ bool DLSKinematicsPlugin::solve(const geometry_msgs::msg::Pose & ik_pose, const 
     }
   }
 
-  Eigen::VectorXd q = seed_v.cwiseMax(lo).cwiseMin(hi);
+  const Eigen::VectorXd q0 = seed_v.cwiseMax(lo).cwiseMin(hi);
+  Eigen::VectorXd q = q0;
   const Eigen::Isometry3d t_d = poseToIsometry(ik_pose);
 
   const auto start = std::chrono::steady_clock::now();
@@ -345,6 +354,28 @@ bool DLSKinematicsPlugin::solve(const geometry_msgs::msg::Pose & ik_pose, const 
   {
     error_code.val = moveit_msgs::msg::MoveItErrorCodes::NO_IK_SOLUTION;
     return false;
+  }
+
+  // An unreachable target makes the iteration converge onto the singular surface
+  // itself; never return a state deeper into it than the floor (or the seed).
+  if (min_singular_value_ > 0.0)
+  {
+    const double s_floor = std::min(min_singular_value_, minSingularValue(q0));
+    if (minSingularValue(q) < s_floor)
+    {
+      const Eigen::VectorXd step = q - q0;
+      double t_lo = 0.0, t_hi = 1.0;
+      for (int k = 0; k < 8; ++k)
+      {
+        const double t = 0.5 * (t_lo + t_hi);
+        if (minSingularValue(q0 + t * step) >= s_floor)
+          t_lo = t;
+        else
+          t_hi = t;
+      }
+      q = q0 + t_lo * step;
+      converged = false;
+    }
   }
   if (!converged && !options.return_approximate_solution)
   {

@@ -72,6 +72,8 @@ private:
   // FK/Jacobian in the base frame; q is in GROUP joint order.
   Eigen::Isometry3d fk(const Eigen::VectorXd & q) const;
   Eigen::MatrixXd jacobian(const Eigen::VectorXd & q) const;
+  // Smallest singular value of the length-normalised Jacobian at q.
+  double minSingularValue(const Eigen::VectorXd & q) const;
 
   template <typename T>
   T readParam(const std::string & name, const T & default_value) const;
@@ -103,6 +105,7 @@ private:
   double singular_value_threshold_ = 0.05;
   double max_step_ = 0.2;
   double joint_limit_margin_ = 0.03;
+  double min_singular_value_ = 0.005;
 };
 
 }  // namespace sobits_teleop

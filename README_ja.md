@@ -453,6 +453,7 @@ robot_description_kinematics:
     singular_value_threshold: 0.05
     max_step: 0.2                # 反復あたりの rad
     joint_limit_margin: 0.03     # servoのjoint_limit_marginsより大きく
+    min_singular_value: 0.005    # 返す状態を特異面より深くしない
     # 任意: orientation_weight（既定1.0），position_priority（false）
 ```
 
@@ -478,6 +479,7 @@ p95誤差1 cm未満になりました（`scripts/tracking_test.py --robot sobit_
 servo_bridge:
   reset_on_halt: true           # ラッチされたハルトで下記の復帰処理を実行
   reset_cooldown_s: 2.0         # 復帰試行の最小間隔
+  halt_debounce_s: 0.0          # これより短いハルトは無視（DLS使用時は0.1）
   joint_escape_time_s: 1.0      # 脱出軌道の所要時間．0で無効
   joint_escape_lookback_s: 1.0  # この秒数だけ遡った姿勢へ脱出する
   escape_step: 0.005            # 1周期あたりのデカルト移動量 [m]．0で無効

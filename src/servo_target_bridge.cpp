@@ -48,6 +48,8 @@ ServoTargetBridge::ServoTargetBridge(const rclcpp::NodeOptions & options)
   const bool shared_reset_on_halt = declare_param("servo_bridge.reset_on_halt", true);
   const double shared_reset_cooldown =
     declare_param("servo_bridge.reset_cooldown_s", 1.0);
+  const double shared_halt_debounce =
+    declare_param("servo_bridge.halt_debounce_s", 0.0);
   const double shared_joint_escape_time =
     declare_param("servo_bridge.joint_escape_time_s", 0.0);
   const double shared_joint_escape_lookback =
@@ -105,6 +107,8 @@ ServoTargetBridge::ServoTargetBridge(const rclcpp::NodeOptions & options)
     cfg.reset_on_halt = declare_arm_param(arm_name, "reset_on_halt", shared_reset_on_halt);
     cfg.reset_cooldown_s = declare_arm_param(
       arm_name, "reset_cooldown_s", shared_reset_cooldown);
+    cfg.halt_debounce_s = declare_arm_param(
+      arm_name, "halt_debounce_s", shared_halt_debounce);
     // Same controller topic servo commands, so the escape reaches the same JTC.
     cfg.joint_traj_topic = declare_arm_param(
       arm_name, "joint_traj_topic", arm_naming::expand(tmpl_joint_traj_topic, arm_name));
@@ -439,8 +443,10 @@ void ServoTargetBridge::status_callback(
   }
 
   // Servo ignores pose commands while halted, so retargeting alone cannot
-  // recover; the latched state has to be cleared first.
-  if (halted && arm.config.reset_on_halt && arm.enabled.load()) {
+  // recover; a halt shorter than the debounce is a transient crossing, not a trap.
+  if (halted && arm.config.reset_on_halt && arm.enabled.load() &&
+    (this->now() - arm.halt_start).seconds() >= arm.config.halt_debounce_s)
+  {
     reset_after_halt(arm_name);
   }
 }

@@ -461,6 +461,7 @@ robot_description_kinematics:
     singular_value_threshold: 0.05
     max_step: 0.2                # rad per iteration
     joint_limit_margin: 0.03     # keep > servo joint_limit_margins
+    min_singular_value: 0.005    # returned state never deeper into a singularity
     # optional: orientation_weight (default 1.0), position_priority (false)
 ```
 
@@ -487,6 +488,7 @@ re-latch. The bridge watches each servo's `~/status` and recovers automatically:
 servo_bridge:
   reset_on_halt: true           # run the recovery below on a latched halt
   reset_cooldown_s: 2.0         # min gap between attempts
+  halt_debounce_s: 0.0          # ignore halts shorter than this (0.1 with DLS)
   joint_escape_time_s: 1.0      # escape trajectory duration; 0 disables
   joint_escape_lookback_s: 1.0  # escape to where the arm was this far back
   escape_step: 0.005            # Cartesian nudge per tick [m]; 0 disables

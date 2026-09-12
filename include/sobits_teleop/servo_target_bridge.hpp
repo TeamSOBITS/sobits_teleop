@@ -52,6 +52,7 @@ struct ServoBridgeArmConfig
   // must be cleared with a pause(true)->pause(false) cycle before escaping.
   bool reset_on_halt{true};
   double reset_cooldown_s{1.0}; // min gap between reset attempts
+  double halt_debounce_s{0.0};  // ignore halts shorter than this
   // Jointspace escape: replay the last healthy joint configuration straight to
   // the arm controller, bypassing servo (which cannot move out of a singularity).
   std::string joint_traj_topic;
