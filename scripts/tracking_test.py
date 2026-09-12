@@ -407,6 +407,24 @@ class DualTest(Node):
             self.spin_sim(0.02, wall_cap=5)
         self.spin_sim(1.0, wall_cap=60)
 
+        # Approach: glide from the latched pose to the first waypoint so the
+        # sweep itself starts on target.
+        if a.approach_sim > 0:
+            t0 = self.sim_now()
+            wend = time.monotonic() + a.seg_wall_cap * 4
+            while time.monotonic() < wend:
+                rclpy.spin_once(self, timeout_sec=0.005)
+                f = (self.sim_now() - t0) / a.approach_sim
+                if f >= 1.0:
+                    break
+                for name, cfg in self.arms.items():
+                    p0, wp = starts[name], wps[name][0]
+                    p = tuple(pv + f*(wv-pv) for pv, wv in zip(p0[:3], wp[:3]))
+                    cfg['target'] = (*p, *slerp(p0[3:], wp[3:], f))
+            for name, cfg in self.arms.items():
+                cfg['target'] = wps[name][0]
+            self.spin_sim(1.0, wall_cap=60)
+
         for cfg in self.arms.values():
             cfg['traj_count'] = 0
         per_wp = {name: [] for name in self.arms}
@@ -541,6 +559,8 @@ def main():
     p.add_argument('--yaw-deg', type=float, default=15.0)
     p.add_argument('--pitch-deg', type=float, default=12.0)
     p.add_argument('--hold-sim', type=float, default=0.2)
+    p.add_argument('--approach-sim', type=float, default=0.0,
+                   help='seconds to glide from the latched pose to waypoint 0 before sweeping')
     p.add_argument('--seg-wall-cap', type=float, default=30.0)
     p.add_argument('--out-prefix', default='/tmp/track_dual')
     args = p.parse_args()
