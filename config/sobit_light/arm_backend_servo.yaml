@@ -5,14 +5,13 @@
 ## Selected with device:=quest use_moveit:=true use_servo:=true.
 ##
 ## sobit_light specifics (2026-09 sim validation):
-##  * The arm is short (shoulder-pitch -> EE 0.43 m). Its Jacobian condition
-##    number is ~20 at best, median ~80 over the joint space and >200 in a
-##    quarter of it, so sobit_home's 50/200 singularity thresholds decelerate
-##    almost everywhere and e-stop in ordinary poses. Thresholds below are
-##    scaled to this arm.
-##  * The SRDF initial_pose (elbow straight, roll axes aligned) is exactly
-##    singular: servo halts immediately if tracking is latched there. Move the
-##    arm to a bent pose before latching.
+##  * The arm is short (shoulder-pitch -> EE 0.43 m) and its singular surfaces
+##    (wrist_pitch = 0, elbow max reach, wrist centre on the shoulder-roll axis)
+##    cross the ordinary teleop workspace. Servo therefore runs the DLS solver
+##    below instead of KDL, which branch-flipped and wiggled there.
+##  * Servo's own condition-number gate is unit-dependent (m vs rad) and reads
+##    5-10x worse on this arm than on sobit_home; it is switched off (see the
+##    thresholds) and the DLS damping takes over singularity handling.
 
 /**:
   ros__parameters:
@@ -22,11 +21,7 @@
       max_expected_latency: 0.1
       command_in_type: "speed_units"
       scale:
-        # Per-tick Cartesian step = scale * publish_period. 1.5 m/s (sobit_home)
-        # is a 3 cm step: on this 0.43 m arm the IK solution for such a step
-        # near the reach limit flips the forearm/wrist rolls by ~2 rad (verified
-        # in sim). 0.5 m/s = 1 cm/tick tracks a hand comfortably and keeps the
-        # per-tick IK local.
+        # 0.5 m/s = 1 cm per tick: keeps each servo IK step local on a 0.43 m arm.
         linear: 0.5                        # max EE m/s
         rotational: 1.5                    # max EE rad/s
         joint: 1.0
@@ -56,13 +51,10 @@
       use_smoothing: true
       smoothing_filter_plugin_name: "online_signal_smoothing::ButterworthFilterPlugin"
 
-      # Condition-number thresholds for THIS arm (see header). Sim validation
-      # used 150/500; on the real robot (2026-09-10) 250/900 let the arm work
-      # right up to the floor without the halt/escape rocking, and no joint
-      # windup was seen. Still keep a hard stop: without one servo winds all
-      # joints to their bounds.
-      lower_singularity_threshold: 250.0
-      hard_stop_singularity_threshold: 900.0
+      # Gate off: with DLS IK the joint step stays bounded at singularities, so
+      # a halt only breaks tracking (halt/escape rocking). Exact poses read ~1e16.
+      lower_singularity_threshold: 1.0e17
+      hard_stop_singularity_threshold: 1.0e18
       joint_limit_margins: [0.02]
       # moveit_servo 2.12 names (the old halt_all_joints_in_joint_limit key is not
       # in the schema and was silently ignored, so every robot has in fact been
@@ -72,28 +64,30 @@
       halt_all_joints_in_joint_mode: true
       halt_all_joints_in_cartesian_mode: true
 
+    # ── Servo-only IK solver ────────────────────────────────────────────────
+    # move_group keeps KDL (moveit_config kinematics.yaml); the launcher orders
+    # parameters so this block overrides the fetched entry for servo_arm only.
+    robot_description_kinematics:
+      arm:
+        kinematics_solver: sobits_teleop/DLSKinematicsPlugin
+        kinematics_solver_timeout: 0.005
+        length_scale: 0.3
+        damping_min: 0.01
+        damping_max: 0.1
+        singular_value_threshold: 0.05
+        max_step: 0.2
+        joint_limit_margin: 0.03
+
     # ── Target bridge ───────────────────────────────────────────────────────
     servo_bridge:
       pose_rate_hz: 100.0   # keep well above 1/incoming_command_timeout
 
-      # Reach clamp [m] around arm_shoulder_pitch_link. NOTE the geometry of this
-      # arm: the upper arm and forearm form an L, so "elbow straight" (the
-      # branch-merge singularity) is NOT full extension. Max reach 0.430 m needs
-      # elbow ~ -1.4; elbow = 0 puts the EE anywhere 0.16-0.37 m from the
-      # shoulder, i.e. inside the workspace. The clamp therefore only stops the
-      # outer-extension chase; the interior elbow-straight and wrist-pitch~0
-      # (forearm/wrist roll axes aligned) singularities are guarded only by the
-      # thresholds above and by operator posture. Verified in sim with the
-      # measured Dynamixel joint ranges (2026-09-10): a 4 cm circle, vertical or
-      # horizontal, tracks at ~1 cm error with the hand ~20 deg down and the
-      # target 0.45-0.50 m ahead of base_footprint (shoulder pitch -1.8..-2.0);
-      # the same circle 0.55 m ahead, or with the hand pitched 38 deg down,
-      # crosses the elbow-straight surface and halt-recovers every loop.
-      max_reach: 0.37
+      # Reach clamp [m] around arm_shoulder_pitch_link; max reach is 0.43 (elbow
+      # ~ -1.4). With DLS an out-of-reach chase just stalls, so clamp near it.
+      max_reach: 0.40
 
-      # Halt recovery (same tuning as sobit_home). Without joint_escape_time_s
-      # the bridge can only pause/unpause, which does not move the arm off the
-      # singular pose.
+      # Halt recovery (same tuning as sobit_home). Dormant while the gate above
+      # is off; kept for the case of a finite hard_stop threshold.
       reset_on_halt: true
       reset_cooldown_s: 2.0
       joint_escape_time_s: 1.0

@@ -413,9 +413,9 @@ moveit_servo:
   scale: {linear: 1.5, rotational: 3.0}  # EE速度上限 [m/s, rad/s]
   publish_joint_velocities: false  # アームのJTCが終端速度非ゼロの軌道を
                                    # 拒否する場合はfalseのまま
-  lower_singularity_threshold: 50.0
-  hard_stop_singularity_threshold: 200.0  # 無効化しないこと（関節ワインドアップ）
-  joint_limit_margins: [0.02]
+  lower_singularity_threshold: 50.0       # KDLではハードストップ必須（関節
+  hard_stop_singularity_threshold: 200.0  # ワインドアップ）；下記DLSソルバ使用時は
+  joint_limit_margins: [0.02]             # 両方を〜1e17に（ゲート無効）
 
 servo_bridge:
   pose_rate_hz: 100.0
@@ -425,6 +425,47 @@ servo_bridge:
 
 bridgeは目標を`max_reach`球にクランプするため，届かない位置の手をアームが追いかけて
 完全伸展の特異点に陥ることを防ぎます．
+
+##### IKソルバ（短いアーム向け）
+
+Servoはポーズ指令に対して自前のヤコビアン計算を行わず，20 msごとに計画グループの
+MoveIt IKプラグインへ「現在姿勢＋1ステップ」を`return_approximate_solution`付きで
+解かせます．長いアーム（sobit_home）ではKDLで十分ですが，特異面が作業空間を横切る
+短いアーム（sobit_light：手首ピッチ0，肘の最大リーチ，手首中心が肩ロール軸上）では
+KDLのNewton-Raphsonが停止する，IK枝を飛び移る（約2 radのロール反転→関節ワインド
+アップ），あるいは「wiggle」のランダムステップを返します．本パッケージはその用途に
+減衰最小二乗（DLS）プラグイン`sobits_teleop/DLSKinematicsPlugin`を同梱します：
+決定的・局所的で，関節ステップが有界，最小特異値が小さくなるほど減衰が増すため，
+失われた方向の追従が遅くなるだけでハルトや反転は起きません．
+
+Servo専用に選択するにはservo用yamlに次を書きます — `move_group`，planバックエンド，
+RVizは`kinematics.yaml`のソルバのままです（ランチャがパラメータ順を調整し，この
+ブロックが優先されます）：
+
+```yaml
+robot_description_kinematics:
+  <arm_group>:
+    kinematics_solver: sobits_teleop/DLSKinematicsPlugin
+    kinematics_solver_timeout: 0.005
+    length_scale: 0.3            # m；ヤコビアンの行を無次元化
+    damping_min: 0.01            # 常時の減衰
+    damping_max: 0.1             # sigma_min -> 0 で追加される減衰
+    singular_value_threshold: 0.05
+    max_step: 0.2                # 反復あたりの rad
+    joint_limit_margin: 0.03     # servoのjoint_limit_marginsより大きく
+    # 任意: orientation_weight（既定1.0），position_priority（false）
+```
+
+Servo自身の条件数ゲートは生のヤコビアン（mとrad混在）を使うため，0.4 mのアームでは
+1 mのアームより5〜10倍悪い値になります．このソルバと組み合わせる場合は
+`*_singularity_threshold`を非常に大きく（sobit_light：1e17/1e18）してください；
+ステップの有界性はDLSの減衰が保証します．sobit_lightのGazebo検証（3つの特異面を
+横切る経路）では，KDL 250/900で経路あたり2〜11回のハルト，1ティックで0.5〜0.8 rad
+の跳び，radial押し込みで中央値9 cmの誤差だったものが，DLS＋ゲート無効では
+ハルト0，ティックあたりのステップは関節速度制限以下，軸横切りと床への降下で
+p95誤差1 cm未満になりました（`scripts/tracking_test.py --robot sobit_light --path <p>`）．
+手首特異点付近では手のヨーが遅れますが，これは設計上のものです — 6自由度アームは
+前腕をロールし直さずに水平な手をヨーさせることができません．
 
 ##### 特異点ハルトからの復帰
 

@@ -419,9 +419,9 @@ moveit_servo:
   scale: {linear: 1.5, rotational: 3.0}  # EE speed caps [m/s, rad/s]
   publish_joint_velocities: false  # keep false if the arm JTC rejects
                                    # trajectories ending with nonzero velocity
-  lower_singularity_threshold: 50.0
-  hard_stop_singularity_threshold: 200.0  # do NOT disable (joint windup)
-  joint_limit_margins: [0.02]
+  lower_singularity_threshold: 50.0       # with KDL keep a hard stop (joint
+  hard_stop_singularity_threshold: 200.0  # windup); with the DLS solver below
+  joint_limit_margins: [0.02]             # set both to ~1e17 (gate off)
 
 servo_bridge:
   pose_rate_hz: 100.0
@@ -431,6 +431,50 @@ servo_bridge:
 
 The bridge clamps targets to the `max_reach` sphere so an out-of-reach hand
 cannot drag the arm into its full-extension singularity.
+
+##### IK solver (short arms)
+
+Servo does no Jacobian math of its own for pose commands: every 20 ms tick it
+asks the planning group's MoveIt IK plugin to solve "current pose + one step"
+with `return_approximate_solution`. KDL is fine on a long arm (sobit_home) but
+on a short one whose singular surfaces cross the working volume (sobit_light:
+wrist pitch 0, elbow max reach, wrist centre on the shoulder-roll axis) its
+Newton-Raphson stalls, jumps IK branch (~2 rad roll flips that turn into joint
+windup) or returns its "wiggle" random step. The package ships a
+damped-least-squares plugin for that case, `sobits_teleop/DLSKinematicsPlugin`:
+deterministic, local, bounded joint steps, damping that grows as the smallest
+singular value shrinks, so tracking slows along the lost direction instead of
+halting or flipping.
+
+Select it **for servo only** in the servo yaml — `move_group`, the plan
+backend and RViz keep the solver from `kinematics.yaml` (the launcher orders
+parameters so this block wins):
+
+```yaml
+robot_description_kinematics:
+  <arm_group>:
+    kinematics_solver: sobits_teleop/DLSKinematicsPlugin
+    kinematics_solver_timeout: 0.005
+    length_scale: 0.3            # m; makes the Jacobian rows dimensionless
+    damping_min: 0.01            # always-on damping
+    damping_max: 0.1             # added as sigma_min -> 0
+    singular_value_threshold: 0.05
+    max_step: 0.2                # rad per iteration
+    joint_limit_margin: 0.03     # keep > servo joint_limit_margins
+    # optional: orientation_weight (default 1.0), position_priority (false)
+```
+
+Servo's own condition-number gate uses the raw Jacobian (metres vs radians)
+and reads 5-10x worse on a 0.4 m arm than on a 1 m one, so pair the solver
+with very high `*_singularity_threshold` values (sobit_light: 1e17/1e18);
+the DLS damping already bounds the step. Validation on sobit_light in Gazebo
+(paths crossing all three surfaces): KDL 250/900 gave 2-11 halts per path,
+0.5-0.8 rad single-tick jumps and 9 cm median error on the radial push; DLS
+with the gate off gave 0 halts, per-tick steps under the joint velocity limit
+and sub-centimetre p95 error on the axis crossing and floor descent
+(`scripts/tracking_test.py --robot sobit_light --path <p>`). Near the wrist
+singularity the hand yaw still lags by design — a 6-DOF arm has no way to yaw
+a horizontal hand there without re-rolling the forearm.
 
 ##### Singularity halt recovery
 
