@@ -173,7 +173,7 @@ def _sweep(n, lo, hi):
     return out
 
 
-def named_path(path, o, mirror, n):
+def named_path(path, o, mirror, n, line_from=None, line_to=None, hand='forward'):
     """Singularity-crossing paths built from base_frame->reference_frame origin o."""
     q_fwd = (0.0, 0.0, 0.0, 1.0)
     q_down = q_from_euler(0.0, math.pi/2, 0.0)
@@ -191,6 +191,12 @@ def named_path(path, o, mirror, n):
     elif path == 'radial':
         for r in _sweep(n, 0.28, 0.46):
             lst.append((o.x+r, 0.0, o.z-0.10, *q_fwd))
+    elif path == 'line':
+        # absolute base_frame endpoints; --hand picks the fixed orientation
+        a, b = line_from, line_to
+        q = q_down if hand == 'down' else q_fwd
+        for u in _sweep(n, 0.0, 1.0):
+            lst.append(tuple(a[i] + u*(b[i]-a[i]) for i in range(3)) + q)
     else:
         raise ValueError(f'unknown path {path!r}')
     return lst
@@ -389,7 +395,7 @@ class DualTest(Node):
             if a.path == 'lissajous':
                 wps[name] = lissajous_path(a, starts[name], m, N)
             else:
-                wps[name] = named_path(a.path, origin, m, N)
+                wps[name] = named_path(a.path, origin, m, N, a.line_from, a.line_to, a.hand)
             cfg['target'] = starts[name]
 
         self.spin_sim(0.1, wall_cap=20)
@@ -521,7 +527,12 @@ def main():
     p.add_argument('--no-use-sim-time', dest='use_sim_time', action='store_false')
     p.add_argument('--arm-spec', action='append', default=[])
     p.add_argument('--path', choices=['lissajous', 'roll_axis_cross', 'descend',
-                                       'yaw_sweep', 'radial'], default='lissajous')
+                                       'yaw_sweep', 'radial', 'line'], default='lissajous')
+    p.add_argument('--line-from', type=lambda v: tuple(map(float, v.split(','))), default=None,
+                   help='x,y,z in base_frame for --path line')
+    p.add_argument('--line-to', type=lambda v: tuple(map(float, v.split(','))), default=None)
+    p.add_argument('--hand', choices=['forward', 'down'], default='forward',
+                   help='fixed hand orientation for --path line')
     p.add_argument('--reference-frame', default='arm_shoulder_pitch_link')
     p.add_argument('--n-points', type=int, default=100)
     p.add_argument('--amp-x', type=float, default=0.06)
