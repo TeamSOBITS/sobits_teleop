@@ -33,7 +33,7 @@
       is_primary_planning_scene_monitor: false   # move_group owns the scene
       monitored_planning_scene_topic: /sobit_light/monitored_planning_scene
 
-      check_collisions: true
+      check_collisions: false
       collision_check_rate: 10.0
       self_collision_proximity_threshold: 0.004   # start here; loosen if the arm sticks in permanent decel-crawl near the body
       scene_collision_proximity_threshold: 0.008
