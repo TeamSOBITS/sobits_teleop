@@ -44,9 +44,10 @@
       # a halt only breaks tracking (halt/escape rocking). Exact poses read ~1e16.
       lower_singularity_threshold: 1.0e17
       hard_stop_singularity_threshold: 1.0e18
-      # small margin + per-joint halt: home pose rests ON two URDF limits
       joint_limit_margins: [0.02]
-      halt_all_joints_in_joint_limit: false
+      # moveit_servo 2.12 names; the old halt_all_joints_in_joint_limit key was silently ignored.
+      halt_all_joints_in_joint_mode: true
+      halt_all_joints_in_cartesian_mode: true
 
     # ── Servo-only IK solver: move_group keeps KDL; the launcher lists this yaml
     # after the move_group params, so this block wins for the servo nodes only.
@@ -55,22 +56,31 @@
         kinematics_solver: sobits_teleop/DLSKinematicsPlugin
         kinematics_solver_timeout: 0.005
         length_scale: 0.8           # ~0.7 x the 1.14 m EE reach; 0.3 wandered 2 m on an out-of-reach return
+        orientation_weight: 0.3     # teleop: keep the hand position, let the orientation slip first (1.0 = 13 cm lag)
         damping_min: 0.01
         damping_max: 0.1
         singular_value_threshold: 0.05
         max_step: 0.2
         joint_limit_margin: 0.03    # stays above servo's joint_limit_margins
         min_singular_value: 0.005   # never park the commanded state on a singular surface
+        # Nullspace bias toward the Quest initial_pose (elbow orbit), <= 0.005 rad per tick.
+        posture_gain: 0.5
+        posture_step: 0.005
+        posture_target: [-0.75, -1.22, -0.2, 2.5, 0.0, 0.0, 0.0]
       arm_left:
         kinematics_solver: sobits_teleop/DLSKinematicsPlugin
         kinematics_solver_timeout: 0.005
         length_scale: 0.8
+        orientation_weight: 0.3
         damping_min: 0.01
         damping_max: 0.1
         singular_value_threshold: 0.05
         max_step: 0.2
         joint_limit_margin: 0.03
         min_singular_value: 0.005
+        posture_gain: 0.5
+        posture_step: 0.005
+        posture_target: [-0.75, -1.22, -0.2, 2.5, 0.0, 0.0, 0.0]
 
     # ── Target bridge ───────────────────────────────────────────────────────
     servo_bridge:

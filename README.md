@@ -432,19 +432,21 @@ servo_bridge:
 The bridge clamps targets to the `max_reach` sphere so an out-of-reach hand
 cannot drag the arm into its full-extension singularity.
 
-##### IK solver (short arms)
+##### IK solver (DLS)
 
 Servo does no Jacobian math of its own for pose commands: every 20 ms tick it
 asks the planning group's MoveIt IK plugin to solve "current pose + one step"
-with `return_approximate_solution`. KDL is fine on a long arm (sobit_home) but
-on a short one whose singular surfaces cross the working volume (sobit_light:
-wrist pitch 0, elbow max reach, wrist centre on the shoulder-roll axis) its
-Newton-Raphson stalls, jumps IK branch (~2 rad roll flips that turn into joint
-windup) or returns its "wiggle" random step. The package ships a
-damped-least-squares plugin for that case, `sobits_teleop/DLSKinematicsPlugin`:
-deterministic, local, bounded joint steps, damping that grows as the smallest
-singular value shrinks, so tracking slows along the lost direction instead of
-halting or flipping.
+with `return_approximate_solution`. KDL's Newton-Raphson stalls, jumps IK
+branch (~2 rad roll flips that turn into joint windup) or returns its "wiggle"
+random step wherever a singular surface or a joint limit crosses the working
+volume: on sobit_light (wrist pitch 0, elbow max reach, wrist centre on the
+shoulder-roll axis) and on sobit_home (table-height reach freezes at 0.56 m,
+joint-bound stalls through most of a large hand motion, one arm halting where
+the other tracks). The package ships a damped-least-squares plugin for both,
+`sobits_teleop/DLSKinematicsPlugin`: deterministic, local, bounded joint
+steps, damping that grows as the smallest singular value shrinks, joint
+clamping (a joint that reaches its bound is held there and the others re-solve
+for the remaining error), and for redundant arms a nullspace posture bias.
 
 Select it **for servo only** in the servo yaml — `move_group`, the plan
 backend and RViz keep the solver from `kinematics.yaml` (the launcher orders
@@ -455,27 +457,40 @@ robot_description_kinematics:
   <arm_group>:
     kinematics_solver: sobits_teleop/DLSKinematicsPlugin
     kinematics_solver_timeout: 0.005
-    length_scale: 0.3            # m; makes the Jacobian rows dimensionless
+    length_scale: 0.3            # m; ~0.7 x reach; makes the Jacobian rows dimensionless
+    orientation_weight: 0.3      # teleop: keep the hand position, let orientation slip first
     damping_min: 0.01            # always-on damping
     damping_max: 0.1             # added as sigma_min -> 0
     singular_value_threshold: 0.05
     max_step: 0.2                # rad per iteration
     joint_limit_margin: 0.03     # keep > servo joint_limit_margins
     min_singular_value: 0.005    # returned state never deeper into a singularity
-    # optional: orientation_weight (default 1.0), position_priority (false)
+    joint_clamping: true         # hold a saturated joint at its bound, re-solve the rest
+    # 7-DOF arms only: nullspace bias toward a joint vector (default: range midpoints)
+    posture_gain: 0.5
+    posture_step: 0.005          # rad per solve
+    posture_target: [-0.75, -1.22, -0.2, 2.5, 0.0, 0.0, 0.0]
+    # position_priority (false): task-priority mode, unstable on sobit_home, leave off
 ```
 
 Servo's own condition-number gate uses the raw Jacobian (metres vs radians)
 and reads 5-10x worse on a 0.4 m arm than on a 1 m one, so pair the solver
-with very high `*_singularity_threshold` values (sobit_light: 1e17/1e18);
+with very high `*_singularity_threshold` values (1e17/1e18 on both robots);
 the DLS damping already bounds the step. Validation on sobit_light in Gazebo
 (paths crossing all three surfaces): KDL 250/900 gave 2-11 halts per path,
 0.5-0.8 rad single-tick jumps and 9 cm median error on the radial push; DLS
 with the gate off gave 0 halts, per-tick steps under the joint velocity limit
-and sub-centimetre p95 error on the axis crossing and floor descent
-(`scripts/tracking_test.py --robot sobit_light --path <p>`). Near the wrist
-singularity the hand yaw still lags by design — a 6-DOF arm has no way to yaw
-a horizontal hand there without re-rolling the forearm.
+and sub-centimetre p95 error on the axis crossing and floor descent. On
+sobit_home (13 probes incl. a six-step dual-arm fold at table height): 0 halts,
+0 flips, 0 joint-bound ticks; a 15 cm / 30 deg lissajous went from 32 cm and
+56 deg p95 error (KDL) to 15 cm and 15 deg; a 60 deg yaw sweep from a 0.9 rad
+flip and 90 deg to 1.3 cm and 29 deg. Max reach is unchanged (the physical
+limit), and a target the arm cannot reach with the requested orientation now
+costs a few cm of position plus ~12 deg of tilt instead of a stall
+(`scripts/tracking_test.py --robot <robot> --path <p>`; a 7-DOF arm needs
+`--reference-frame` for the absolute paths). Near the wrist singularity the
+hand yaw still lags by design — a 6-DOF arm has no way to yaw a horizontal
+hand there without re-rolling the forearm.
 
 ##### Singularity halt recovery
 

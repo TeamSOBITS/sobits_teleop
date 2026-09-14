@@ -67,6 +67,7 @@
         singular_value_threshold: 0.05
         max_step: 0.2
         joint_limit_margin: 0.03
+        joint_clamping: false       # hardware-validated without it (2026-09-12); no gain on this 6-DOF arm in sim
         min_singular_value: 0.005   # never park the commanded state on a singular surface
 
     # ── Target bridge ───────────────────────────────────────────────────────

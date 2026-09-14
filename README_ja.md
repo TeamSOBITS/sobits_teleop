@@ -426,17 +426,19 @@ servo_bridge:
 bridgeは目標を`max_reach`球にクランプするため，届かない位置の手をアームが追いかけて
 完全伸展の特異点に陥ることを防ぎます．
 
-##### IKソルバ（短いアーム向け）
+##### IKソルバ（DLS）
 
 Servoはポーズ指令に対して自前のヤコビアン計算を行わず，20 msごとに計画グループの
 MoveIt IKプラグインへ「現在姿勢＋1ステップ」を`return_approximate_solution`付きで
-解かせます．長いアーム（sobit_home）ではKDLで十分ですが，特異面が作業空間を横切る
-短いアーム（sobit_light：手首ピッチ0，肘の最大リーチ，手首中心が肩ロール軸上）では
-KDLのNewton-Raphsonが停止する，IK枝を飛び移る（約2 radのロール反転→関節ワインド
-アップ），あるいは「wiggle」のランダムステップを返します．本パッケージはその用途に
+解かせます．特異面や関節限界が作業空間を横切る所では，KDLのNewton-Raphsonは停止する，
+IK枝を飛び移る（約2 radのロール反転→関節ワインドアップ），あるいは「wiggle」の
+ランダムステップを返します：sobit_light（手首ピッチ0，肘の最大リーチ，手首中心が
+肩ロール軸上）でも，sobit_home（テーブル高さのリーチが0.56 mで凍結，大きな手の動きの
+大半で関節限界ストール，片腕だけハルト）でも同様です．本パッケージは両者向けに
 減衰最小二乗（DLS）プラグイン`sobits_teleop/DLSKinematicsPlugin`を同梱します：
-決定的・局所的で，関節ステップが有界，最小特異値が小さくなるほど減衰が増すため，
-失われた方向の追従が遅くなるだけでハルトや反転は起きません．
+決定的・局所的で，関節ステップが有界，最小特異値が小さくなるほど減衰が増し，
+関節クランプ（限界に達した関節はそこに固定し，残りの関節で残差を解き直す）と，
+冗長アーム向けの零空間姿勢バイアスを備えます．
 
 Servo専用に選択するにはservo用yamlに次を書きます — `move_group`，planバックエンド，
 RVizは`kinematics.yaml`のソルバのままです（ランチャがパラメータ順を調整し，この
@@ -447,26 +449,37 @@ robot_description_kinematics:
   <arm_group>:
     kinematics_solver: sobits_teleop/DLSKinematicsPlugin
     kinematics_solver_timeout: 0.005
-    length_scale: 0.3            # m；ヤコビアンの行を無次元化
+    length_scale: 0.3            # m；リーチの約0.7倍；ヤコビアンの行を無次元化
+    orientation_weight: 0.3      # 遠隔操作：手の位置を守り，姿勢から先に譲る
     damping_min: 0.01            # 常時の減衰
     damping_max: 0.1             # sigma_min -> 0 で追加される減衰
     singular_value_threshold: 0.05
     max_step: 0.2                # 反復あたりの rad
     joint_limit_margin: 0.03     # servoのjoint_limit_marginsより大きく
     min_singular_value: 0.005    # 返す状態を特異面より深くしない
-    # 任意: orientation_weight（既定1.0），position_priority（false）
+    joint_clamping: true         # 限界に達した関節をそこに固定し，残りで解き直す
+    # 7自由度アームのみ：零空間で関節ベクトルへ寄せる（既定：可動域中央）
+    posture_gain: 0.5
+    posture_step: 0.005          # 1回の求解あたりの rad
+    posture_target: [-0.75, -1.22, -0.2, 2.5, 0.0, 0.0, 0.0]
+    # position_priority（false）：タスク優先モード，sobit_homeでは不安定なので使わない
 ```
 
 Servo自身の条件数ゲートは生のヤコビアン（mとrad混在）を使うため，0.4 mのアームでは
 1 mのアームより5〜10倍悪い値になります．このソルバと組み合わせる場合は
-`*_singularity_threshold`を非常に大きく（sobit_light：1e17/1e18）してください；
+`*_singularity_threshold`を非常に大きく（両ロボットとも1e17/1e18）してください；
 ステップの有界性はDLSの減衰が保証します．sobit_lightのGazebo検証（3つの特異面を
 横切る経路）では，KDL 250/900で経路あたり2〜11回のハルト，1ティックで0.5〜0.8 rad
 の跳び，radial押し込みで中央値9 cmの誤差だったものが，DLS＋ゲート無効では
 ハルト0，ティックあたりのステップは関節速度制限以下，軸横切りと床への降下で
-p95誤差1 cm未満になりました（`scripts/tracking_test.py --robot sobit_light --path <p>`）．
-手首特異点付近では手のヨーが遅れますが，これは設計上のものです — 6自由度アームは
-前腕をロールし直さずに水平な手をヨーさせることができません．
+p95誤差1 cm未満になりました．sobit_home（テーブル高さの両腕6段階折り畳みを含む
+13経路）ではハルト0，反転0，関節限界ティック0；15 cm／30 degのリサージュは
+p95誤差32 cm・56 deg（KDL）から15 cm・15 degに，60 degのヨー掃引は0.9 radの反転・
+90 degから1.3 cm・29 degになりました．最大リーチは変わらず（物理限界），要求姿勢では
+届かない目標はストールの代わりに位置数cm＋約12 degの傾きで済みます
+（`scripts/tracking_test.py --robot <robot> --path <p>`；7自由度アームでは絶対経路に
+`--reference-frame`が必要）．手首特異点付近では手のヨーが遅れますが，これは設計上の
+ものです — 6自由度アームは前腕をロールし直さずに水平な手をヨーさせることができません．
 
 ##### 特異点ハルトからの復帰
 
