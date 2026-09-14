@@ -195,11 +195,31 @@ bool DLSKinematicsPlugin::initialize(const rclcpp::Node::SharedPtr & node,
   max_step_ = readParam<double>("max_step", 0.2);
   joint_limit_margin_ = readParam<double>("joint_limit_margin", 0.03);
   min_singular_value_ = readParam<double>("min_singular_value", 0.005);
+  joint_clamping_ = readParam<bool>("joint_clamping", true);
+  posture_gain_ = readParam<double>("posture_gain", 0.0);
+  posture_step_ = readParam<double>("posture_step", 0.005);
+
+  // Posture target defaults to the joint-range midpoints (0 for unbounded joints).
+  const auto n = static_cast<Eigen::Index>(joint_names_.size());
+  posture_target_.resize(n);
+  for (Eigen::Index i = 0; i < n; ++i)
+    posture_target_[i] = (q_max_[i] - q_min_[i] < 1e6) ? 0.5 * (q_min_[i] + q_max_[i]) : 0.0;
+  const auto target = readParam<std::vector<double>>("posture_target", std::vector<double>{});
+  if (!target.empty())
+  {
+    if (static_cast<Eigen::Index>(target.size()) == n)
+      posture_target_ = Eigen::Map<const Eigen::VectorXd>(target.data(), n);
+    else
+      RCLCPP_WARN(rclcpp::get_logger("dls_kinematics_plugin"),
+                  "posture_target has %zu entries, group '%s' has %zu joints; using midpoints", target.size(),
+                  group_name_.c_str(), joint_names_.size());
+  }
 
   RCLCPP_INFO(rclcpp::get_logger("dls_kinematics_plugin"),
-              "DLS IK for '%s': %s -> %s, %zu joints, damping [%.3f, %.3f], max_step=%.3f",
+              "DLS IK for '%s': %s -> %s, %zu joints, damping [%.3f, %.3f], max_step=%.3f, clamping=%d, "
+              "posture_gain=%.3f",
               group_name_.c_str(), base_frame_.c_str(), tip_frames_[0].c_str(), joint_names_.size(), damping_min_,
-              damping_max_, max_step_);
+              damping_max_, max_step_, static_cast<int>(joint_clamping_), posture_gain_);
   return true;
 }
 
@@ -247,6 +267,75 @@ Eigen::MatrixXd DLSKinematicsPlugin::dampedPinv(const Eigen::MatrixXd & a, doubl
   return a.transpose() * damped.ldlt().solve(Eigen::MatrixXd::Identity(damped.rows(), damped.cols()));
 }
 
+double DLSKinematicsPlugin::damping(const Eigen::MatrixXd & js) const
+{
+  const double s_min = Eigen::JacobiSVD<Eigen::MatrixXd>(js).singularValues().minCoeff();
+  double lam2 = damping_min_ * damping_min_;
+  if (s_min < singular_value_threshold_)
+  {
+    const double ratio = 1.0 - s_min / singular_value_threshold_;
+    lam2 += damping_max_ * damping_max_ * ratio * ratio;
+  }
+  return lam2;
+}
+
+Eigen::VectorXd DLSKinematicsPlugin::postureStep(const Eigen::VectorXd & q) const
+{
+  const auto n = q.size();
+  Eigen::MatrixXd js = jacobian(q);
+  js.topRows(3) /= length_scale_;
+  const double lam2 = damping(js);
+  const Eigen::MatrixXd identity = Eigen::MatrixXd::Identity(n, n);
+
+  Eigen::MatrixXd nullspace;
+  if (!position_priority_)
+  {
+    Eigen::VectorXd w(6);
+    w << 1.0, 1.0, 1.0, orientation_weight_, orientation_weight_, orientation_weight_;
+    const Eigen::MatrixXd jtw = js.transpose() * w.asDiagonal();
+    const Eigen::MatrixXd h = jtw * js + lam2 * identity;
+    nullspace = identity - h.ldlt().solve(jtw) * js;
+  }
+  else
+  {
+    const Eigen::MatrixXd jp = js.topRows(3);
+    const Eigen::MatrixXd jo = js.bottomRows(3);
+    const Eigen::MatrixXd np = identity - dampedPinv(jp, lam2) * jp;
+    const Eigen::MatrixXd jo_np = jo * np;
+    nullspace = (identity - dampedPinv(jo_np, lam2) * jo_np) * np;
+  }
+
+  const Eigen::VectorXd dq = nullspace * (posture_gain_ * (posture_target_ - q));
+  return dq.cwiseMax(-posture_step_).cwiseMin(posture_step_);
+}
+
+Eigen::VectorXd DLSKinematicsPlugin::taskStep(const Eigen::MatrixXd & js, const Eigen::VectorXd & es,
+                                               double lam2) const
+{
+  const auto n = js.cols();
+  if (!position_priority_)
+  {
+    Eigen::VectorXd w(6);
+    w << 1.0, 1.0, 1.0, orientation_weight_, orientation_weight_, orientation_weight_;
+    const Eigen::MatrixXd jtw = js.transpose() * w.asDiagonal();
+    const Eigen::MatrixXd h = jtw * js + lam2 * Eigen::MatrixXd::Identity(n, n);
+    return h.ldlt().solve(jtw * es);
+  }
+
+  const Eigen::MatrixXd jp = js.topRows(3);
+  const Eigen::MatrixXd jo = js.bottomRows(3);
+  const Eigen::Vector3d es_p = es.head<3>();
+  const Eigen::Vector3d es_o = es.tail<3>();
+
+  const Eigen::MatrixXd pinv_p = dampedPinv(jp, lam2);
+  const Eigen::VectorXd dq_p = pinv_p * es_p;
+  const Eigen::MatrixXd np = Eigen::MatrixXd::Identity(n, n) - pinv_p * jp;
+
+  const Eigen::MatrixXd jo_np = jo * np;
+  const Eigen::MatrixXd pinv_o = dampedPinv(jo_np, lam2);
+  return dq_p + pinv_o * (es_o - jo * dq_p);
+}
+
 bool DLSKinematicsPlugin::solve(const geometry_msgs::msg::Pose & ik_pose, const std::vector<double> & seed,
                                  double timeout, const std::vector<double> & consistency_limits,
                                  std::vector<double> & solution, const IKCallbackFn & solution_callback,
@@ -283,6 +372,9 @@ bool DLSKinematicsPlugin::solve(const geometry_msgs::msg::Pose & ik_pose, const 
 
   const Eigen::VectorXd q0 = seed_v.cwiseMax(lo).cwiseMin(hi);
   Eigen::VectorXd q = q0;
+  // Posture pre-step: the iterations below correct whatever leaks into task space.
+  if (posture_gain_ > 0.0)
+    q = (q + postureStep(q)).cwiseMax(lo).cwiseMin(hi);
   const Eigen::Isometry3d t_d = poseToIsometry(ik_pose);
 
   const auto start = std::chrono::steady_clock::now();
@@ -313,40 +405,40 @@ bool DLSKinematicsPlugin::solve(const geometry_msgs::msg::Pose & ik_pose, const 
     es.head<3>() = e_p / length_scale_;
     es.tail<3>() = e_o;
 
-    const double s_min = Eigen::JacobiSVD<Eigen::MatrixXd>(js).singularValues().minCoeff();
-    double lam2 = damping_min_ * damping_min_;
-    if (s_min < singular_value_threshold_)
-    {
-      const double ratio = 1.0 - s_min / singular_value_threshold_;
-      lam2 += damping_max_ * damping_max_ * ratio * ratio;
-    }
+    const double lam2 = damping(js);
 
+    // Joint clamping: a joint that would leave its range is held at the bound and
+    // dropped from the Jacobian; the others re-solve for the error that is left.
+    Eigen::VectorXd dq_fixed = Eigen::VectorXd::Zero(n);
+    std::vector<bool> locked(static_cast<size_t>(n), false);
     Eigen::VectorXd dq(n);
-    if (!position_priority_)
+    for (Eigen::Index pass = 0; pass <= n; ++pass)
     {
-      Eigen::VectorXd w(6);
-      w << 1.0, 1.0, 1.0, orientation_weight_, orientation_weight_, orientation_weight_;
-      const Eigen::MatrixXd jtw = js.transpose() * w.asDiagonal();
-      const Eigen::MatrixXd h = jtw * js + lam2 * Eigen::MatrixXd::Identity(n, n);
-      dq = h.ldlt().solve(jtw * es);
+      Eigen::MatrixXd jr = js;
+      for (Eigen::Index i = 0; i < n; ++i)
+        if (locked[static_cast<size_t>(i)])
+          jr.col(i).setZero();
+      dq = taskStep(jr, es - js * dq_fixed, lam2) + dq_fixed;
+      dq = dq.cwiseMax(-max_step_).cwiseMin(max_step_);
+      if (!joint_clamping_)
+        break;
+
+      bool changed = false;
+      for (Eigen::Index i = 0; i < n; ++i)
+      {
+        if (locked[static_cast<size_t>(i)])
+          continue;
+        const double qi = q[i] + dq[i];
+        if (qi > hi[i] || qi < lo[i])
+        {
+          dq_fixed[i] = std::clamp(std::clamp(qi, lo[i], hi[i]) - q[i], -max_step_, max_step_);
+          locked[static_cast<size_t>(i)] = true;
+          changed = true;
+        }
+      }
+      if (!changed)
+        break;
     }
-    else
-    {
-      const Eigen::MatrixXd jp = js.topRows(3);
-      const Eigen::MatrixXd jo = js.bottomRows(3);
-      const Eigen::Vector3d es_p = es.head<3>();
-      const Eigen::Vector3d es_o = es.tail<3>();
-
-      const Eigen::MatrixXd pinv_p = dampedPinv(jp, lam2);
-      const Eigen::VectorXd dq_p = pinv_p * es_p;
-      const Eigen::MatrixXd np = Eigen::MatrixXd::Identity(n, n) - pinv_p * jp;
-
-      const Eigen::MatrixXd jo_np = jo * np;
-      const Eigen::MatrixXd pinv_o = dampedPinv(jo_np, lam2);
-      dq = dq_p + pinv_o * (es_o - jo * dq_p);
-    }
-
-    dq = dq.cwiseMax(-max_step_).cwiseMin(max_step_);
     q = (q + dq).cwiseMax(lo).cwiseMin(hi);
   }
 

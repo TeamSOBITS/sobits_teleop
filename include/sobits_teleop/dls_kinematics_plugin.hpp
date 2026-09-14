@@ -80,6 +80,12 @@ private:
 
   // Damped pseudo-inverse: A^T (A A^T + lambda2 I)^-1.
   static Eigen::MatrixXd dampedPinv(const Eigen::MatrixXd & a, double lambda2);
+  // lambda^2 for a length-normalised Jacobian: damping_min, ramping to damping_max near singularity.
+  double damping(const Eigen::MatrixXd & js) const;
+  // Bounded nullspace step toward posture_target_ at q (zero when posture_gain_ is 0).
+  Eigen::VectorXd postureStep(const Eigen::VectorXd & q) const;
+  // One damped step for task error es with Jacobian js (zeroed columns = locked joints).
+  Eigen::VectorXd taskStep(const Eigen::MatrixXd & js, const Eigen::VectorXd & es, double lam2) const;
 
   KDL::Chain chain_;
   std::unique_ptr<KDL::ChainFkSolverPos_recursive> fk_solver_;
@@ -106,6 +112,12 @@ private:
   double max_step_ = 0.2;
   double joint_limit_margin_ = 0.03;
   double min_singular_value_ = 0.005;
+  // Hold a saturated joint at its bound and re-solve the others (off = clamp after the fact).
+  bool joint_clamping_ = true;
+  // Redundant chains: nullspace nudge toward posture_target_, at most posture_step_ per solve.
+  double posture_gain_ = 0.0;
+  double posture_step_ = 0.005;
+  Eigen::VectorXd posture_target_;
 };
 
 }  // namespace sobits_teleop

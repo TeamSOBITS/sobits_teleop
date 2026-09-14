@@ -87,6 +87,30 @@ moveit::core::RobotModelPtr buildTestModel()
   return std::make_shared<moveit::core::RobotModel>(urdf_model, srdf_model);
 }
 
+// Same arm on a vertical base yaw joint: 7 DOF, one-dimensional nullspace.
+moveit::core::RobotModelPtr buildRedundantTestModel()
+{
+  std::string urdf = kUrdf;
+  const std::string old_j1 = R"(<parent link="base_footprint"/><child link="link1"/>)";
+  const std::string new_j1 = R"(<parent link="link0"/><child link="link1"/>)";
+  urdf.replace(urdf.find(old_j1), old_j1.size(), new_j1);
+  const std::string j0 = R"(
+  <link name="link0"><inertial><mass value="0.1"/><inertia ixx="0.001" ixy="0" ixz="0" iyy="0.001" iyz="0" izz="0.001"/></inertial></link>
+  <joint name="j0" type="revolute">
+    <parent link="base_footprint"/><child link="link0"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-3.14" upper="3.14" effort="10" velocity="1"/>
+  </joint>
+)";
+  const std::string anchor = R"(<joint name="j1" type="revolute">)";
+  urdf.insert(urdf.find(anchor), j0);
+  urdf::ModelInterfaceSharedPtr urdf_model = urdf::parseURDF(urdf);
+  auto srdf_model = std::make_shared<srdf::Model>();
+  srdf_model->initString(*urdf_model, kSrdf);
+  return std::make_shared<moveit::core::RobotModel>(urdf_model, srdf_model);
+}
+
 double positionError(const geometry_msgs::msg::Pose & a, const geometry_msgs::msg::Pose & b)
 {
   const double dx = a.position.x - b.position.x;
@@ -243,6 +267,58 @@ TEST_F(DlsKinematicsTest, ConsistencyLimitsAreRespected)
 
   for (size_t i = 0; i < seed.size(); ++i)
     EXPECT_LE(std::abs(solution[i] - seed[i]), 0.05 + 1e-6);
+}
+
+TEST(DlsKinematicsPosture, NullspaceNudgeKeepsPoseAndApproachesTarget)
+{
+  auto model = buildRedundantTestModel();
+  const std::vector<double> q0 = {0.6, 0.1, -1.1, -0.6, 0.2, 0.8, -0.3};
+
+  // A second IK solution for the same pose (base yaw shifted) is a point on
+  // the self-motion manifold: the posture term must be able to travel there.
+  auto plain_node = std::make_shared<rclcpp::Node>("test_dls_kinematics_posture_plain_node");
+  sobits_teleop::DLSKinematicsPlugin plain;
+  ASSERT_TRUE(plain.initialize(plain_node, *model, "arm", "base_footprint", {"tip_link"}, 0.1));
+  ASSERT_EQ(plain.getJointNames().size(), 7u);
+  std::vector<geometry_msgs::msg::Pose> fk_poses;
+  ASSERT_TRUE(plain.getPositionFK({"tip_link"}, q0, fk_poses));
+  const geometry_msgs::msg::Pose target = fk_poses[0];
+  std::vector<double> shifted = q0;
+  shifted[0] += 0.4;
+  std::vector<double> posture_target;
+  moveit_msgs::msg::MoveItErrorCodes err;
+  ASSERT_TRUE(plain.getPositionIK(target, shifted, posture_target, err));
+  auto posture_dist = [&](const std::vector<double> & q) {
+    double s = 0.0;
+    for (size_t i = 0; i < q.size(); ++i)
+      s += (q[i] - posture_target[i]) * (q[i] - posture_target[i]);
+    return std::sqrt(s);
+  };
+  ASSERT_GT(posture_dist(q0), 0.05);
+
+  auto node = std::make_shared<rclcpp::Node>("test_dls_kinematics_posture_node");
+  node->declare_parameter("robot_description_kinematics.arm.posture_gain", 0.5);
+  node->declare_parameter("robot_description_kinematics.arm.posture_step", 0.01);
+  node->declare_parameter("robot_description_kinematics.arm.posture_target", posture_target);
+  sobits_teleop::DLSKinematicsPlugin plugin;
+  ASSERT_TRUE(plugin.initialize(node, *model, "arm", "base_footprint", {"tip_link"}, 0.1));
+
+  // Stream the same pose for 100 ticks, feeding each solution back as the seed.
+  std::vector<double> q = q0;
+  kinematics::KinematicsQueryOptions options;
+  options.return_approximate_solution = true;
+  for (int tick = 0; tick < 100; ++tick)
+  {
+    std::vector<double> solution;
+    ASSERT_TRUE(plugin.searchPositionIK(target, q, 0.01, solution, err, options));
+    q = solution;
+  }
+
+  std::vector<geometry_msgs::msg::Pose> result;
+  ASSERT_TRUE(plugin.getPositionFK({"tip_link"}, q, result));
+  EXPECT_LT(positionError(target, result[0]), 1e-3);
+  EXPECT_LT(orientationError(target, result[0]), 1e-2);
+  EXPECT_LT(posture_dist(q), 0.5 * posture_dist(q0));
 }
 
 int main(int argc, char ** argv)
