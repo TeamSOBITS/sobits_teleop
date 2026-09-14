@@ -192,8 +192,9 @@ def named_path(path, o, mirror, n, line_from=None, line_to=None, hand='forward')
         for r in _sweep(n, 0.28, 0.46):
             lst.append((o.x+r, 0.0, o.z-0.10, *q_fwd))
     elif path == 'line':
-        # absolute base_frame endpoints; --hand picks the fixed orientation
-        a, b = line_from, line_to
+        # absolute base_frame endpoints (y mirrored per arm); --hand picks the orientation
+        a = (line_from[0], mirror*line_from[1], line_from[2])
+        b = (line_to[0], mirror*line_to[1], line_to[2])
         q = q_down if hand == 'down' else q_fwd
         for u in _sweep(n, 0.0, 1.0):
             lst.append(tuple(a[i] + u*(b[i]-a[i]) for i in range(3)) + q)
