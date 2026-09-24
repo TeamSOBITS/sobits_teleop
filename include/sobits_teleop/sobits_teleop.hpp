@@ -51,6 +51,9 @@ struct JointMap
   int dominant_over = -1;
   float speed = 0.0f;
   float fast_speed = 0.0f;
+  // Anti-windup lead cap (rad): how far the command may run ahead of the measured
+  // joint. <=0 keeps the legacy free-running integrator.
+  double max_lead = -1.0;
   double min_pos = 0.0;
   double max_pos = 0.0;
 };
@@ -213,6 +216,22 @@ private:
     read_keys_.insert(key);
     return this->has_parameter(key);
   }
+  // max_lead is documented as "<=0 = legacy", so `max_lead: 0` is a natural thing to
+  // write - but YAML types that as an integer and get_param(double&) would throw.
+  bool get_lead_param(const std::string & key, double & out)
+  {
+    read_keys_.insert(key);
+    rclcpp::Parameter param;
+    if (!this->get_parameter(key, param)) {return false;}
+    if (param.get_type() == rclcpp::ParameterType::PARAMETER_DOUBLE) {
+      out = param.as_double();
+    } else if (param.get_type() == rclcpp::ParameterType::PARAMETER_INTEGER) {
+      out = static_cast<double>(param.as_int());
+    } else {
+      return false;
+    }
+    return true;
+  }
   // Marks a config subtree as entered even if left empty, so a group the code
   // chose not to populate isn't flagged the same as one never looked at.
   void mark_visited(const std::string & prefix) {visited_prefixes_.insert(prefix);}
@@ -317,6 +336,10 @@ private:
   std::map<std::string, QuestArmMap> quest_arm_mappings_;
   std::map<std::string, QuestTrackedGroup> quest_tracked_groups_;
   std::map<std::string, double> joint_pos_;
+  // Stabilized jogging state (only used when max_lead > 0).
+  std::map<std::string, double> cmd_pos_;         // integrated command
+  std::map<std::string, bool> joint_active_prev_;  // was the joint driven last tick
+  double joint_max_lead_ = -1.0;                   // global default for JointMap::max_lead
   // Frame all Quest tracking resolves in; must be fixed to the arm's root.
   std::string base_frame_ = "base_footprint";
   double teleop_rate_hz_ = 100.0;

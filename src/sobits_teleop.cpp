@@ -41,6 +41,9 @@ SOBITSTeleop::SOBITSTeleop(const rclcpp::NodeOptions & options)
     std::bind(&SOBITSTeleop::robot_tf_static_callback, this, std::placeholders::_1));
 
   robot_description_source_node_ = "robot_state_publisher";
+  // An absolute name (e.g. /robot_state_publisher) lets a namespaced teleop node reach a
+  // robot_state_publisher that runs in the global namespace, as OpenManipulator-X does.
+  get_param("robot_description_source_node", robot_description_source_node_);
   async_param_client_ = std::make_shared<rclcpp::AsyncParametersClient>(this,
       robot_description_source_node_);
 
@@ -432,6 +435,8 @@ void SOBITSTeleop::load_parameters()
   {
     std::vector<std::string> joint_groups;
     get_param("controller_joints.groups_name", joint_groups);
+    // Global anti-windup default (<=0 = legacy behaviour); per-joint overrides below.
+    get_lead_param("controller_joints.max_lead", joint_max_lead_);
 
     for (const auto & joint_group : joint_groups) {
       std::vector<std::string> joint_names;
@@ -461,6 +466,9 @@ void SOBITSTeleop::load_parameters()
             jm.speed);
         get_param("controller_joints." + joint_group + "." + joint_name + ".fast_speed",
             jm.fast_speed);
+        jm.max_lead = joint_max_lead_;
+        get_lead_param("controller_joints." + joint_group + "." + joint_name + ".max_lead",
+            jm.max_lead);
         jm.joint_trajectory_topic = group_trajectory_topic(joint_group);
         if (jm.joint_trajectory_topic.empty()) {continue;}
 
@@ -1066,33 +1074,59 @@ void SOBITSTeleop::process_joints()
 
     // Either enable source arms the joint; with neither set it is always live.
     const bool gated = m.button >= 0 || m.enable_axis >= 0;
-    if (gated && !button_down(m.button) && !axis_held(m.enable_axis)) {continue;}
+    const bool enabled = !gated || button_down(m.button) || axis_held(m.enable_axis);
 
-    float axis_val = axis_value(m.axis);
-    if (std::abs(axis_val) < 1e-3) {continue;}
+    const float axis_val = enabled ? static_cast<float>(axis_value(m.axis)) : 0.0f;
     // Shared stick: ignore a push that leans toward the guarded axis.
-    if (m.dominant_over >= 0 &&
-      std::abs(axis_val) <= std::abs(axis_value(m.dominant_over)))
-    {
-      continue;
-    }
+    const bool guarded = m.dominant_over >= 0 &&
+      std::abs(axis_val) <= std::abs(axis_value(m.dominant_over));
+    const bool driving = enabled && std::abs(axis_val) >= 1e-3 && !guarded;
 
     const bool fast = button_down(m.fast_button) || axis_held(m.fast_axis);
 
     // Config speeds are radians per legacy 50 ms tick — scale to the actual loop rate.
-    double delta_pos = axis_val * m.axis_sign * (fast ? m.fast_speed : m.speed) * jog_tick_scale_;
-    double target = joint_pos_[m.joint_name] + delta_pos;
-    if (!clamp_to_limits_checked(m.joint_name, target)) {continue;}
-    joint_pos_[m.joint_name] = target;
+    const double delta_pos =
+      axis_val * m.axis_sign * (fast ? m.fast_speed : m.speed) * jog_tick_scale_;
+
+    double out_pos;
+    if (m.max_lead <= 0.0) {
+      // Legacy behaviour — unchanged for robots that do not set max_lead.
+      if (!driving) {continue;}
+      double target = joint_pos_[m.joint_name] + delta_pos;
+      if (!clamp_to_limits_checked(m.joint_name, target)) {continue;}
+      joint_pos_[m.joint_name] = target;
+      out_pos = target;
+    } else {
+      // Stabilized: hold the command within max_lead of the measured joint, and on
+      // release command the current position so it halts instead of coasting on.
+      auto meas_it = joint_pos_.find(m.joint_name);
+      if (meas_it == joint_pos_.end()) {continue;}
+      const double measured = meas_it->second;
+      auto cmd_it = cmd_pos_.emplace(m.joint_name, measured).first;
+
+      if (!driving) {
+        cmd_it->second = measured;
+        if (!joint_active_prev_[m.joint_name]) {continue;}  // idle: controller holds
+        joint_active_prev_[m.joint_name] = false;
+        out_pos = measured;
+      } else {
+        double target = std::clamp(cmd_it->second + delta_pos,
+            measured - m.max_lead, measured + m.max_lead);
+        if (!clamp_to_limits_checked(m.joint_name, target)) {continue;}
+        joint_active_prev_[m.joint_name] = true;
+        cmd_it->second = target;
+        out_pos = target;
+      }
+    }
 
     auto & traj = trajs[m.joint_trajectory_topic];
     traj.joint_names.push_back(m.joint_name);
     if (traj.points.empty()) {
       trajectory_msgs::msg::JointTrajectoryPoint p;
-      p.positions = {joint_pos_[m.joint_name]};
+      p.positions = {out_pos};
       p.time_from_start = rclcpp::Duration::from_seconds(dt());
       traj.points.push_back(p);
-    } else {traj.points[0].positions.push_back(joint_pos_[m.joint_name]);}
+    } else {traj.points[0].positions.push_back(out_pos);}
   }
 
   for (auto & tj : trajs) {
