@@ -1,0 +1,69 @@
+/**:
+  ros__parameters:
+    controllers_name:
+    - controller_joints
+
+    controller_joints:
+      # max_lead: how far (rad) the command may lead the real joint. Setting it enables
+      # the stabilized path (anti-windup + halt on release). Omit it for legacy jogging.
+      # Can be overridden per joint (see joint4). <=0 = legacy behaviour.
+      max_lead: 0.15
+
+      groups_name:
+      - arm
+      - gripper
+
+      arm:
+        joints_name:
+        - joint1
+        - joint2
+        - joint3
+        - joint4
+        - joint5
+        joint1:
+          button: 1           # O
+          fast_button: 4      # L1
+          axis: 0             # left stick left/right
+          axis_sign: 1
+          speed: 0.02
+          fast_speed: 0.05
+        joint2:
+          button: 0           # X
+          fast_button: 4      # L1
+          axis: 1             # left stick up/down
+          axis_sign: -1
+          speed: 0.02
+          fast_speed: 0.05
+        joint3:
+          button: 2           # /\
+          fast_button: 4      # L1
+          axis: 1             # left stick up/down
+          axis_sign: -1
+          speed: 0.02
+          fast_speed: 0.05
+        joint4:
+          button: 3           # []
+          fast_button: 4      # L1
+          axis: 0             # left stick left/right
+          axis_sign: 1
+          speed: 0.02
+          fast_speed: 0.05
+          max_lead: 0.30      # wrist: extra lead to push against gravity going up
+        joint5:
+          button: 5           # R1
+          fast_button: 4      # L1
+          axis: 1             # left stick up/down
+          axis_sign: -1
+          speed: 0.02
+          fast_speed: 0.05
+
+      gripper:
+        joints_name:
+        - gripper_joint_1
+        gripper_joint_1:
+          button: 7           # R2
+          fast_button: 4      # L1
+          axis: 1             # left stick up/down
+          axis_sign: 1
+          speed: 0.01
+          fast_speed: 0.02

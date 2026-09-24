@@ -1,0 +1,16 @@
+/**:
+  ros__parameters:
+
+    # The OMX bringup runs robot_state_publisher in the global namespace, while teleop
+    # runs under /omx_f. Point the description lookup at the absolute name so the joint
+    # limits load without moving teleop out of the robot_name namespace.
+    robot_description_source_node: /robot_state_publisher
+
+    robot_topic_name:
+      joint_states_topic: /joint_states
+      joint_trajectory_topic:
+        arm: /arm_controller/joint_trajectory
+        gripper: /gripper_controller/joint_trajectory
+      # OMX has no mobile base. No controller_velocity block is enabled, but the node
+      # always creates this publisher, so it must be a valid, non-empty name.
+      cmd_vel_topic: /cmd_vel
