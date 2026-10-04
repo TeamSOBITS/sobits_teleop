@@ -273,6 +273,7 @@ controller_poses:
       enable_axis: 6      # -1 with no enable_button = always live
       axis: 4             # sign picks the pose, size the speed
       axis_sign: -1
+      dominant_over: -1   # only drive while |axis| exceeds this axis; -1 = off
       to_button: -1       # button alternative for devices with no axis
       from_button: -1
       speed: 0.6          # rad per legacy 50 ms tick at full deflection

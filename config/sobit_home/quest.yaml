@@ -204,6 +204,7 @@
           enable_button: -1
           axis: 4
           axis_sign: -1
+          dominant_over: 5
           to_button: -1
           from_button: -1
           speed: 0.6
@@ -214,6 +215,7 @@
           enable_button: -1
           axis: 0
           axis_sign: 1
+          dominant_over: 1
           to_button: -1
           from_button: -1
           speed: 0.6

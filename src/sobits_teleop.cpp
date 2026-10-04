@@ -566,6 +566,7 @@ void SOBITSTeleop::load_parameters()
       get_param(base + ".axis_sign", bl.axis_sign);
       get_param(base + ".to_button", bl.to_button);
       get_param(base + ".from_button", bl.from_button);
+      get_param(base + ".dominant_over", bl.dominant_over);
       get_param(base + ".speed", bl.speed);
 
       std::vector<std::string> exclude;
@@ -1148,6 +1149,13 @@ void SOBITSTeleop::process_pose_blends()
     if (button_down(bl.to_button)) {deflection = 1.0;}
     if (button_down(bl.from_button)) {deflection = -1.0;}
     if (std::abs(deflection) < 0.1) {continue;}
+    // Shared stick: yield to the guarded axis, mirroring controller_joints.
+    const bool by_button = button_down(bl.to_button) || button_down(bl.from_button);
+    if (!by_button && bl.dominant_over >= 0 &&
+      std::abs(axis_value(bl.axis)) <= std::abs(axis_value(bl.dominant_over)))
+    {
+      continue;
+    }
 
     const bool toward_to = deflection > 0.0;
     const double step = bl.speed * std::abs(deflection) * jog_tick_scale_;

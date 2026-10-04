@@ -98,6 +98,7 @@ struct PoseBlendMap
   int axis_sign = 1;
   int to_button = -1;       // button alternative to the axis
   int from_button = -1;
+  int dominant_over = -1;   // skip while |axis| <= |this axis| (shared stick)
   double speed = 0.0;       // rad per legacy 50 ms tick at full deflection
 };
 
