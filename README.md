@@ -582,6 +582,7 @@ controller_tracking:
     enable_axis: 2                  # same trigger as head; latches separately
     target_frame_name: "hmd_odom"
     motion_scale: 1.0
+    pivot_offset: [-0.10, 0.0, -0.08] # HMD origin -> neck pivot, HMD axes (m)
     joints_name: [body_lift_joint]
     body_lift_joint: { type: prismatic, axis: z, sign: 1 }
 ```
@@ -591,7 +592,10 @@ controller_tracking:
 | `type` | `rotation` (roll/pitch/yaw) or `prismatic` (x/y/z) |
 | `axis` | which component of the frame delta drives the joint |
 | `sign` | `-1` to invert; defaults to `1` |
+| `pivot_offset` | group-level; translation is measured at this point of the frame, in `base_frame` axes. A nod about the neck then moves the headset but not the pivot, so it no longer drives prismatic joints. Default `[0, 0, 0]` = frame origin |
 
+Rotation joints take the frame's rotation since the latch in the latched frame;
+prismatic joints take the pivot point's translation in `base_frame`.
 One group may mix rotation and prismatic joints. All of a group's joints are
 published together on `robot_topic_name.joint_trajectory_topic.<group>`.
 

@@ -690,6 +690,16 @@ void SOBITSTeleop::load_parameters()
         get_param("controller_tracking." + group + ".enable_axis", g.enable_axis);
         get_param("controller_tracking." + group + ".target_frame_name", g.target_frame_name);
         get_param("controller_tracking." + group + ".motion_scale", g.motion_scale);
+        std::vector<double> pivot;
+        if (get_param("controller_tracking." + group + ".pivot_offset", pivot)) {
+          if (pivot.size() == 3) {
+            g.pivot_offset = tf2::Vector3(pivot[0], pivot[1], pivot[2]);
+          } else {
+            RCLCPP_ERROR(get_logger(),
+              "Tracking group '%s': pivot_offset needs 3 values, got %zu — using zeros",
+              group.c_str(), pivot.size());
+          }
+        }
 
         for (const auto & jname : joint_names) {
           const std::string jprefix = "controller_tracking." + group + "." + jname;
@@ -1298,10 +1308,12 @@ void SOBITSTeleop::process_tracked_group(QuestTrackedGroup & g)
     }
 
     if (g.tracking) {
+      // Rotation: delta in the latched frame. Translation: pivot point motion in
+      // base_footprint, so a pure nod about the pivot yields no translation.
       tf2::Transform T_delta = g.last_tf.inverse() * current_tf;
       double rpy[3];
       tf2::Matrix3x3(T_delta.getRotation()).getRPY(rpy[0], rpy[1], rpy[2]);
-      const tf2::Vector3 & o = T_delta.getOrigin();
+      const tf2::Vector3 o = current_tf * g.pivot_offset - g.last_tf * g.pivot_offset;
       const double pos[3] = {o.x(), o.y(), o.z()};
 
       trajectory_msgs::msg::JointTrajectory traj;

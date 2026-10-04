@@ -151,6 +151,8 @@ struct QuestTrackedGroup
   std::string target_frame_name = "hmd_odom";
   int enable_axis = -1;
   double motion_scale = 1.0;
+  // Frame origin -> pivot the frame rotates about, in frame axes (zeros = frame origin).
+  tf2::Vector3 pivot_offset{0.0, 0.0, 0.0};
   std::vector<TrackedJoint> joints;
 
   bool tracking = false;

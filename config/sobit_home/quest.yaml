@@ -280,6 +280,7 @@
         enable_axis: 2
         target_frame_name: hmd_odom
         motion_scale: 1.0
+        pivot_offset: [-0.10, 0.0, -0.08]
         joints_name:
         - body_lift_joint
         body_lift_joint:
