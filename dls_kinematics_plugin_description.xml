@@ -1,0 +1,5 @@
+<library path="sobits_teleop_dls_kinematics_plugin">
+  <class name="sobits_teleop/DLSKinematicsPlugin" type="sobits_teleop::DLSKinematicsPlugin" base_class_type="kinematics::KinematicsBase">
+    <description>Damped-least-squares differential IK, singularity robust, for moveit_servo.</description>
+  </class>
+</library>

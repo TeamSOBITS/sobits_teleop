@@ -98,6 +98,7 @@ struct PoseBlendMap
   int axis_sign = 1;
   int to_button = -1;       // button alternative to the axis
   int from_button = -1;
+  int dominant_over = -1;   // skip while |axis| <= |this axis| (shared stick)
   double speed = 0.0;       // rad per legacy 50 ms tick at full deflection
 };
 
@@ -150,6 +151,8 @@ struct QuestTrackedGroup
   std::string target_frame_name = "hmd_odom";
   int enable_axis = -1;
   double motion_scale = 1.0;
+  // Frame origin -> pivot the frame rotates about, in frame axes (zeros = frame origin).
+  tf2::Vector3 pivot_offset{0.0, 0.0, 0.0};
   std::vector<TrackedJoint> joints;
 
   bool tracking = false;

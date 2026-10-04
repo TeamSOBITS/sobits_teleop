@@ -2,15 +2,158 @@
   ros__parameters:
     controllers_name:
     - controller_velocity
+    - controller_poses
+    - controller_tracking
+    - controller_cartesian
+    # Recommended latch pose (Jacobian condition 45, hand forward-down). Latching
+    # at the SRDF initial_pose also works with DLS, but the hand yaw lags there.
+    controller_poses:
+      time_from_start: 3.0
+      poses:
+        poses_name:
+        - servo_ready_pose
+        - floor_ready_pose
+        - hand_open
+        - hand_close
+        # Floor picking: with the hand vertical every descent hits a singular
+        # layer at z ~ 0.14 m (Jacobian condition >1000), where servo halts and
+        # the bridge's escape makes the arm rock back and forth. Cross that
+        # layer in joint space with this pose (EE ~0.41 m ahead, 8 cm up, hand
+        # straight down, condition ~70), then latch and servo near the floor.
+        # Verified on the robot 2026-09-10: 5 mm tracking at 4-7 cm height,
+        # usable patch about x 0.36-0.42 m, y +-5 cm. Move the base for more.
+        floor_ready_pose:
+          button: 1
+          groups_name:
+          - arm
+          arm:
+            joints_name:
+            - arm_shoulder_roll_joint
+            - arm_shoulder_pitch_joint
+            - arm_elbow_pitch_joint
+            - arm_forearm_roll_joint
+            - arm_wrist_pitch_joint
+            - arm_wrist_roll_joint
+            positions:
+            - 0.0
+            - -0.5
+            - -0.2
+            - 0.0
+            - 0.7
+            - 0.0
+        servo_ready_pose:
+          button: 0                 # same button sobit_home uses for its initial_pose
+          groups_name:
+          - arm
+          - head
+          arm:
+            joints_name:
+            - arm_shoulder_roll_joint
+            - arm_shoulder_pitch_joint
+            - arm_elbow_pitch_joint
+            - arm_forearm_roll_joint
+            - arm_wrist_pitch_joint
+            - arm_wrist_roll_joint
+            positions:
+            - 0.0
+            - -1.1
+            - -0.6
+            - 0.0
+            - 0.8
+            - 0.0
+          head:
+            joints_name:
+            - head_yaw_joint
+            - head_pitch_joint
+            positions:
+            - 0.0
+            - 0.0
+        # Gripper endpoints (hand_joint is prismatic, metres). Open = 0.029
+        # (URDF upper); close = -0.013, where the fingers meet on the robot and
+        # the Goal_Current limit takes over (measured 2026-09-10).
+        hand_open:
+          button: -1
+          groups_name:
+          - hand
+          hand:
+            joints_name:
+            - hand_joint
+            positions:
+            - 0.029
+        hand_close:
+          button: -1
+          groups_name:
+          - hand
+          hand:
+            joints_name:
+            - hand_joint
+            positions:
+            - -0.013
+      # Hold the right trigger and push the right stick down to squeeze, up to
+      # open; release to hold the current opening (same scheme as sobit_home).
+      # speed is metres per 50 ms tick at full deflection: 0.002 = full travel
+      # in ~1 s (0.004 hit the stop in 0.4 s on the robot, too fast to feel).
+      blends:
+        blends_name:
+        - hand_grip
+        hand_grip:
+          from: hand_open
+          to: hand_close
+          enable_axis: 6
+          enable_button: -1
+          axis: 4
+          axis_sign: -1
+          to_button: -1
+          from_button: -1
+          speed: 0.002
+      # One press toggles open <-> close (sobit_home uses the same button).
+      cycles:
+        cycles_name:
+        - hand_toggle
+        hand_toggle:
+          button: 6
+          poses:               # close first: the gripper boots open
+          - hand_close
+          - hand_open
     controller_velocity:
-      enable_axis: 6
-      fast_enable_axis: 7
-      axis_sign: 1
+      enable_axis: 6              # right trigger
+      fast_enable_axis: 7         # right grip
+      axis_sign: -1
       linear:
-        x_axis: 1
-        scale: 0.2
-        fast_scale: 0.6
+        x_axis: 1                 # left stick vertical
+        scale: 0.1
+        fast_scale: 0.2
       angular:
-        axis: 0
-        scale: 0.2
+        axis: 0                   # right stick horizontal
+        scale: 0.3
         fast_scale: 0.6
+    controller_tracking:
+      groups_name:
+      - head
+      head:
+        enable_axis: 2             # left trigger
+        target_frame_name: hmd_odom
+        motion_scale: 1.0
+        joints_name:
+        - head_yaw_joint
+        - head_pitch_joint
+        head_yaw_joint:
+          type: rotation
+          axis: yaw
+          sign: 1
+        head_pitch_joint:
+          type: rotation
+          axis: pitch
+          sign: 1
+    controller_cartesian:
+      groups_name:
+      - arm
+      arm:
+        enable_axis: 7             # right grip
+        controller_frame_name: right_controller_odom
+        controller_echo_frame_name: right_controller_link
+        end_effector_frame_name: hand_end_effector_link
+        target_frame_name: arm_target_link
+        motion_scale: 0.35
+        proximity_threshold: 0.0        # m; 0 = latch immediately on enable
+        proximity_angle_threshold: 0.0  # rad; 0 = latch immediately on enable

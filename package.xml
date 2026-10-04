@@ -33,10 +33,15 @@
   <depend>moveit_core</depend>
   <depend>moveit_msgs</depend>
   <depend>std_srvs</depend>
+  <depend>pluginlib</depend>
+  <depend>kdl_parser</depend>
+  <depend>orocos_kdl_vendor</depend>
+  <depend>srdfdom</depend>
 
   <exec_depend>moveit_servo</exec_depend>
 
   <export>
     <build_type>ament_cmake</build_type>
+    <moveit_core plugin="${prefix}/dls_kinematics_plugin_description.xml"/>
   </export>
 </package>

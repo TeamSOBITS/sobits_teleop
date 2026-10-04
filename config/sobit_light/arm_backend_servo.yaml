@@ -1,0 +1,100 @@
+## Servo arm-tracking backend — tuning only; arm identity comes from quest.yaml/common.yaml.
+## Param names per moveit_servo 2.12.4 schema; "moveit_servo" prefix required.
+
+## sobit_light: its singular surfaces cross the teleop workspace, so servo runs the
+## DLS solver below (KDL flipped there) and servo's unit-dependent cond gate is off.
+
+/**:
+  ros__parameters:
+    # ── Shared moveit_servo tuning (single arm) ─────────────────────────────
+    moveit_servo:
+      publish_period: 0.02                 # 50 Hz command output
+      max_expected_latency: 0.1
+      command_in_type: "speed_units"
+      scale:
+        # 0.5 m/s = 1 cm per tick: keeps each servo IK step local on a 0.43 m arm.
+        linear: 0.5                        # max EE m/s
+        rotational: 1.5                    # max EE rad/s
+        joint: 1.0
+      incoming_command_timeout: 0.5        # bridge streams at 100 Hz; halt if it stops
+
+      pose_tracking:
+        linear_tolerance: 0.001            # 1 mm
+        angular_tolerance: 0.01            # ~0.6 deg
+
+      command_out_type: trajectory_msgs/JointTrajectory
+      publish_joint_positions: true
+      # must stay false: the arm JTC rejects trajectories ending with nonzero velocity
+      publish_joint_velocities: false
+      publish_joint_accelerations: false
+
+      joint_topic: joint_states            # relative -> /sobit_light/joint_states
+
+      is_primary_planning_scene_monitor: false   # move_group owns the scene
+      monitored_planning_scene_topic: /sobit_light/monitored_planning_scene
+
+      check_collisions: false
+      collision_check_rate: 10.0
+      self_collision_proximity_threshold: 0.004   # start here; loosen if the arm sticks in permanent decel-crawl near the body
+      scene_collision_proximity_threshold: 0.008
+      check_octomap_collisions: false
+
+      use_smoothing: true
+      smoothing_filter_plugin_name: "online_signal_smoothing::ButterworthFilterPlugin"
+
+      # Gate off: with DLS IK the joint step stays bounded at singularities, so
+      # a halt only breaks tracking (halt/escape rocking). Exact poses read ~1e16.
+      lower_singularity_threshold: 1.0e17
+      hard_stop_singularity_threshold: 1.0e18
+      joint_limit_margins: [0.02]
+      # moveit_servo 2.12 names (the old halt_all_joints_in_joint_limit key is not
+      # in the schema and was silently ignored, so every robot has in fact been
+      # running with the default true). Keep true: with false, a joint parked on
+      # its bound while the others keep solving drags the EE off the commanded
+      # path (verified in sim: 3 cm lateral error on a 6 cm move).
+      halt_all_joints_in_joint_mode: true
+      halt_all_joints_in_cartesian_mode: true
+
+    # ── Servo-only IK solver: move_group keeps KDL; the launcher lists this yaml
+    # after the move_group params, so this block wins for servo_arm only.
+    robot_description_kinematics:
+      arm:
+        kinematics_solver: sobits_teleop/DLSKinematicsPlugin
+        kinematics_solver_timeout: 0.005
+        length_scale: 0.3
+        damping_min: 0.01
+        damping_max: 0.1
+        singular_value_threshold: 0.05
+        max_step: 0.2
+        joint_limit_margin: 0.03
+        joint_clamping: false       # hardware-validated without it (2026-09-12); no gain on this 6-DOF arm in sim
+        min_singular_value: 0.005   # never park the commanded state on a singular surface
+
+    # ── Target bridge ───────────────────────────────────────────────────────
+    servo_bridge:
+      pose_rate_hz: 100.0   # keep well above 1/incoming_command_timeout
+
+      # Reach clamp [m] around arm_shoulder_pitch_link; max reach is 0.43 (elbow
+      # ~ -1.4). With DLS an out-of-reach chase just stalls, so clamp near it.
+      max_reach: 0.40
+
+      # Halt recovery (same tuning as sobit_home). Dormant while the gate above
+      # is off; kept for the case of a finite hard_stop threshold.
+      reset_on_halt: true
+      reset_cooldown_s: 2.0
+      halt_debounce_s: 0.1    # single-tick halts at exact crossings are not traps
+      joint_escape_time_s: 1.0
+      joint_escape_lookback_s: 1.0
+      escape_step: 0.005
+      escape_timeout_s: 2.0
+
+      # Per-arm keys default from the arm name via these templates. sobit_light
+      # has a single arm named "arm" and no *_shoulder_tilt_link, so the reach
+      # origin must be overridden (the default frame does not exist -> the clamp
+      # was silently skipped).
+      naming:
+        reach_origin_frame:      "{arm}_shoulder_pitch_link"
+        servo_node:              "servo_{arm}"
+        enable_topic:            "{arm}/moveit_track_enabled"
+        joint_traj_topic:        "{arm}_position_controller/joint_trajectory"
+        status_topic:            "{servo_node}/status"

@@ -256,9 +256,11 @@ def _fetch_move_group_params(context, *args, **kwargs):
             name=f'servo_{arm}',
             namespace=robot_name,
             output='screen',
+            # Later entries win: the yaml may override move_group's
+            # robot_description_kinematics (servo-only IK solver).
             parameters=[
-                servo_yaml,
                 common_model_params,
+                servo_yaml,
                 {
                     'moveit_servo.move_group_name': arm,
                     'moveit_servo.command_out_topic': traj_topics[arm],

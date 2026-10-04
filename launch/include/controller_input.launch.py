@@ -18,6 +18,7 @@ from launch.substitutions import (
     AndSubstitution,
     EqualsSubstitution,
     LaunchConfiguration,
+    NotSubstitution,
     OrSubstitution,
 )
 from launch_ros.actions import Node
@@ -72,6 +73,41 @@ def generate_launch_description() -> LaunchDescription:
             EqualsSubstitution(LaunchConfiguration('device'), 'quest')),
     )
 
+    # The Meta Quest app publishes hmd_odom/right_controller_odom/left_controller_odom
+    # under its own root frame "quest", which has no parent of its own — an entirely
+    # separate tree from the robot's. Bridge it onto base_footprint with an identity
+    # transform (same pattern as base_footprint_bridge in sobit_light_bringup, which
+    # connects the robot's frame_prefix-ed tree the same way), or sobits_teleop's TF
+    # lookups for Quest frames fail with "two or more unconnected trees".
+    quest_tf_bridge = Node(
+        package='tf2_ros',
+        executable='static_transform_publisher',
+        name='quest_tf_bridge',
+        namespace=robot_name,
+        arguments=['--frame-id', 'base_footprint', '--child-frame-id', 'quest'],
+        parameters=[{'use_sim_time': LaunchConfiguration('use_sim_time')}],
+        condition=IfCondition(EqualsSubstitution(LaunchConfiguration('device'), 'quest')),
+    )
+
+    # This build of the Meta Quest app publishes controller button/axis state
+    # to the hardcoded absolute topic "/sobit_home/joy" regardless of which
+    # robot_name is passed here — a property of the headset's own APK, not
+    # something quest_node or this launch file controls. Relay it onto
+    # "<robot_name>/joy", which sobits_teleop actually subscribes to, whenever
+    # targeting any robot other than sobit_home (which needs no relay, since
+    # its topic already matches).
+    quest_joy_relay = Node(
+        package='topic_tools',
+        executable='relay',
+        name='quest_joy_relay',
+        namespace=robot_name,
+        arguments=['/sobit_home/joy', 'joy'],
+        parameters=[{'use_sim_time': LaunchConfiguration('use_sim_time')}],
+        condition=IfCondition(AndSubstitution(
+            EqualsSubstitution(LaunchConfiguration('device'), 'quest'),
+            NotSubstitution(EqualsSubstitution(LaunchConfiguration('robot_name'), 'sobit_home')))),
+    )
+
     # keyboard node for keyboard teleop
     keyboard_node = Node(
         package='keyboard_joy',
@@ -123,6 +159,8 @@ def generate_launch_description() -> LaunchDescription:
         ds4drv_cmd,
         joystick_node,
         quest_node,
+        quest_tf_bridge,
+        quest_joy_relay,
         keyboard_node,
         usb_network_setup_cmd,
     ])

@@ -566,6 +566,7 @@ void SOBITSTeleop::load_parameters()
       get_param(base + ".axis_sign", bl.axis_sign);
       get_param(base + ".to_button", bl.to_button);
       get_param(base + ".from_button", bl.from_button);
+      get_param(base + ".dominant_over", bl.dominant_over);
       get_param(base + ".speed", bl.speed);
 
       std::vector<std::string> exclude;
@@ -689,6 +690,16 @@ void SOBITSTeleop::load_parameters()
         get_param("controller_tracking." + group + ".enable_axis", g.enable_axis);
         get_param("controller_tracking." + group + ".target_frame_name", g.target_frame_name);
         get_param("controller_tracking." + group + ".motion_scale", g.motion_scale);
+        std::vector<double> pivot;
+        if (get_param("controller_tracking." + group + ".pivot_offset", pivot)) {
+          if (pivot.size() == 3) {
+            g.pivot_offset = tf2::Vector3(pivot[0], pivot[1], pivot[2]);
+          } else {
+            RCLCPP_ERROR(get_logger(),
+              "Tracking group '%s': pivot_offset needs 3 values, got %zu — using zeros",
+              group.c_str(), pivot.size());
+          }
+        }
 
         for (const auto & jname : joint_names) {
           const std::string jprefix = "controller_tracking." + group + "." + jname;
@@ -999,7 +1010,10 @@ bool SOBITSTeleop::send_pose(
 
   auto goal_msg = sobits_interfaces::action::MoveToPose::Goal();
   goal_msg.pose_name = pose_map.pose_name;
-  goal_msg.time_allowance.sec = 10;
+  // Both SOBITS pose servers use time_allowance as the trajectory duration
+  // (and as their completion timeout), so the configured time_from_start is
+  // the pose's motion time for the action backend too.
+  goal_msg.time_allowance = rclcpp::Duration::from_seconds(pose_map.time_from_start);
 
   auto send_goal_options =
     rclcpp_action::Client<sobits_interfaces::action::MoveToPose>::SendGoalOptions();
@@ -1145,6 +1159,13 @@ void SOBITSTeleop::process_pose_blends()
     if (button_down(bl.to_button)) {deflection = 1.0;}
     if (button_down(bl.from_button)) {deflection = -1.0;}
     if (std::abs(deflection) < 0.1) {continue;}
+    // Shared stick: yield to the guarded axis, mirroring controller_joints.
+    const bool by_button = button_down(bl.to_button) || button_down(bl.from_button);
+    if (!by_button && bl.dominant_over >= 0 &&
+      std::abs(axis_value(bl.axis)) <= std::abs(axis_value(bl.dominant_over)))
+    {
+      continue;
+    }
 
     const bool toward_to = deflection > 0.0;
     const double step = bl.speed * std::abs(deflection) * jog_tick_scale_;
@@ -1287,10 +1308,12 @@ void SOBITSTeleop::process_tracked_group(QuestTrackedGroup & g)
     }
 
     if (g.tracking) {
+      // Rotation: delta in the latched frame. Translation: pivot point motion in
+      // base_footprint, so a pure nod about the pivot yields no translation.
       tf2::Transform T_delta = g.last_tf.inverse() * current_tf;
       double rpy[3];
       tf2::Matrix3x3(T_delta.getRotation()).getRPY(rpy[0], rpy[1], rpy[2]);
-      const tf2::Vector3 & o = T_delta.getOrigin();
+      const tf2::Vector3 o = current_tf * g.pivot_offset - g.last_tf * g.pivot_offset;
       const double pos[3] = {o.x(), o.y(), o.z()};
 
       trajectory_msgs::msg::JointTrajectory traj;

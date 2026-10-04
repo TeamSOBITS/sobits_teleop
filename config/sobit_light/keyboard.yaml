@@ -8,6 +8,7 @@
       groups_name:
       - head
       - arm
+      - hand
       head:
         joints_name:
         - head_pitch_joint
@@ -76,6 +77,18 @@
           axis_sign: -1
           speed: 0.1
           fast_speed: 0.5
+      # Gripper: hold key 5 and use a/d (axis 0) to jog hand_joint
+      # (prismatic, metres per 50 ms tick; full travel is 0.047 m). d = close.
+      hand:
+        joints_name:
+        - hand_joint
+        hand_joint:
+          button: 5
+          fast_button: 7
+          axis: 0
+          axis_sign: -1
+          speed: 0.004
+          fast_speed: 0.01
     controller_poses:
       trigger: 8
       poses:
