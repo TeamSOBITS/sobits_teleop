@@ -144,7 +144,8 @@ robot-independent.
 ```yaml
 /**:
   ros__parameters:
-    robot_topic_name:
+    robot_topic_name:   # omitted when the robot has a descriptor
+      base_frame: base_footprint
       joint_states_topic: joint_states
       joint_trajectory_topic:
         head:      head_position_controller/joint_trajectory
@@ -303,6 +304,35 @@ pose you may put `joints_name`/`positions` directly under the pose and drop `gro
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ---
+
+### Robot Descriptor
+
+When the robot ships a `<robot_name>.robot.yaml` (see `sobits_robot_descriptor`;
+currently `sobit_home`), the launch reads it and overrides these node parameters,
+so the robot description package stays the single source of truth:
+
+| Parameter | Descriptor field |
+|---|---|
+| `robot_topic_name.base_frame` | `base_frame` |
+| `robot_topic_name.joint_states_topic` | `joint_states_topic` |
+| `robot_topic_name.cmd_vel_topic` | `mobile_base.command_topic` |
+| `robot_topic_name.joint_trajectory_topic.<group>` | `groups[].command_topic` |
+
+Precedence: descriptor, then `config/{robot_name}/common.yaml`, then the node
+defaults. If `common.yaml` still sets a key the descriptor provides, the
+descriptor wins and the launch prints a warning naming the key. The Quest arm
+backends take `joint_trajectory_topic` and `base_frame` the same way.
+
+At launch every group and joint named in `controller_joints`, `controller_poses`
+and `controller_tracking` must exist in the descriptor (`uncommanded_joints`
+count), otherwise the launch stops with the list of known names. The device YAML
+keeps its joint lists because they carry the per-joint bindings. The
+`controller_cartesian.<arm>` `end_effector_frame_name` / `target_frame_name` in
+`quest.yaml` must match the descriptor `ee` entry whose `control.group` is that arm.
+
+The descriptor is optional. For robots without one (`sobit_light`, `sobit_mini`, ...)
+the launch prints one info line and uses `common.yaml` as before, so those
+`common.yaml` files must keep the `robot_topic_name` block.
 
 ### Launch Arguments
 
