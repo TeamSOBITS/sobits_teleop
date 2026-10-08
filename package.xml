@@ -37,6 +37,7 @@
   <depend>kdl_parser</depend>
   <depend>orocos_kdl_vendor</depend>
   <depend>srdfdom</depend>
+  <exec_depend>sobits_robot_descriptor</exec_depend>
 
   <exec_depend>moveit_servo</exec_depend>
 
