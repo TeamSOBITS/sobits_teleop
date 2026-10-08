@@ -112,6 +112,6 @@ def check_ee_frames(desc, arm, end_effector_frame_name, target_frame_name):
             f'ee_link={e.ee_link} command_frame={e.control.command_frame}'
             for e in entries)
         raise RuntimeError(
-            f"quest.yaml controller_cartesian.{arm} (end_effector_frame_name="
-            f"{end_effector_frame_name}, target_frame_name={target_frame_name}) "
+            f'quest.yaml controller_cartesian.{arm} (end_effector_frame_name='
+            f'{end_effector_frame_name}, target_frame_name={target_frame_name}) '
             f"disagrees with descriptor '{desc.robot_id}': {want}")

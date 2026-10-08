@@ -185,6 +185,9 @@ if(BUILD_TESTING)
   target_include_directories(test_reach_clamp PRIVATE include)
   ament_target_dependencies(test_reach_clamp tf2_ros)
 
+  find_package(ament_cmake_pytest REQUIRED)
+  ament_add_pytest_test(test_robot_descriptor_params test/test_robot_descriptor_params.py)
+
   find_package(launch_testing_ament_cmake REQUIRED)
   add_launch_test(test/test_node_startup.py)
 
