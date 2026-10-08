@@ -90,7 +90,7 @@ First, please set up the following environment before proceeding to the next ins
     cd sobits_teleop/
     ```
 
-4. Install the dependent packages.
+4. Install the dependent packages (ROS dependencies are declared in `package.xml` and installed with `rosdep`).
     ```sh
     bash install.sh
     ```
@@ -578,8 +578,8 @@ The target and end-effector frames are **not** listed here: `quest.yaml` owns
 them and the servo launcher forwards them to the bridge, so they are defined
 once. The C++ defaults still cover them when the bridge runs standalone.
 
-The servo backend requires `ros-$ROS_DISTRO-moveit-servo` (installed by
-`install.sh`) and a running `move_group` under `/{robot_name}` — the launcher
+The servo backend requires `moveit_servo` (declared in `package.xml` and installed by
+`rosdep` via `install.sh`) and a running `move_group` under `/{robot_name}` — the launcher
 fetches the robot model from it at startup.
 
 #### Gripper controls (Quest, both backends)

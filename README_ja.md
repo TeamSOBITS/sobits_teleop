@@ -89,7 +89,7 @@ configは同梱済みで，新しいロボットへの移植はこのディレ�
     cd sobits_teleop/
     ```
 
-4. 依存パッケージをインストールします．
+4. 依存パッケージをインストールします（ROSの依存関係は`package.xml`に宣言されており，`rosdep`でインストールされます）．
     ```sh
     bash install.sh
     ```
@@ -561,7 +561,7 @@ servo_bridge:
 それらの定義元であり，servoのlauncherがbridgeへ転送するため，定義は一箇所です．
 bridgeを単体起動した場合はC++側の既定値が使われます．
 
-Servoバックエンドには`ros-$ROS_DISTRO-moveit-servo`（`install.sh`でインストール）と，
+Servoバックエンドには`moveit_servo`（`package.xml`に宣言され，`install.sh`の`rosdep`でインストール）と，
 `/{robot_name}`名前空間で動作中の`move_group`が必要です — launcherが起動時に
 ロボットモデルをそこから取得します．
 
