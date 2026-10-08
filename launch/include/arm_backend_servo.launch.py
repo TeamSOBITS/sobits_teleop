@@ -254,6 +254,9 @@ def _fetch_move_group_params(context, *args, **kwargs):
     servo_nodes = []
     bridge_arm_params = {'servo_bridge.arms': [a for a, _ in arm_entries]}
     for arm, block in arm_entries:
+        if desc is not None:
+            rdp.check_ee_frames(desc, arm, block['end_effector_frame_name'],
+                                block.get('target_frame_name'))
         servo_nodes.append(Node(
             package='moveit_servo',
             executable='servo_node',

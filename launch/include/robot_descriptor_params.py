@@ -98,3 +98,20 @@ def backend_topics(desc, common_params):
         topics.update({g.name: g.command_topic for g in desc.groups if g.command_topic})
         base_frame = desc.base_frame
     return topics, base_frame
+
+
+def check_ee_frames(desc, arm, end_effector_frame_name, target_frame_name):
+    """Cross-check a quest.yaml arm block against the descriptor's ee entries."""
+    entries = [e for e in desc.ee if e.control and e.control.group == arm]
+    if not entries:
+        return
+    ok = any(e.ee_link == end_effector_frame_name
+             and e.control.command_frame == target_frame_name for e in entries)
+    if not ok:
+        want = ', '.join(
+            f'ee_link={e.ee_link} command_frame={e.control.command_frame}'
+            for e in entries)
+        raise RuntimeError(
+            f"quest.yaml controller_cartesian.{arm} (end_effector_frame_name="
+            f"{end_effector_frame_name}, target_frame_name={target_frame_name}) "
+            f"disagrees with descriptor '{desc.robot_id}': {want}")

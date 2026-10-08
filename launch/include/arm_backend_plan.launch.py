@@ -54,6 +54,9 @@ def _make_nodes(context, *args, **kwargs):
     for arm in controller_cartesian.get('groups_name', []):
         block = controller_cartesian.get(arm, {})
         if isinstance(block, dict) and 'end_effector_frame_name' in block:
+            if desc is not None:
+                rdp.check_ee_frames(desc, arm, block['end_effector_frame_name'],
+                                    block['target_frame_name'])
             arms.append(arm)
             arm_params[f'arm_teleop.{arm}.planning_group'] = arm
             arm_params[f'arm_teleop.{arm}.target_frame'] = block['target_frame_name']
