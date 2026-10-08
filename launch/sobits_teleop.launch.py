@@ -26,6 +26,7 @@ def _make_teleop_node(context, *args, **kwargs):
     parameters = [common_yaml, device_yaml]
     desc = rdp.try_load(robot_name)
     if desc is not None:
+        rdp.validate_device(desc, rdp.read_params(device_yaml))
         overrides = rdp.descriptor_params(desc)
         for key in rdp.shadowed_keys(rdp.read_params(common_yaml), overrides):
             print(f'[sobits_teleop] WARNING: {key} in common.yaml is overridden by '

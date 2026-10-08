@@ -54,6 +54,41 @@ def shadowed_keys(common_params, overrides):
     return sorted(k for k in flat if k in overrides)
 
 
+def _check_joints(desc, where, group, joints, errors):
+    g = next((x for x in desc.groups if x.name == group), None)
+    if g is None:
+        known = ', '.join(x.name for x in desc.groups)
+        errors.append(f'{where}: unknown group {group!r} (known groups: {known})')
+        return
+    known = set(g.joints) | set(g.uncommanded_joints)
+    for j in joints or []:
+        if j not in known:
+            errors.append(
+                f'{where}: joint {j!r} is not in group {group!r} '
+                f'(known joints: {", ".join(sorted(known))})')
+
+
+def validate_device(desc, device_params):
+    """Raise RuntimeError when device joints/groups are not in the descriptor."""
+    errors = []
+
+    def block(where, cfg):
+        for group in cfg.get('groups_name') or []:
+            sub = cfg.get(group) or {}
+            _check_joints(desc, f'{where}.{group}', group,
+                          sub.get('joints_name'), errors)
+
+    block('controller_joints', device_params.get('controller_joints') or {})
+    block('controller_tracking', device_params.get('controller_tracking') or {})
+    poses = (device_params.get('controller_poses') or {}).get('poses') or {}
+    for pose in poses.get('poses_name') or []:
+        block(f'controller_poses.poses.{pose}', poses.get(pose) or {})
+    if errors:
+        raise RuntimeError(
+            f"Device config disagrees with robot descriptor '{desc.robot_id}':\n  "
+            + '\n  '.join(errors))
+
+
 def backend_topics(desc, common_params):
     """Return (trajectory topics by group, base frame); the descriptor wins."""
     topic_cfg = common_params.get('robot_topic_name') or {}
