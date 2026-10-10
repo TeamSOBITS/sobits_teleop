@@ -1,15 +1,47 @@
 import os
+import sys
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import (
     AndSubstitution, EqualsSubstitution, LaunchConfiguration, NotSubstitution,
-    PathJoinSubstitution,
 )
 from launch_ros.actions import Node
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'include'))
+import robot_descriptor_params as rdp  # noqa: E402
+
+
+def _make_teleop_node(context, *args, **kwargs):
+    pkg_name = 'sobits_teleop'
+    robot_name = LaunchConfiguration('robot_name').perform(context)
+    device = LaunchConfiguration('device').perform(context)
+    cfg_dir = os.path.join(get_package_share_directory(pkg_name), 'config', robot_name)
+    common_yaml = os.path.join(cfg_dir, 'common.yaml')
+    device_yaml = os.path.join(cfg_dir, f'{device}.yaml')
+
+    parameters = [common_yaml, device_yaml]
+    desc = rdp.try_load(robot_name)
+    if desc is not None:
+        rdp.validate_device(desc, rdp.read_params(device_yaml))
+        overrides = rdp.descriptor_params(desc)
+        for key in rdp.shadowed_keys(rdp.read_params(common_yaml), overrides):
+            print(f'[sobits_teleop] WARNING: {key} in common.yaml is overridden by '
+                  f"robot descriptor '{desc.robot_id}'")
+        parameters.append(overrides)
+    parameters.append({'use_sim_time': LaunchConfiguration('use_sim_time')})
+
+    return [Node(
+        package=pkg_name,
+        executable='sobits_teleop',
+        name='sobits_teleop',
+        output='screen',
+        namespace=robot_name,
+        parameters=parameters,
+    )]
 
 
 def generate_launch_description():
@@ -44,7 +76,7 @@ def generate_launch_description():
     declare_use_sim_time_cmd = DeclareLaunchArgument(
         'use_sim_time',
         default_value='false',
-        description='Use simulation (Gazebo) clock — set true when running with gz_minimal'
+        description='Use simulation (Gazebo) clock — set true when running with sim_minimal (any simulator)'
     )
     declare_use_moveit_cmd = DeclareLaunchArgument(
         'use_moveit',
@@ -64,33 +96,6 @@ def generate_launch_description():
     joystick_device = LaunchConfiguration('joystick_device')
     ros_ip = LaunchConfiguration('ros_ip')
     use_ds4drv = LaunchConfiguration('use_ds4drv')
-    common_config = PathJoinSubstitution([
-        get_package_share_directory(pkg_name),
-        'config',
-        robot_name,
-        'common'
-    ])
-
-    controller_config = PathJoinSubstitution([
-        get_package_share_directory(pkg_name),
-        'config',
-        robot_name,
-        device
-    ])
-
-    # Main teleop node (loads parameters from YAML)
-    sobits_teleop_node = Node(
-        package=pkg_name,
-        executable='sobits_teleop',
-        name='sobits_teleop',
-        output='screen',
-        namespace=robot_name,
-        parameters=[
-            [common_config, '.yaml'],
-            [controller_config, '.yaml'],
-            {'use_sim_time': LaunchConfiguration('use_sim_time')},
-        ],
-    )
 
     # Shared input-driver include so sobits_vla_deploy can reuse the same controllers.
     controller_input_launch = IncludeLaunchDescription(
@@ -144,7 +149,7 @@ def generate_launch_description():
         declare_use_sim_time_cmd,
         declare_use_moveit_cmd,
         declare_use_servo_cmd,
-        sobits_teleop_node,
+        OpaqueFunction(function=_make_teleop_node),
         arm_backend_plan_launch,
         arm_backend_servo_launch,
         controller_input_launch

@@ -12,6 +12,7 @@ ros_packages=(
     "keyboard_joy"
     "ros_tcp_endpoint"
     "sobits_interfaces"
+    "sobits_robot_descriptor"
 )
 
 #Clone all packages
@@ -28,19 +29,20 @@ for ((i = 0; i < ${#ros_packages[@]}; i++)) {
     fi
 }
 
-# Download ROS packages
+# Every ROS dependency is declared in the package.xml files and comes from
+# rosdep; jstest-gtk is the only apt package here (it has no rosdep key).
 sudo apt-get update
-sudo apt-get install -y \
-    jstest-gtk \
-    ros-$ROS_DISTRO-joy-linux \
-    ros-$ROS_DISTRO-rclcpp-components \
-    ros-$ROS_DISTRO-control-msgs \
-    ros-$ROS_DISTRO-moveit \
-    ros-$ROS_DISTRO-moveit-servo \
-    ros-$ROS_DISTRO-std-srvs \
-    ros-$ROS_DISTRO-tf2-eigen \
-    ros-$ROS_DISTRO-kdl-parser \
-    ros-$ROS_DISTRO-orocos-kdl-vendor
+sudo apt-get install -y jstest-gtk
+
+# Rosdep also resolves the cloned sibling packages' dependencies
+if [ ! -f /etc/ros/rosdep/sources.list.d/20-default.list ]; then
+    sudo rosdep init
+fi
+rosdep update
+rosdep install -r -y -i --from-paths ${DIR}
+for pkg in "${ros_packages[@]}"; do
+    rosdep install -r -y -i --from-paths ${DIR}/../${pkg}
+done
 
 # Download ds4drv for dualshock 4
 sudo pip install ds4drv --break-system-packages

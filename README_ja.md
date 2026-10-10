@@ -89,7 +89,7 @@ configは同梱済みで，新しいロボットへの移植はこのディレ�
     cd sobits_teleop/
     ```
 
-4. 依存パッケージをインストールします．
+4. 依存パッケージをインストールします（ROSの依存関係は`package.xml`に宣言されており，`rosdep`でインストールされます）．
     ```sh
     bash install.sh
     ```
@@ -141,7 +141,8 @@ configは同梱済みで，新しいロボットへの移植はこのディレ�
 ```yaml
 /**:
   ros__parameters:
-    robot_topic_name:
+    robot_topic_name:   # ディスクリプタを持つロボットでは省略
+      base_frame: base_footprint
       joint_states_topic: joint_states
       joint_trajectory_topic:
         head:      head_position_controller/joint_trajectory
@@ -297,6 +298,33 @@ controller_poses:
 <p align="right">(<a href="#readme-top">上に戻る</a>)</p>
 
 ---
+
+### ロボットディスクリプタ
+
+ロボットが`<robot_name>.robot.yaml`を持つ場合（`sobits_robot_descriptor`参照，現在は`sobit_home`），
+launchがそれを読み込み，次のノードパラメータを上書きします．ロボットの記述パッケージが唯一の情報源になります．
+
+| パラメータ | ディスクリプタの項目 |
+|---|---|
+| `robot_topic_name.base_frame` | `base_frame` |
+| `robot_topic_name.joint_states_topic` | `joint_states_topic` |
+| `robot_topic_name.cmd_vel_topic` | `mobile_base.command_topic` |
+| `robot_topic_name.joint_trajectory_topic.<group>` | `groups[].command_topic` |
+
+優先順位：ディスクリプタ，`config/{robot_name}/common.yaml`，ノードのデフォルトの順です．
+`common.yaml`にディスクリプタと同じキーが残っている場合はディスクリプタが優先され，
+launchがそのキー名を警告します．Questのアームバックエンドも`joint_trajectory_topic`と
+`base_frame`を同様に取得します．
+
+起動時に，`controller_joints`・`controller_poses`・`controller_tracking`のグループと関節は
+すべてディスクリプタに存在する必要があります（`uncommanded_joints`も含む）．存在しない場合は
+既知の名前を表示して起動を中止します．デバイスYAMLの関節リストは関節ごとの割り当てを持つため残します．
+`quest.yaml`の`controller_cartesian.<arm>`の`end_effector_frame_name`/`target_frame_name`は，
+`control.group`がそのアームである`ee`エントリと一致する必要があります．
+
+ディスクリプタは任意です．持たないロボット（`sobit_light`，`sobit_mini`など）では
+infoログを1行出して従来どおり`common.yaml`を使うため，それらの`common.yaml`には
+`robot_topic_name`ブロックが必要です．
 
 ### 起動引数
 
@@ -533,7 +561,7 @@ servo_bridge:
 それらの定義元であり，servoのlauncherがbridgeへ転送するため，定義は一箇所です．
 bridgeを単体起動した場合はC++側の既定値が使われます．
 
-Servoバックエンドには`ros-$ROS_DISTRO-moveit-servo`（`install.sh`でインストール）と，
+Servoバックエンドには`moveit_servo`（`package.xml`に宣言され，`install.sh`の`rosdep`でインストール）と，
 `/{robot_name}`名前空間で動作中の`move_group`が必要です — launcherが起動時に
 ロボットモデルをそこから取得します．
 

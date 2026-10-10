@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.8)
+cmake_minimum_required(VERSION 3.10)
 project(sobits_teleop)
 
 # require C++17
@@ -12,6 +12,7 @@ endif()
 
 # find dependencies
 find_package(ament_cmake REQUIRED)
+find_package(Eigen3 REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_action REQUIRED)
 find_package(rclcpp_components REQUIRED)
@@ -19,6 +20,7 @@ find_package(std_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(trajectory_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
+find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(tf2_msgs REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
@@ -185,10 +187,12 @@ if(BUILD_TESTING)
   target_include_directories(test_reach_clamp PRIVATE include)
   ament_target_dependencies(test_reach_clamp tf2_ros)
 
+  find_package(ament_cmake_pytest REQUIRED)
+  ament_add_pytest_test(test_robot_descriptor_params test/test_robot_descriptor_params.py)
+
   find_package(launch_testing_ament_cmake REQUIRED)
   add_launch_test(test/test_node_startup.py)
 
-  find_package(urdf REQUIRED)
   find_package(srdfdom REQUIRED)
   ament_add_gtest(test_dls_kinematics test/test_dls_kinematics.cpp)
   target_include_directories(test_dls_kinematics PRIVATE include)

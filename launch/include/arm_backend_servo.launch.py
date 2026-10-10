@@ -13,11 +13,17 @@ pattern in moveit_arm_controller.cpp ~lines 185-230) via an OpaqueFunction that
 spins a throwaway rclpy node against move_group's parameter services.
 """
 
+import os
+import sys
+
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import robot_descriptor_params as rdp  # noqa: E402
 
 
 MOVE_GROUP_WAIT_TIMEOUT_S = 60.0
@@ -222,16 +228,14 @@ def _fetch_move_group_params(context, *args, **kwargs):
         **kinematics_params,
     }
 
-    # Per-arm identity comes from quest.yaml / common.yaml; this yaml carries only
+    # Per-arm identity comes from quest.yaml and the robot descriptor; this yaml carries only
     # tuning shared by all nodes.
     servo_yaml = f'{pkg_share}/config/{robot_name}/arm_backend_servo.yaml'
 
-    import yaml as pyyaml
-    with open(f'{pkg_share}/config/{robot_name}/quest.yaml') as f:
-        quest_params = pyyaml.safe_load(f)['/**']['ros__parameters']
-    with open(f'{pkg_share}/config/{robot_name}/common.yaml') as f:
-        robot_params = pyyaml.safe_load(f)['/**']['ros__parameters']
-    traj_topics = robot_params['robot_topic_name']['joint_trajectory_topic']
+    quest_params = rdp.read_params(f'{pkg_share}/config/{robot_name}/quest.yaml')
+    desc = rdp.try_load(robot_name)
+    traj_topics, base_frame = rdp.backend_topics(
+        desc, rdp.read_params(f'{pkg_share}/config/{robot_name}/common.yaml'))
 
     controller_cartesian = quest_params['controller_cartesian']
     arm_entries = []  # (planning_group, quest controller block)
@@ -250,6 +254,9 @@ def _fetch_move_group_params(context, *args, **kwargs):
     servo_nodes = []
     bridge_arm_params = {'servo_bridge.arms': [a for a, _ in arm_entries]}
     for arm, block in arm_entries:
+        if desc is not None:
+            rdp.check_ee_frames(desc, arm, block['end_effector_frame_name'],
+                                block.get('target_frame_name'))
         servo_nodes.append(Node(
             package='moveit_servo',
             executable='servo_node',
@@ -268,6 +275,8 @@ def _fetch_move_group_params(context, *args, **kwargs):
                 },
             ],
         ))
+        if desc is not None:
+            bridge_arm_params[f'servo_bridge.{arm}.base_frame_name'] = base_frame
         # quest.yaml is also the authority for what the target TF means.
         if 'target_frame_name' in block:
             bridge_arm_params[f'servo_bridge.{arm}.target_frame_name'] = \
