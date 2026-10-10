@@ -76,7 +76,7 @@ def generate_launch_description():
     declare_use_sim_time_cmd = DeclareLaunchArgument(
         'use_sim_time',
         default_value='false',
-        description='Use simulation (Gazebo) clock — set true when running with gz_minimal'
+        description='Use simulation (Gazebo) clock — set true when running with sim_minimal (any simulator)'
     )
     declare_use_moveit_cmd = DeclareLaunchArgument(
         'use_moveit',
