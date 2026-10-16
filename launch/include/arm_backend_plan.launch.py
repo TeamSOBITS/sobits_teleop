@@ -2,11 +2,12 @@
 Plan-and-replace arm-tracking backend (moveit_arm_controller).
 
 Arm identity (arms, planning groups, target frames, controller topics) is
-declared once in quest.yaml / common.yaml and injected here; the backend's own
-yaml (arm_backend_plan.yaml) carries tuning only.
+declared once in quest.yaml / the robot descriptor (common.yaml as fallback) and
+injected here; the backend's own yaml (arm_backend_plan.yaml) carries tuning only.
 """
 
 import os
+import sys
 
 from ament_index_python.packages import (
     get_package_share_directory, PackageNotFoundError)
@@ -14,6 +15,9 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import robot_descriptor_params as rdp  # noqa: E402
 
 
 def _make_nodes(context, *args, **kwargs):
@@ -23,11 +27,10 @@ def _make_nodes(context, *args, **kwargs):
     cfg_dir = os.path.join(
         get_package_share_directory('sobits_teleop'), 'config', robot_name)
 
-    with open(os.path.join(cfg_dir, 'quest.yaml')) as f:
-        quest_params = pyyaml.safe_load(f)['/**']['ros__parameters']
-    with open(os.path.join(cfg_dir, 'common.yaml')) as f:
-        robot_params = pyyaml.safe_load(f)['/**']['ros__parameters']
-    traj_topics = robot_params['robot_topic_name']['joint_trajectory_topic']
+    quest_params = rdp.read_params(os.path.join(cfg_dir, 'quest.yaml'))
+    desc = rdp.try_load(robot_name)
+    traj_topics, base_frame = rdp.backend_topics(
+        desc, rdp.read_params(os.path.join(cfg_dir, 'common.yaml')))
 
     # Without robot_description_kinematics computeCartesianPath() returns 0.0 and
     # tracking silently never moves. Node() flattens the nested dict on its own.
@@ -51,10 +54,13 @@ def _make_nodes(context, *args, **kwargs):
     for arm in controller_cartesian.get('groups_name', []):
         block = controller_cartesian.get(arm, {})
         if isinstance(block, dict) and 'end_effector_frame_name' in block:
+            if desc is not None:
+                rdp.check_ee_frames(desc, arm, block['end_effector_frame_name'],
+                                    block['target_frame_name'])
             arms.append(arm)
             arm_params[f'arm_teleop.{arm}.planning_group'] = arm
             arm_params[f'arm_teleop.{arm}.target_frame'] = block['target_frame_name']
-            arm_params[f'arm_teleop.{arm}.base_frame'] = 'base_footprint'
+            arm_params[f'arm_teleop.{arm}.base_frame'] = base_frame
             arm_params[f'arm_teleop.{arm}.trajectory_topic'] = traj_topics[arm]
     arm_params['arm_teleop.arms'] = arms
 

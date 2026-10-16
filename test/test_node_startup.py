@@ -1,4 +1,6 @@
 import os
+import sys
+import tempfile
 import time
 import unittest
 
@@ -20,6 +22,15 @@ def generate_test_description():
     share_dir = get_package_share_directory('sobits_teleop')
     common_yaml = os.path.join(share_dir, 'config', 'sobit_home', 'common.yaml')
     quest_yaml = os.path.join(share_dir, 'config', 'sobit_home', 'quest.yaml')
+    sys.path.insert(0, os.path.join(share_dir, 'launch', 'include'))
+    import robot_descriptor_params as rdp
+    from sobits_robot_descriptor import load
+    # common.yaml no longer carries the robot topics; the launch derives them.
+    with tempfile.NamedTemporaryFile(
+            'w', suffix='.yaml', delete=False) as f:
+        yaml.safe_dump({'/**': {'ros__parameters': rdp.descriptor_params(
+            load('sobit_home'))}}, f)
+    descriptor_yaml = f.name
     exe = os.path.join(
         get_package_prefix('sobits_teleop'), 'lib', 'sobits_teleop', 'sobits_teleop')
 
@@ -30,7 +41,8 @@ def generate_test_description():
     sobits_teleop_process = launch.actions.ExecuteProcess(
         cmd=[exe, '--ros-args',
              '--params-file', common_yaml,
-             '--params-file', quest_yaml],
+             '--params-file', quest_yaml,
+             '--params-file', descriptor_yaml],
         additional_env=env,
         output='screen',
     )

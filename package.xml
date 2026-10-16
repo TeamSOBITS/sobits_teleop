@@ -9,36 +9,50 @@
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
-  <test_depend>ament_lint_auto</test_depend>
-  <test_depend>ament_lint_common</test_depend>
-  <test_depend>ament_cmake_gtest</test_depend>
-  <test_depend>launch_testing</test_depend>
-  <test_depend>launch_testing_ament_cmake</test_depend>
-
+  <depend>control_msgs</depend>
+  <depend>eigen</depend>
+  <depend>geometry_msgs</depend>
+  <depend>kdl_parser</depend>
+  <depend>moveit_core</depend>
+  <depend>moveit_msgs</depend>
+  <depend>moveit_ros_planning_interface</depend>
+  <depend>orocos_kdl_vendor</depend>
+  <depend>pluginlib</depend>
   <depend>rclcpp</depend>
   <depend>rclcpp_action</depend>
   <depend>rclcpp_components</depend>
-  <depend>std_msgs</depend>
   <depend>sensor_msgs</depend>
-  <depend>trajectory_msgs</depend>
-  <depend>geometry_msgs</depend>
-  <depend>tf2_ros</depend>
-  <depend>tf2_msgs</depend>
-  <depend>tf2_geometry_msgs</depend>
-  <depend>tf2_eigen</depend>
   <depend>sobits_interfaces</depend>
-  <depend>urdf</depend>
-  <depend>control_msgs</depend>
-  <depend>moveit_ros_planning_interface</depend>
-  <depend>moveit_core</depend>
-  <depend>moveit_msgs</depend>
+  <depend>std_msgs</depend>
   <depend>std_srvs</depend>
-  <depend>pluginlib</depend>
-  <depend>kdl_parser</depend>
-  <depend>orocos_kdl_vendor</depend>
-  <depend>srdfdom</depend>
+  <depend>tf2</depend>
+  <depend>tf2_eigen</depend>
+  <depend>tf2_geometry_msgs</depend>
+  <depend>tf2_msgs</depend>
+  <depend>tf2_ros</depend>
+  <depend>trajectory_msgs</depend>
+  <depend>urdf</depend>
 
+  <!-- Launched as nodes or imported by launch files and scripts. -->
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>joy_linux</exec_depend>
+  <exec_depend>keyboard_joy</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
   <exec_depend>moveit_servo</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>ros_tcp_endpoint</exec_depend>
+  <exec_depend>sobits_robot_descriptor</exec_depend>
+  <exec_depend>topic_tools</exec_depend>
+
+  <test_depend>ament_cmake_gtest</test_depend>
+  <test_depend>ament_cmake_pytest</test_depend>
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
+  <test_depend>launch_testing</test_depend>
+  <test_depend>launch_testing_ament_cmake</test_depend>
+  <test_depend>srdfdom</test_depend>
 
   <export>
     <build_type>ament_cmake</build_type>
