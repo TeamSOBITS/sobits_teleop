@@ -1,0 +1,12 @@
+/**:
+  ros__parameters:
+    mode_button: 1
+    arm_button: 2
+    axes: [0, 1, 4]
+    axis_signs: [1.0, 1.0, 1.0]
+    linear_speed: 0.5
+    angular_speed: 0.5
+    deadzone: 0.12
+    timeout_s: 0.25
+    frame_id: base_footprint
+    arms: [arm_right, arm_left]

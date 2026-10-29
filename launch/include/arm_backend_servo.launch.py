@@ -81,6 +81,7 @@ def _fetch_move_group_params(context, *args, **kwargs):
     from rcl_interfaces.msg import ParameterValue
 
     robot_name = LaunchConfiguration('robot_name').perform(context)
+    device = LaunchConfiguration('device').perform(context)
     use_sim_time_str = LaunchConfiguration('use_sim_time').perform(context)
     use_sim_time = use_sim_time_str.lower() in ('true', '1', 'yes')
 
@@ -289,7 +290,8 @@ def _fetch_move_group_params(context, *args, **kwargs):
         ],
     )
 
-    return servo_nodes + [servo_target_bridge_node]
+    # The bridge always switches Servo to POSE; never launch it for twist input.
+    return servo_nodes + ([servo_target_bridge_node] if device == "quest" else [])
 
 
 def generate_launch_description():
@@ -297,6 +299,9 @@ def generate_launch_description():
         'robot_name',
         default_value='sobit_home',
         description='Robot name used to select configuration files and namespace'
+    )
+    declare_device_cmd = DeclareLaunchArgument(
+        'device', default_value='quest', description='Input device'
     )
     declare_use_sim_time_cmd = DeclareLaunchArgument(
         'use_sim_time',
@@ -306,6 +311,7 @@ def generate_launch_description():
 
     return LaunchDescription([
         declare_robot_name_cmd,
+        declare_device_cmd,
         declare_use_sim_time_cmd,
         OpaqueFunction(function=_fetch_move_group_params),
     ])

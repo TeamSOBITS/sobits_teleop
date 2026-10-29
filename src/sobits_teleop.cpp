@@ -1353,6 +1353,8 @@ void SOBITSTeleop::process_tracked_group(QuestTrackedGroup & g)
 
 void SOBITSTeleop::teleop()
 {
+  // Twist Servo mode has a dedicated input node; suppress legacy commands.
+  if (this->get_parameter_or("servo_twist_only", false)) {return;}
   if (!joy_received_) {return;}
   if (requires_joint_states_ && !joint_state_initialized_) {return;}
 
